@@ -98,6 +98,21 @@ namespace Tangram.Data
         public Walk[] Walks;
         public PuzzleSource Source;
 
+        [NonSerialized] private Region region;
+
+        /// <summary>
+        /// 題目自身座標系的區域（不含盒子原點的平移），第一次存取時建好並快取。
+        /// 盤面上那個盒子要用 Region.FromPuzzle(puzzle, boxOrigin)，不是這個。
+        /// </summary>
+        public Region Region
+        {
+            get
+            {
+                if (region == null) region = Tangram.Data.Region.FromWalks(Walks, ExactVector2.Zero);
+                return region;
+            }
+        }
+
         public Puzzle() { }
 
         public Puzzle(string key, Walk[] walks, PuzzleSource source)

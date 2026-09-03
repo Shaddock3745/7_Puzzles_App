@@ -46,5 +46,9 @@ namespace Tangram.Data
 
         public string ToKey() => X.ToKey() + ":" + Y.ToKey();
         public override string ToString() => "(" + X + ", " + Y + ")";
+
+        /// <summary>整體縮放。座標系 ×2 時用（中點測試需要，見 Region）。</summary>
+        public static ExactVector2 operator *(ExactVector2 value, long multiplier)
+            => new ExactVector2(value.X * multiplier, value.Y * multiplier);
     }
 }

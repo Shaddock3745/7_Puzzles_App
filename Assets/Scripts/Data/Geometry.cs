@@ -145,5 +145,75 @@ namespace Tangram.Data
             secondOverlappingPiece = -1;
             return true;
         }
+
+        /// <summary>
+        /// 以 origin 為原點的二維外積：(first − origin) × (second − origin)。
+        /// 正 = second 在 origin→first 的左側，零 = 三點共線。
+        /// </summary>
+        public static Scalar Cross(ExactVector2 origin, ExactVector2 first, ExactVector2 second)
+            => ExactVector2.Cross(first - origin, second - origin);
+
+        /// <summary>
+        /// 點是否落在線段上（含兩端點）。
+        /// 與 StrictlyOnSegment 的差別：這裡含端點，而且不預設線段落在 45° 網格上
+        /// （走叉積 + 內積，不經過 Symmetry.TryDecompose）。
+        /// </summary>
+        public static bool IsOnSegment(ExactVector2 segmentStart, ExactVector2 segmentEnd,
+                                       ExactVector2 point)
+        {
+            if (!Cross(segmentStart, segmentEnd, point).IsZero) return false;
+
+            ExactVector2 segment = segmentEnd - segmentStart;
+            Scalar projection = ExactVector2.Dot(point - segmentStart, segment);
+            if (projection.Sign < 0) return false;
+            return projection <= ExactVector2.Dot(segment, segment);
+        }
+
+        /// <summary>
+        /// 兩線段是否「真」交叉：交點同時落在兩條線段的內部。
+        ///
+        /// 端點接觸、T 字接觸、共線重疊一律回 false —— 與 ConvexOverlap 的
+        /// 「距離 0 算分離」是同一個約定（§6 陷阱）。四個叉積只要有一個是 0，
+        /// 就代表某個端點落在對方的直線上，那就不算真交叉。
+        /// 不要把下面的比較改成含等號，會讓所有邊貼合的擺放誤判成非法。
+        ///
+        /// 附帶保證：沒有真交叉時，兩條線段的所有接觸點都是某一方的端點，
+        /// 所以是現成的 ℤ[√2] 座標 —— Region 的區間中點掃描靠這件事才不需要分數運算。
+        /// </summary>
+        public static bool SegmentsProperlyCross(ExactVector2 firstStart, ExactVector2 firstEnd,
+                                                 ExactVector2 secondStart, ExactVector2 secondEnd)
+        {
+            int secondStartSide = Cross(firstStart, firstEnd, secondStart).Sign;
+            int secondEndSide = Cross(firstStart, firstEnd, secondEnd).Sign;
+            if (secondStartSide * secondEndSide >= 0) return false;
+
+            int firstStartSide = Cross(secondStart, secondEnd, firstStart).Sign;
+            int firstEndSide = Cross(secondStart, secondEnd, firstEnd).Sign;
+            return firstStartSide * firstEndSide < 0;
+        }
+
+        /// <summary>
+        /// 點是否嚴格落在凸多邊形內部（落在邊上不算）。繞向不拘，CCW 與 CW 都吃。
+        /// polygonScale 讓呼叫端就地把多邊形放大，不必另外配置一份放大後的陣列
+        /// —— Region 的洞包覆檢查要在 ×2 座標系下比對，靠它避免每次判定都配置記憶體。
+        /// </summary>
+        public static bool StrictlyInsideConvexPolygon(IReadOnlyList<ExactVector2> convexPolygon,
+                                                       ExactVector2 point,
+                                                       long polygonScale = 1)
+        {
+            int expectedSide = 0;
+            int vertexCount = convexPolygon.Count;
+            for (int vertexIndex = 0; vertexIndex < vertexCount; vertexIndex++)
+            {
+                ExactVector2 edgeStart = convexPolygon[vertexIndex] * polygonScale;
+                ExactVector2 edgeEnd = convexPolygon[(vertexIndex + 1) % vertexCount] * polygonScale;
+
+                int side = Cross(edgeStart, edgeEnd, point).Sign;
+                if (side == 0) return false;
+                if (expectedSide == 0) expectedSide = side;
+                else if (side != expectedSide) return false;
+            }
+            return expectedSide != 0;
+        }
     }
 }
