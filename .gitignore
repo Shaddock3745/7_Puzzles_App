@@ -104,3 +104,9 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# dotnet 在 Unity 外跑 EditMode 測試用的專案（Tools/DotnetTests）
+# 這個 csproj 是手寫的，不是 Unity 產的，要蓋過上面的 *.csproj
+!/[Tt]ools/DotnetTests/tests.csproj
+/[Tt]ools/**/[Bb]in/
+/[Tt]ools/**/[Oo]bj/
