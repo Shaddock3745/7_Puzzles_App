@@ -1,0 +1,70 @@
+# .gitattributes —— 換行正規化與 LFS 規則
+#
+# 為什麼需要這份：
+#   1. core.autocrlf 是「每台機器自己的設定」，不是 repo 的設定。換裝置時那台
+#      如果設成 false 或 input，整包檔案會顯示「全檔修改」。Unity 的 .unity /
+#      .asset / .meta 都是文字 YAML，這種噪音會蓋掉真正的改動。
+#      這份檔案把規則寫進 repo，就不再受各機器設定影響。
+#   2. 二進位資源要走 LFS。現在專案裡一個都沒有，所以現在導入的遷移成本是 0；
+#      等 P4 加了美術與音效再導入，就要 git lfs migrate 改寫歷史。
+
+# 預設：讓 git 自己判斷是文字還是二進位，文字一律以 LF 存進 repo
+* text=auto
+
+# ---------------------------------------------------------------------------
+# 文字檔：明確標記，並強制工作目錄也用 LF
+# （Unity、Visual Studio、dotnet 在 Windows 上讀 LF 都沒問題）
+# ---------------------------------------------------------------------------
+*.cs             text eol=lf diff=csharp
+*.md             text eol=lf
+*.json           text eol=lf
+*.asmdef         text eol=lf
+*.asmref         text eol=lf
+*.csproj         text eol=lf
+*.sln            text eol=lf
+*.slnx           text eol=lf
+*.shader         text eol=lf
+*.hlsl           text eol=lf
+*.cginc          text eol=lf
+*.txt            text eol=lf
+*.gitattributes  text eol=lf
+*.gitignore      text eol=lf
+
+# Unity 的 YAML 資產。ProjectSettings 的 m_SerializationMode: 2（Force Text）
+# 讓這些檔案是純文字，可以 diff——前提是換行不要被亂改
+*.meta           text eol=lf
+*.unity          text eol=lf
+*.prefab         text eol=lf
+*.asset          text eol=lf
+*.mat            text eol=lf
+*.anim           text eol=lf
+*.controller     text eol=lf
+*.physicsMaterial2D text eol=lf
+*.inputactions   text eol=lf
+*.scenetemplate  text eol=lf
+
+# ---------------------------------------------------------------------------
+# 二進位：走 Git LFS
+# 現在專案裡沒有任何一個，規則先放著，之後丟檔進來就自動生效
+# 注意：每台機器都要先跑過一次 `git lfs install`，否則 clone 下來只會拿到
+#       文字指標檔而不是真正的內容
+# ---------------------------------------------------------------------------
+*.png   filter=lfs diff=lfs merge=lfs -text
+*.jpg   filter=lfs diff=lfs merge=lfs -text
+*.jpeg  filter=lfs diff=lfs merge=lfs -text
+*.gif   filter=lfs diff=lfs merge=lfs -text
+*.psd   filter=lfs diff=lfs merge=lfs -text
+*.aseprite filter=lfs diff=lfs merge=lfs -text
+*.ase   filter=lfs diff=lfs merge=lfs -text
+*.tga   filter=lfs diff=lfs merge=lfs -text
+*.tif   filter=lfs diff=lfs merge=lfs -text
+*.ttf   filter=lfs diff=lfs merge=lfs -text
+*.otf   filter=lfs diff=lfs merge=lfs -text
+*.wav   filter=lfs diff=lfs merge=lfs -text
+*.mp3   filter=lfs diff=lfs merge=lfs -text
+*.ogg   filter=lfs diff=lfs merge=lfs -text
+*.mp4   filter=lfs diff=lfs merge=lfs -text
+*.fbx   filter=lfs diff=lfs merge=lfs -text
+*.blend filter=lfs diff=lfs merge=lfs -text
+*.dll   filter=lfs diff=lfs merge=lfs -text
+*.unitypackage filter=lfs diff=lfs merge=lfs -text
