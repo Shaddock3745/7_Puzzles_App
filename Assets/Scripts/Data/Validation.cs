@@ -6,15 +6,24 @@ namespace Tangram.Data
     /// <summary>§5 驗證清單。每次改動後跑。</summary>
     public static class Validation
     {
+        /// <summary>一次驗證的結果。沒有失敗訊息就是全過。</summary>
         public sealed class Report
         {
+            /// <summary>所有失敗訊息，依加入順序。</summary>
             public readonly List<string> Failures = new List<string>();
+
+            /// <summary>是否完全沒有失敗。</summary>
             public bool Ok => Failures.Count == 0;
+
+            /// <param name="message">失敗訊息，要寫清楚哪一項、實際值是多少。</param>
             public void Fail(string message) => Failures.Add(message);
+
+            /// <returns>全過時回 <c>"OK"</c>，否則是換行串起來的所有失敗訊息。</returns>
             public override string ToString() => Ok ? "OK" : string.Join("\n", Failures.ToArray());
         }
 
         /// <summary>座標封閉：5 種原型 × 8 旋轉 × 2 翻轉，全部留在 ℤ[√2] 內。</summary>
+        /// <param name="report">失敗會被加進這份報告，函式本身不回傳。</param>
         public static void CheckCoordinateClosure(Report report)
         {
             foreach (PieceKind kind in Enum.GetValues(typeof(PieceKind)))
@@ -43,6 +52,7 @@ namespace Tangram.Data
         }
 
         /// <summary>節點數必須符合 §0 的表（小三角 4、正方形 4、平行四邊形 6、中三角 7、大三角 11）。</summary>
+        /// <param name="report">失敗會被加進這份報告。</param>
         public static void CheckNodeCounts(Report report)
         {
             var expectedNodeCounts = new Dictionary<PieceKind, int>
@@ -69,6 +79,8 @@ namespace Tangram.Data
         }
 
         /// <summary>面積：所有環有向面積總和 = 32（這裡比較 ×2 的值）。</summary>
+        /// <param name="pieces">要檢查的片。</param>
+        /// <param name="report">失敗會被加進這份報告。</param>
         public static void CheckArea(IReadOnlyList<Placement> pieces, Report report)
         {
             Scalar pieceAreaSum = Scalar.Zero;
@@ -85,6 +97,8 @@ namespace Tangram.Data
         }
 
         /// <summary>無重疊：任兩片內部交集面積 = 0（凸多邊形 → SAT + 精確算術）。</summary>
+        /// <param name="pieces">要檢查的片。</param>
+        /// <param name="report">失敗會被加進這份報告，訊息含是哪兩片。</param>
         public static void CheckNoOverlap(IReadOnlyList<Placement> pieces, Report report)
         {
             if (!Geometry.NoOverlap(pieces, out int firstPiece, out int secondPiece))
@@ -92,12 +106,16 @@ namespace Tangram.Data
         }
 
         /// <summary>連通：union-find，共用至少一點即相連（點接觸算數）。</summary>
+        /// <param name="pieces">要檢查的片。</param>
+        /// <param name="report">失敗會被加進這份報告。</param>
         public static void CheckConnected(IReadOnlyList<Placement> pieces, Report report)
         {
             if (!Geometry.AllConnected(pieces)) report.Fail("七片不連通");
         }
 
         /// <summary>往返：encode → decode → 與原排列一致（允許整體平移，decode 固定把第 0 片放原點）。</summary>
+        /// <param name="pieces">要檢查的片。<b>第 0 片必須是 BFS 的根</b>，比對的平移基準靠它。</param>
+        /// <param name="report">失敗會被加進這份報告。</param>
         public static void CheckRoundTrip(IReadOnlyList<Placement> pieces, Report report)
         {
             Arrangement arrangement;
@@ -125,7 +143,11 @@ namespace Tangram.Data
                 report.Fail($"links 應為 {pieces.Count - 1} 條，實際 {arrangement.Links.Length} 條");
         }
 
-        /// <summary>整套跑一次（§5）。</summary>
+        /// <summary>整套跑一次（§5）。出題器產生的每一組結果都該過這關。</summary>
+        /// <param name="pieces">
+        /// 要檢查的片。傳 null 或空清單時只跑與輸入無關的兩項（座標封閉、節點數）。
+        /// </param>
+        /// <returns>一份報告。<c>report.Ok</c> 為 true 代表全過。</returns>
         public static Report RunAll(IReadOnlyList<Placement> pieces)
         {
             var report = new Report();

@@ -15,6 +15,8 @@ namespace Tangram.Data
     /// <summary>片種與儲存字串的互轉。字串格式由儲存規格 §1 定義，不要自行更動。</summary>
     public static class PieceKindNames
     {
+        /// <param name="kind">片種。</param>
+        /// <returns>存檔用的字串，例如 <c>"LARGE_TRIANGLE"</c>。</returns>
         public static string ToStorageString(PieceKind kind)
         {
             switch (kind)
@@ -27,6 +29,9 @@ namespace Tangram.Data
             }
         }
 
+        /// <param name="text">存檔用的字串。</param>
+        /// <returns>對應的片種。</returns>
+        /// <exception cref="ArgumentException">字串不是五種片種之一。</exception>
         public static PieceKind FromStorageString(string text)
         {
             switch (text)
@@ -54,6 +59,9 @@ namespace Tangram.Data
         public readonly int[] NodeDirections;          // 該節點所在邊的方向（頂點取其後繼邊）
         public readonly Scalar DoubleArea;             // shoelace，面積 ×2
 
+        /// <param name="kind">片種。</param>
+        /// <param name="vertices">原型頂點環，必須是逆時針。</param>
+        /// <exception cref="InvalidOperationException">頂點環是順時針，或有邊不在 45° 網格上。</exception>
         private PiecePrototype(PieceKind kind, ExactVector2[] vertices)
         {
             Kind = kind;
@@ -64,9 +72,17 @@ namespace Tangram.Data
             BuildNodes(vertices, out Nodes, out NodeDirections);
         }
 
+        /// <summary>節點數。小三角 4、正方形 4、平行四邊形 6、中三角 7、大三角 11。</summary>
         public int NodeCount => Nodes.Length;
+
+        /// <summary>邊數（等於頂點數）。</summary>
         public int EdgeCount => Vertices.Length;
 
+        /// <summary>沿頂點環走一圈，每條邊撒出合法偏移的節點。</summary>
+        /// <param name="vertices">原型頂點環。</param>
+        /// <param name="nodes">產生的節點，順序就是節點索引。</param>
+        /// <param name="nodeDirections">與 nodes 同索引，該節點所在邊的方向。</param>
+        /// <exception cref="InvalidOperationException">有邊不在 45° 網格上。</exception>
         private static void BuildNodes(ExactVector2[] vertices,
                                        out ExactVector2[] nodes,
                                        out int[] nodeDirections)
@@ -95,6 +111,11 @@ namespace Tangram.Data
         }
 
         /// <summary>{ 2a + 2b√2 | a,b ∈ ℕ } ∩ [0, 邊長)，由小到大。</summary>
+        /// <param name="edgeLength">邊長。</param>
+        /// <returns>
+        /// 該邊上所有合法偏移，由小到大排序。**含 0、不含邊長本身**
+        /// ——邊長那一點是下一條邊的偏移 0，這樣每個頂點只會被放進去一次。
+        /// </returns>
         public static List<Scalar> LegalOffsets(Scalar edgeLength)
         {
             var offsets = new List<Scalar>();
@@ -114,8 +135,11 @@ namespace Tangram.Data
         private static readonly PiecePrototype[] Prototypes = BuildAllPrototypes();
 
         /// <summary>回傳的是共用單例，裡面的陣列絕對不要改，否則會污染全域。</summary>
+        /// <param name="kind">片種。</param>
+        /// <returns>該片種的原型單例。</returns>
         public static PiecePrototype Get(PieceKind kind) => Prototypes[(int)kind];
 
+        /// <returns>五種原型，索引就是 <see cref="PieceKind"/> 的整數值。</returns>
         private static PiecePrototype[] BuildAllPrototypes()
         {
             var prototypes = new PiecePrototype[5];
@@ -153,7 +177,10 @@ namespace Tangram.Data
             return prototypes;
         }
 
-        /// <summary>一副七巧板的七片（大三角 ×2、小三角 ×2、其餘各 1）。</summary>
+        /// <summary>
+        /// 一副七巧板的七片（大三角 ×2、小三角 ×2、其餘各 1）。
+        /// 這個順序就是 <c>BoardState</c> 七個槽的固定對應。
+        /// </summary>
         public static readonly PieceKind[] TangramSet =
         {
             PieceKind.LargeTriangle, PieceKind.LargeTriangle,

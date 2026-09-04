@@ -197,6 +197,121 @@ namespace Tangram.Core.Tests
         }
 
         [Test]
+        public void 旋轉_循環長度依片種()
+        {
+            Assert.AreEqual(8, SnapSolver.RotationCycleLength(PieceKind.LargeTriangle));
+            Assert.AreEqual(8, SnapSolver.RotationCycleLength(PieceKind.MediumTriangle));
+            Assert.AreEqual(8, SnapSolver.RotationCycleLength(PieceKind.SmallTriangle));
+            Assert.AreEqual(2, SnapSolver.RotationCycleLength(PieceKind.Square));
+            Assert.AreEqual(4, SnapSolver.RotationCycleLength(PieceKind.Parallelogram));
+        }
+
+        // --- P1-7 盒子模式的吸附 ---
+
+        /// <summary>經典大正方形當盒子，原點放在 (0,0)。</summary>
+        private static Region ClassicSquareBox()
+            => Region.FromPuzzle(Puzzle.FromPlacements(Fixtures.ClassicSquare()), ExactVector2.Zero);
+
+        [Test]
+        public void 盒子_輪廓節點可以當錨點_盤面全空時第一片就有候選()
+        {
+            Region box = ClassicSquareBox();
+            ExactVector2 corner = box.Rings[0][0];
+
+            // 盤面完全沒有片，只靠盒子輪廓的節點
+            var withoutBox = SnapSolver.Candidates(
+                PieceKind.SmallTriangle, 0, false, SnapSolver.ToUnityVector2(corner),
+                new Placement[0], FiftyPixelsPerUnit);
+            Assert.AreEqual(0, withoutBox.Count, "沒有錨點來源時不該有候選");
+
+            var withBox = SnapSolver.Candidates(
+                PieceKind.SmallTriangle, 0, false, SnapSolver.ToUnityVector2(corner),
+                new Placement[0], FiftyPixelsPerUnit, false, box.BoundaryNodes);
+            Assert.Greater(withBox.Count, 0, "盒子輪廓的節點該讓第一片就有磁性");
+            Assert.IsTrue(withBox[0].IsBoxAnchor);
+        }
+
+        [Test]
+        public void 盒子_輪廓節點含邊上的細分點而且不重複()
+        {
+            Region box = ClassicSquareBox();
+            ExactVector2[] nodes = box.BoundaryNodes;
+
+            // 大正方形的輪廓是四條長 4√2 的邊，節點一定比四個頂點多
+            Assert.Greater(nodes.Length, 4);
+            CollectionAssert.AllItemsAreUnique(nodes);
+
+            foreach (ExactVector2 node in nodes)
+                Assert.AreEqual(RegionPosition.OnBoundary, box.Classify(node),
+                    $"邊界節點 {node} 應該落在邊界上");
+        }
+
+        [Test]
+        public void 盒子_Candidates只做距離篩選_不管盒內限制()
+        {
+            Region box = ClassicSquareBox();
+            Vector2 finger = SnapSolver.ToUnityVector2(box.Rings[0][0]);
+
+            var candidates = SnapSolver.Candidates(
+                PieceKind.LargeTriangle, 0, false, finger,
+                new Placement[0], FiftyPixelsPerUnit, false, box.BoundaryNodes);
+
+            bool anyOutside = false;
+            foreach (SnapSolver.Candidate candidate in candidates)
+                if (!box.Contains(candidate.Placement)) anyOutside = true;
+
+            Assert.IsTrue(anyOutside,
+                "Candidates 不該過濾盒內限制——出盒的候選要留給 Resolve 的迴圈懶惰檢查");
+        }
+
+        [Test]
+        public void 盒子_Resolve會跳過出盒的候選()
+        {
+            Region box = ClassicSquareBox();
+            ExactVector2 origin = new ExactVector2(0, 0);
+            Assert.AreEqual(RegionPosition.OnBoundary, box.Classify(origin),
+                "這個測試預設 (0,0) 是盒子的一個角");
+
+            // 大三角 rotation = 4 是往左下開口，放在盒子左下角必定整片戳到盒外
+            Vector2 finger = SnapSolver.ToUnityVector2(origin);
+
+            SnapSolver.DragResult unrestricted = SnapSolver.Resolve(
+                PieceKind.LargeTriangle, 4, false, finger,
+                new Placement[0], FiftyPixelsPerUnit, false, box.BoundaryNodes);
+
+            Assert.IsTrue(unrestricted.Snapped, "不設限時應該吸得到最近的候選");
+            Assert.IsFalse(box.Contains(unrestricted.Placement),
+                "而且那個最近的候選確實在盒外——這樣下面的對照才有意義");
+
+            SnapSolver.DragResult restricted = SnapSolver.Resolve(
+                PieceKind.LargeTriangle, 4, false, finger,
+                new Placement[0], FiftyPixelsPerUnit, false, box.BoundaryNodes,
+                placement => box.Contains(placement));
+
+            if (restricted.Snapped)
+                Assert.IsTrue(box.Contains(restricted.Placement), "吸到的位置一定要在盒內");
+            Assert.AreNotEqual(unrestricted.Placement, restricted.Placement,
+                "加了 isAllowed 之後不該再吸到那個出盒的落點");
+        }
+
+        [Test]
+        public void 盒子_TrySnapToOrigin會擋掉盒外的落點()
+        {
+            Region box = ClassicSquareBox();
+
+            Assert.IsFalse(SnapSolver.TrySnapToOrigin(
+                PieceKind.SmallTriangle, 0, false, new Vector2(100f, 100f),
+                placement => box.Contains(placement), out _),
+                "遠在盒外的落點要被擋下來");
+
+            Assert.IsTrue(SnapSolver.TrySnapToOrigin(
+                PieceKind.SmallTriangle, 0, false, new Vector2(100f, 100f),
+                null, out Placement unrestricted),
+                "不傳判斷式時不做限制");
+            Assert.AreEqual(new ExactVector2(100, 100), unrestricted.Translation);
+        }
+
+        [Test]
         public void 輸入來源_盤面變動會發事件()
         {
             var source = new ScriptedInputSource();

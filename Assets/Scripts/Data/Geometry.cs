@@ -7,6 +7,11 @@ namespace Tangram.Data
     public static class Geometry
     {
         /// <summary>shoelace，回傳面積 ×2。正 = CCW（外環），負 = CW（洞）。</summary>
+        /// <param name="polygon">頂點環，起點不用重複放在結尾。</param>
+        /// <returns>
+        /// 有向面積的兩倍。回傳 ×2 是為了避免除法——ℤ[√2] 沒有除法，
+        /// 而所有面積比較（例如「總和是不是 32」）用兩倍值一樣成立。
+        /// </returns>
         public static Scalar SignedDoubleArea(IReadOnlyList<ExactVector2> polygon)
         {
             Scalar accumulated = Scalar.Zero;
@@ -24,12 +29,19 @@ namespace Tangram.Data
         /// 凸多邊形的嚴格重疊判定（SAT，精確算術）。
         /// 距離 0 算「分離」，只有內部交集 &gt; 0 才算重疊 —— 否則邊接觸與點接觸全誤判（§6 陷阱）。
         /// </summary>
+        /// <param name="first">第一個凸多邊形的頂點環。</param>
+        /// <param name="second">第二個凸多邊形的頂點環。</param>
+        /// <returns>兩者的**內部**是否有交集。邊貼合與點接觸都回 false。</returns>
         public static bool ConvexOverlap(IReadOnlyList<ExactVector2> first,
                                          IReadOnlyList<ExactVector2> second)
         {
             return !HasSeparatingAxis(first, second) && !HasSeparatingAxis(second, first);
         }
 
+        /// <summary>拿 axisOwner 的每條邊的法線當分離軸試一次。</summary>
+        /// <param name="axisOwner">提供分離軸的多邊形。</param>
+        /// <param name="other">另一個多邊形。</param>
+        /// <returns>是否找得到一條分離軸。找得到就代表兩者不重疊。</returns>
         private static bool HasSeparatingAxis(IReadOnlyList<ExactVector2> axisOwner,
                                               IReadOnlyList<ExactVector2> other)
         {
@@ -50,6 +62,11 @@ namespace Tangram.Data
             return false;
         }
 
+        /// <summary>把多邊形投影到一條軸上，取投影區間。軸不需要正規化。</summary>
+        /// <param name="polygon">要投影的多邊形。</param>
+        /// <param name="axis">投影軸（方向向量，長度無所謂）。</param>
+        /// <param name="minimum">投影區間的下界。</param>
+        /// <param name="maximum">投影區間的上界。</param>
         private static void Project(IReadOnlyList<ExactVector2> polygon, ExactVector2 axis,
                                     out Scalar minimum, out Scalar maximum)
         {
@@ -63,6 +80,14 @@ namespace Tangram.Data
         }
 
         /// <summary>指定點是否嚴格落在線段內部（共線且不含端點）。</summary>
+        /// <param name="segmentStart">線段起點。</param>
+        /// <param name="segmentEnd">線段終點。</param>
+        /// <param name="point">要測試的點。</param>
+        /// <returns>
+        /// 點是否落在線段內部。端點回 false。
+        /// 前提是線段落在 45° 網格上（走 <see cref="Symmetry.TryDecompose"/>）；
+        /// 不確定的話用 <see cref="IsOnSegment"/>。
+        /// </returns>
         public static bool StrictlyOnSegment(ExactVector2 segmentStart, ExactVector2 segmentEnd,
                                              ExactVector2 point)
         {
@@ -77,6 +102,11 @@ namespace Tangram.Data
         }
 
         /// <summary>union-find：共用至少一個節點即相連（點接觸算數，§5）。</summary>
+        /// <param name="pieces">要檢查的片。</param>
+        /// <returns>
+        /// 是否全部連成一塊。0 或 1 片一律回 true。
+        /// 盒子模式的過關判定不需要它（填滿連通的盒子必然連通），出題器仍會用到。
+        /// </returns>
         public static bool AllConnected(IReadOnlyList<Placement> pieces)
         {
             int pieceCount = pieces.Count;
@@ -86,6 +116,7 @@ namespace Tangram.Data
             var parents = new int[pieceCount];
             for (int pieceIndex = 0; pieceIndex < pieceCount; pieceIndex++) parents[pieceIndex] = pieceIndex;
 
+            // 找根，順便做路徑壓縮
             int FindRoot(int pieceIndex)
             {
                 while (parents[pieceIndex] != pieceIndex)
@@ -121,6 +152,10 @@ namespace Tangram.Data
         }
 
         /// <summary>任兩片是否都不重疊（內部交集面積 = 0）。</summary>
+        /// <param name="pieces">要檢查的片。</param>
+        /// <param name="firstOverlappingPiece">找到重疊時是第一片的索引，否則 −1。</param>
+        /// <param name="secondOverlappingPiece">找到重疊時是第二片的索引，否則 −1。</param>
+        /// <returns>全部都不重疊回 true。找到第一組重疊就回 false 並回報是哪兩片。</returns>
         public static bool NoOverlap(IReadOnlyList<Placement> pieces,
                                      out int firstOverlappingPiece, out int secondOverlappingPiece)
         {
@@ -150,6 +185,10 @@ namespace Tangram.Data
         /// 以 origin 為原點的二維外積：(first − origin) × (second − origin)。
         /// 正 = second 在 origin→first 的左側，零 = 三點共線。
         /// </summary>
+        /// <param name="origin">當原點的那個點。</param>
+        /// <param name="first">第一個方向的端點。</param>
+        /// <param name="second">第二個方向的端點。</param>
+        /// <returns>外積值。通常只看 <c>.Sign</c>。</returns>
         public static Scalar Cross(ExactVector2 origin, ExactVector2 first, ExactVector2 second)
             => ExactVector2.Cross(first - origin, second - origin);
 
@@ -158,6 +197,10 @@ namespace Tangram.Data
         /// 與 StrictlyOnSegment 的差別：這裡含端點，而且不預設線段落在 45° 網格上
         /// （走叉積 + 內積，不經過 Symmetry.TryDecompose）。
         /// </summary>
+        /// <param name="segmentStart">線段起點。</param>
+        /// <param name="segmentEnd">線段終點。</param>
+        /// <param name="point">要測試的點。</param>
+        /// <returns>點是否在線段上（含端點）。</returns>
         public static bool IsOnSegment(ExactVector2 segmentStart, ExactVector2 segmentEnd,
                                        ExactVector2 point)
         {
@@ -180,6 +223,11 @@ namespace Tangram.Data
         /// 附帶保證：沒有真交叉時，兩條線段的所有接觸點都是某一方的端點，
         /// 所以是現成的 ℤ[√2] 座標 —— Region 的區間中點掃描靠這件事才不需要分數運算。
         /// </summary>
+        /// <param name="firstStart">第一條線段的起點。</param>
+        /// <param name="firstEnd">第一條線段的終點。</param>
+        /// <param name="secondStart">第二條線段的起點。</param>
+        /// <param name="secondEnd">第二條線段的終點。</param>
+        /// <returns>是否真交叉。端點接觸、T 字接觸、共線重疊都回 false。</returns>
         public static bool SegmentsProperlyCross(ExactVector2 firstStart, ExactVector2 firstEnd,
                                                  ExactVector2 secondStart, ExactVector2 secondEnd)
         {
@@ -197,6 +245,10 @@ namespace Tangram.Data
         /// polygonScale 讓呼叫端就地把多邊形放大，不必另外配置一份放大後的陣列
         /// —— Region 的洞包覆檢查要在 ×2 座標系下比對，靠它避免每次判定都配置記憶體。
         /// </summary>
+        /// <param name="convexPolygon">凸多邊形的頂點環。</param>
+        /// <param name="point">要測試的點，座標已經是縮放後的座標系。</param>
+        /// <param name="polygonScale">先把多邊形的每個頂點乘上這個倍率再比。預設 1 就是不縮放。</param>
+        /// <returns>點是否嚴格在內部。落在邊上或頂點上回 false。</returns>
         public static bool StrictlyInsideConvexPolygon(IReadOnlyList<ExactVector2> convexPolygon,
                                                        ExactVector2 point,
                                                        long polygonScale = 1)

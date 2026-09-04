@@ -19,6 +19,10 @@ namespace Tangram.Data
             public readonly int Direction;
             public readonly Scalar Length;
 
+            /// <param name="start">有向小段的起點。</param>
+            /// <param name="end">有向小段的終點。</param>
+            /// <param name="direction">0~7 的方向。</param>
+            /// <param name="length">這一小段的長度。</param>
             public HalfEdge(ExactVector2 start, ExactVector2 end, int direction, Scalar length)
             {
                 Start = start;
@@ -28,6 +32,18 @@ namespace Tangram.Data
             }
         }
 
+        /// <summary>從一組不重疊的片算出它們聯集的外框。</summary>
+        /// <param name="pieces">
+        /// 要追輪廓的片。<b>前提是彼此不重疊</b>——有重疊時行為未定義，
+        /// 呼叫前該先過 <see cref="Geometry.NoOverlap"/>。
+        /// </param>
+        /// <returns>
+        /// 所有封閉環，外環與洞環混在一起、順序不保證（取決於哪條未使用的半邊索引最小）。
+        /// 要分辨用 <see cref="Walk.IsOuter"/>。共線段已經合併，但捏點會被保留。
+        /// </returns>
+        /// <exception cref="InvalidOperationException">
+        /// 有邊不在 45° 網格上，或追環中斷（邊界不封閉，通常代表輸入有重疊）。
+        /// </exception>
         public static List<Walk> Trace(IReadOnlyList<Placement> pieces)
         {
             var polygons = new List<ExactVector2[]>(pieces.Count);
@@ -118,6 +134,15 @@ namespace Tangram.Data
         /// 頂點分岔規則（點接觸靠這條）：以某個方向抵達頂點，取其反向為起點，
         /// 順時針掃描該頂點的出邊，取第一個找到的 —— 等價於「取可行的最大左轉」。
         /// </summary>
+        /// <param name="boundaryEdges">全部的邊界半邊。</param>
+        /// <param name="outgoingEdgesByVertex">頂點 → 從它出發的半邊索引清單。</param>
+        /// <param name="isUsed">與 boundaryEdges 同索引，標記哪些已經被走過。</param>
+        /// <param name="vertex">目前站在哪個頂點。</param>
+        /// <param name="arrivalDirection">是以哪個方向走到這個頂點的。</param>
+        /// <returns>
+        /// 下一條要走的半邊索引。這個頂點沒有可用的出邊時回 −1
+        /// （代表邊界不封閉，呼叫端會丟例外）。
+        /// </returns>
         private static int NextBoundaryEdge(List<HalfEdge> boundaryEdges,
                                             Dictionary<ExactVector2, List<int>> outgoingEdgesByVertex,
                                             bool[] isUsed,
@@ -141,6 +166,10 @@ namespace Tangram.Data
         /// 共線邊合併：只在該頂點邊界度數 = 2 時合併。
         /// 捏點度數是 4，合併會毀掉拓樸（§6 陷阱）。
         /// </summary>
+        /// <param name="boundaryEdges">全部的邊界半邊。</param>
+        /// <param name="boundaryDegree">頂點 → 有幾條邊界小段碰到它。一般頂點 2、捏點 4。</param>
+        /// <param name="ring">這一圈的半邊索引，依走訪順序。</param>
+        /// <returns>合併共線段之後的封閉環，anchor 是某個轉角（不會是被合併掉的中繼點）。</returns>
         private static Walk BuildWalk(List<HalfEdge> boundaryEdges,
                                       Dictionary<ExactVector2, int> boundaryDegree,
                                       List<int> ring)
@@ -188,6 +217,14 @@ namespace Tangram.Data
         }
 
         /// <summary>把一條邊在所有落在它內部的切點處切開。</summary>
+        /// <param name="edgeStart">邊的起點。</param>
+        /// <param name="edgeEnd">邊的終點。</param>
+        /// <param name="cutPoints">所有可能的切點（全部片的頂點）。只有落在這條邊內部的會生效。</param>
+        /// <returns>
+        /// 依序 yield 出不可再分的有向小段。沒有切點時就只有一段（原邊本身）。
+        /// 是延遲求值的迭代器，成本是每次呼叫掃一遍整個切點集合。
+        /// </returns>
+        /// <exception cref="InvalidOperationException">邊不在 45° 網格上。</exception>
         private static IEnumerable<HalfEdge> Split(ExactVector2 edgeStart, ExactVector2 edgeEnd,
                                                    HashSet<ExactVector2> cutPoints)
         {
@@ -215,9 +252,15 @@ namespace Tangram.Data
         }
 
         /// <summary>把兩端點依字典序排好，讓 A→B 與 B→A 得到同一個 key。</summary>
+        /// <param name="start">一端。</param>
+        /// <param name="end">另一端。</param>
+        /// <returns>字典序小的在前的端點對，可以直接當 Dictionary 的 key。</returns>
         private static (ExactVector2, ExactVector2) UndirectedKey(ExactVector2 start, ExactVector2 end)
             => start.CompareTo(end) <= 0 ? (start, end) : (end, start);
 
+        /// <summary>把某個 key 的計數加一，沒有的話從 0 開始。</summary>
+        /// <param name="counts">計數表，會被就地修改。</param>
+        /// <param name="key">要加一的 key。</param>
         private static void Increment(Dictionary<ExactVector2, int> counts, ExactVector2 key)
         {
             counts.TryGetValue(key, out int count);

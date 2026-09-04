@@ -11,6 +11,11 @@ namespace Tangram.Data
         /// 這裡用「邊長 4 的方格圖」座標寫（人腦好驗算），最後整體 ×√2 換算成 §0 的單位。
         /// 姿態由 TryMatch 反推，所以只需要寫頂點，不必手算旋轉值。
         /// </summary>
+        /// <returns>
+        /// 七片的絕對擺放，順序是大三角 ×2、中三角、小三角 ×2、正方形、平行四邊形
+        /// ——跟 <see cref="PiecePrototype.TangramSet"/> 一致。每次呼叫都是新陣列。
+        /// </returns>
+        /// <exception cref="InvalidOperationException">頂點座標寫錯，對不上任何原型姿態。</exception>
         public static Placement[] ClassicSquare()
         {
             var pieceOutlines = new (PieceKind kind, (long x, long y)[] vertices)[]
@@ -47,6 +52,13 @@ namespace Tangram.Data
         /// 比對的是頂點「集合」，所以對稱的片會有多組姿態成立，回傳先找到的那個
         /// —— 幾何上完全相同，沒有差別。匯入手繪或既有版面時也用得上。
         /// </summary>
+        /// <param name="kind">要對的片種。</param>
+        /// <param name="targetVertices">目標頂點，順序與繞向都不拘（只比集合）。</param>
+        /// <param name="placement">成功時是對上的擺放；失敗時是 default。</param>
+        /// <returns>
+        /// 是否找得到。頂點數不符、或這組頂點根本不是該片種的形狀時回 false。
+        /// 成本是 8 旋轉 × 2 翻面 × 頂點數，很小。
+        /// </returns>
         public static bool TryMatch(PieceKind kind, IReadOnlyList<ExactVector2> targetVertices,
                                     out Placement placement)
         {

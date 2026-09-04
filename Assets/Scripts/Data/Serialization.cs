@@ -10,6 +10,7 @@ namespace Tangram.Data
     // puzzles       key TEXT PK / walks JSONB / source TEXT
     // arrangements  key TEXT PK / puzzle_key TEXT FK(索引) / pieces JSONB / links JSONB / created_at
 
+    /// <summary><see cref="Scalar"/> 的存檔形狀。</summary>
     [Serializable]
     public class ScalarDto
     {
@@ -17,6 +18,7 @@ namespace Tangram.Data
         public long root2Coefficient;
     }
 
+    /// <summary><see cref="ExactVector2"/> 的存檔形狀。</summary>
     [Serializable]
     public class ExactVector2Dto
     {
@@ -24,6 +26,7 @@ namespace Tangram.Data
         public ScalarDto y;
     }
 
+    /// <summary><see cref="Edge"/> 的存檔形狀。</summary>
     [Serializable]
     public class EdgeDto
     {
@@ -31,6 +34,7 @@ namespace Tangram.Data
         public ScalarDto length;
     }
 
+    /// <summary><see cref="Walk"/> 的存檔形狀。</summary>
     [Serializable]
     public class WalkDto
     {
@@ -38,6 +42,7 @@ namespace Tangram.Data
         public List<EdgeDto> edges;
     }
 
+    /// <summary><see cref="PiecePose"/> 的存檔形狀。</summary>
     [Serializable]
     public class PieceDto
     {
@@ -46,6 +51,7 @@ namespace Tangram.Data
         public bool flipped;
     }
 
+    /// <summary><see cref="Link"/> 的存檔形狀。規格寫的巢狀陣列在這裡攤成四個欄位。</summary>
     [Serializable]
     public class LinkDto
     {
@@ -55,6 +61,7 @@ namespace Tangram.Data
         public int secondNode;
     }
 
+    /// <summary>puzzles 表的一列。</summary>
     [Serializable]
     public class PuzzleDto
     {
@@ -63,6 +70,7 @@ namespace Tangram.Data
         public string source;
     }
 
+    /// <summary>arrangements 表的一列。</summary>
     [Serializable]
     public class ArrangementDto
     {
@@ -73,8 +81,14 @@ namespace Tangram.Data
         public string createdAt;        // ISO-8601 UTC
     }
 
+    /// <summary>
+    /// 模型物件與存檔形狀的互轉，以及 JSON 的進出口。
+    /// 這是模型層唯一 <c>using UnityEngine</c> 的地方；換儲存後端只要改這一支。
+    /// </summary>
     public static class Serialization
     {
+        /// <param name="scalar">模型的精確數值。</param>
+        /// <returns>對應的 DTO。</returns>
         public static ScalarDto ToDto(Scalar scalar)
             => new ScalarDto
             {
@@ -82,15 +96,23 @@ namespace Tangram.Data
                 root2Coefficient = scalar.Root2Coefficient
             };
 
+        /// <param name="dto">存檔形狀。</param>
+        /// <returns>對應的 Scalar。</returns>
         public static Scalar ToScalar(ScalarDto dto)
             => new Scalar(dto.rationalPart, dto.root2Coefficient);
 
+        /// <param name="vector">模型的精確向量。</param>
+        /// <returns>對應的 DTO。</returns>
         public static ExactVector2Dto ToDto(ExactVector2 vector)
             => new ExactVector2Dto { x = ToDto(vector.X), y = ToDto(vector.Y) };
 
+        /// <param name="dto">存檔形狀。</param>
+        /// <returns>對應的向量。</returns>
         public static ExactVector2 ToExactVector2(ExactVector2Dto dto)
             => new ExactVector2(ToScalar(dto.x), ToScalar(dto.y));
 
+        /// <param name="puzzle">要存的題目。</param>
+        /// <returns>對應的 DTO，key 原樣帶過去，不重算。</returns>
         public static PuzzleDto ToDto(Puzzle puzzle)
         {
             var dto = new PuzzleDto
@@ -111,6 +133,11 @@ namespace Tangram.Data
         }
 
         /// <summary>注意：不重算 key，相信檔案裡存的那一個。</summary>
+        /// <param name="dto">存檔形狀。</param>
+        /// <returns>
+        /// 還原的題目。<c>source</c> 不是 <c>"user_drawn"</c> 時一律當成 generated。
+        /// 載入外部來源的資料時，保險做法是自己再重算一次 key 比對。
+        /// </returns>
         public static Puzzle FromDto(PuzzleDto dto)
         {
             var walks = new List<Walk>();
@@ -127,6 +154,9 @@ namespace Tangram.Data
                 dto.source == "user_drawn" ? PuzzleSource.UserDrawn : PuzzleSource.Generated);
         }
 
+        /// <param name="arrangement">要存的解。</param>
+        /// <param name="createdAtUtc">建立時間，傳 null 就用現在的 UTC 時間。</param>
+        /// <returns>對應的 DTO，兩個 key 都原樣帶過去，不重算。</returns>
         public static ArrangementDto ToDto(Arrangement arrangement, DateTime? createdAtUtc = null)
         {
             var dto = new ArrangementDto
@@ -159,6 +189,9 @@ namespace Tangram.Data
         }
 
         /// <summary>注意：不重算 key，相信檔案裡存的那一個。</summary>
+        /// <param name="dto">存檔形狀。</param>
+        /// <returns>還原的解。要驗證合不合法就再呼叫 <see cref="Arrangement.Decode"/>。</returns>
+        /// <exception cref="ArgumentException">pieces 裡有不認得的片種字串。</exception>
         public static Arrangement FromDto(ArrangementDto dto)
         {
             var poses = new PiecePose[dto.pieces.Count];
@@ -179,15 +212,25 @@ namespace Tangram.Data
             return new Arrangement(poses, links, dto.key, dto.puzzleKey);
         }
 
+        /// <param name="puzzle">要序列化的題目。</param>
+        /// <param name="pretty">是否輸出有縮排的格式。</param>
+        /// <returns>JSON 字串。</returns>
         public static string ToJson(Puzzle puzzle, bool pretty = false)
             => JsonUtility.ToJson(ToDto(puzzle), pretty);
 
+        /// <param name="arrangement">要序列化的解。</param>
+        /// <param name="pretty">是否輸出有縮排的格式。</param>
+        /// <returns>JSON 字串。</returns>
         public static string ToJson(Arrangement arrangement, bool pretty = false)
             => JsonUtility.ToJson(ToDto(arrangement), pretty);
 
+        /// <param name="json">JSON 字串。</param>
+        /// <returns>還原的題目。</returns>
         public static Puzzle PuzzleFromJson(string json)
             => FromDto(JsonUtility.FromJson<PuzzleDto>(json));
 
+        /// <param name="json">JSON 字串。</param>
+        /// <returns>還原的解。</returns>
         public static Arrangement ArrangementFromJson(string json)
             => FromDto(JsonUtility.FromJson<ArrangementDto>(json));
     }
