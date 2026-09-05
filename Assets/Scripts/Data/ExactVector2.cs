@@ -1,4 +1,5 @@
 using System;
+using UnityEngine;
 
 namespace Tangram.Data
 {
@@ -95,5 +96,17 @@ namespace Tangram.Data
         /// <returns>兩個分量都乘上倍率的向量。</returns>
         public static ExactVector2 operator *(ExactVector2 value, long multiplier)
             => new ExactVector2(value.X * multiplier, value.Y * multiplier);
+
+        /// <summary>
+        /// 轉成浮點向量，給繪圖與碰撞盒用。
+        ///
+        /// 模型:世界 = 1:1（互動設計 §2.1），所以這裡沒有縮放係數，純粹只是型別轉換。
+        ///
+        /// ⚠️ 這是**單向出口**：轉出去就回不來了。浮點值要重新變成精確座標，
+        /// 唯一的路是丟給 <c>SnapSolver</c>（鐵則一：浮點永遠不進模型）。
+        /// 不要拿轉出去的值做任何相等或距離的判斷再轉回來。
+        /// </summary>
+        /// <returns>兩個分量各自取近似值之後組成的浮點向量。</returns>
+        public Vector2 ToVector2() => new Vector2((float)X.ToDouble(), (float)Y.ToDouble());
     }
 }

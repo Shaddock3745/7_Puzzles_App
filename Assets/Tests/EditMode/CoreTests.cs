@@ -320,5 +320,72 @@ namespace Tangram.Core.Tests
             source.LoadPlacements(Fixtures.ClassicSquare());
             Assert.Greater(fired, 0);
         }
+
+        [Test]
+        public void 頂點快取_沒翻面時就是原型頂點()
+        {
+            foreach (PieceKind kind in System.Enum.GetValues(typeof(PieceKind)))
+            {
+                ExactVector2[] prototypeVertices = PiecePrototype.Get(kind).Vertices;
+                Vector2[] cached = PieceVertexCache.LocalVertices(kind, false);
+
+                Assert.AreEqual(prototypeVertices.Length, cached.Length, $"{kind} 頂點數不符");
+                for (int i = 0; i < prototypeVertices.Length; i++)
+                {
+                    Assert.AreEqual(prototypeVertices[i].ToVector2().x, cached[i].x, 1e-5f);
+                    Assert.AreEqual(prototypeVertices[i].ToVector2().y, cached[i].y, 1e-5f);
+                }
+            }
+        }
+
+        [Test]
+        public void 頂點快取_翻面是y取負而且繞向仍是CCW()
+        {
+            foreach (PieceKind kind in System.Enum.GetValues(typeof(PieceKind)))
+            {
+                ExactVector2[] prototypeVertices = PiecePrototype.Get(kind).Vertices;
+                Vector2[] flipped = PieceVertexCache.LocalVertices(kind, true);
+                int vertexCount = prototypeVertices.Length;
+
+                // 鏡射的同時反轉順序，所以 flipped[i] 對應 prototype[n−1−i]
+                for (int i = 0; i < vertexCount; i++)
+                {
+                    Vector2 expected = Symmetry
+                        .MirrorAcrossXAxis(prototypeVertices[vertexCount - 1 - i])
+                        .ToVector2();
+                    Assert.AreEqual(expected.x, flipped[i].x, 1e-5f, $"{kind} 第 {i} 點的 x");
+                    Assert.AreEqual(expected.y, flipped[i].y, 1e-5f, $"{kind} 第 {i} 點的 y");
+                }
+
+                // shoelace 為正 = 逆時針。反轉順序就是為了保住這件事
+                float doubleArea = 0f;
+                for (int i = 0; i < vertexCount; i++)
+                {
+                    Vector2 current = flipped[i];
+                    Vector2 next = flipped[(i + 1) % vertexCount];
+                    doubleArea += current.x * next.y - next.x * current.y;
+                }
+                Assert.Greater(doubleArea, 0f, $"{kind} 翻面後繞向不是 CCW");
+            }
+        }
+
+        [Test]
+        public void 頂點快取_回傳副本_改了不會污染下一次()
+        {
+            Vector2[] first = PieceVertexCache.LocalVertices(PieceKind.Square, false);
+            first[0] = new Vector2(999f, 999f);
+
+            Vector2[] second = PieceVertexCache.LocalVertices(PieceKind.Square, false);
+            Assert.AreNotEqual(999f, second[0].x, "回傳的必須是副本，不能是共用的那份");
+        }
+
+        [Test]
+        public void 頂點快取_沒有污染原型單例()
+        {
+            // 建表時讀過共用單例，讀完之後原型必須原封不動（翻面是產生新陣列，不是就地改）
+            ExactVector2[] vertices = PiecePrototype.Get(PieceKind.Parallelogram).Vertices;
+            Assert.AreEqual(1, Geometry.SignedDoubleArea(vertices).Sign,
+                "原型仍必須是 CCW——被就地鏡射過的話這裡會變成負的");
+        }
     }
 }

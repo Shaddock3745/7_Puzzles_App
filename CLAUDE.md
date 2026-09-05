@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 > 給 Claude 看的專案交接文件。新 session／換裝置時先讀這份。
-> 最後更新：2026-09-03
+> 最後更新：2026-09-04
 
 ---
 
@@ -16,7 +16,7 @@ Unity 6000.3.7f1 的**七巧板拼圖遊戲**，參加 2026 大專校院資訊�
 | 檔案 | 是什麼 | 權威性 |
 |---|---|---|
 | `七巧板儲存規格.md` | **模型層的權威來源**（使用者寫的，已用程式驗證過） | 最高 |
-| `互動設計.md` | **互動層的權威來源**（盒子模式，2026-09-03 review 定案） | 最高 |
+| `互動設計.md` | **互動層的權威來源**（盒子模式；§2 座標與版面層、§13 片的顯示層 2026-09-04 定案） | 最高 |
 | `企劃書_七巧板拼圖遊戲.md` | 競賽企劃書 | 商業面權威，技術細節已過時（見下） |
 | `程式說明書.md` | 現有程式逐支說明、API、陷阱、效能備忘 | 描述現況，不是規格 |
 | `開發進度.md` | P0～P4 工作細項、完成定義、待決事項 | 工作清單 |
@@ -64,8 +64,8 @@ Unity 6000.3.7f1 的**七巧板拼圖遊戲**，參加 2026 大專校院資訊�
 | | |
 |---|---|
 | 階段 | **P0 完成；P1 進行中（13 項完成 2 項：P1-4、P1-7）** |
-| 程式 | `Assets/Scripts/Data` 15 支、`Assets/Scripts/Core` 4 支 |
-| 測試 | 59 個全過（`Assets/Tests/EditMode`） |
+| 程式 | `Assets/Scripts/Data` 15 支、`Assets/Scripts/Core` 5 支 |
+| 測試 | 63 個全過（`Assets/Tests/EditMode`） |
 | 看板 | GitHub Projects：`P0_Skeleton` 與 `P1_Prototype`（<https://github.com/users/Shaddock3745/projects/1>、`/2`），repo `Shaddock3745/7_Puzzles_App`。P1-1 ～ P1-9 = issue #9 ～ #17 |
 
 ### 2026-09-03：P1-4 完成（區域判定）
@@ -126,6 +126,27 @@ Resolve(..., currentlySnapped, boxRegion.BoundaryNodes,
 
 **§2.8 有四個待決還沒拍板**，P1-1 開工前要先定。
 
+### 2026-09-04：片的顯示層設計定案（P1-2，還沒實作）
+
+完整規格在 `互動設計.md` §13。骨架：
+
+**本體是 Sprite**（五張圖），不是原本規劃的程序生成多邊形。描邊不另外畫——
+圖本身內縮一點加小圓角，縫隙就是邊。**顏色按槽索引七色**（兩片大三角不同色），形狀按片種五張圖。
+
+**片記住**：片種、槽索引、旋轉格數(int)、翻面(bool)、吸住了沒、正在被拖。
+**片刻意不記**：`Placement`（`BoardState` 已經存了）、位置（就是 `transform.position`）。
+
+分界的理由要記住：**旋轉不能放 transform，位置可以**。
+正方形 rotation 0 與 2 的 transform 完全相同——兩個模型狀態產生同一個 transform，
+資訊被銷毀，反推不回來。位置則是浮點寫進去讀出來沒損失（前提：不掛在有旋轉或縮放的父物件下）。
+
+**兩個 Unity 陷阱**：翻面用 `SpriteRenderer` 的**垂直**翻轉（模型的翻面是 y 取負），
+**不要用負縮放**；Sprite 匯入設定的 Pixels Per Unit 跟我們的 `ScreenPixelsPerModelUnit`
+**同名但完全不同**，前者是紋理像素→世界單位（固定），後者是模型單位→螢幕像素（每題變）。
+
+已交付的程式：`PieceVertexCache.cs`（十份浮點頂點）、`ExactVector2.ToVector2()`。
+`PieceView` 本身還沒寫（使用者自己寫）。
+
 ### 2026-09-03：全專案函式文件化
 
 18 支程式檔全部有 XML doc（`<param>` / `<returns>`）。IDE 提示視窗會顯示，
@@ -182,7 +203,8 @@ dotnet test Tools/DotnetTests
 |---|---|
 | **`Placement.Equals` 是姿態相等，不是形狀相等** | 正方形 `Rotation = 0` 與 `= 2` 佔位一模一樣但不相等。要問「是不是同一件事」用 `Canonical`；要比幾何位置比頂點集合 |
 | **`PiecePrototype.Get()` 回傳共用單例** | 裡面的陣列改下去會污染全域 |
-| **`Placement.Vertices()` 在 flip 時反轉頂點順序** | 所以翻面的片 `Vertices()[0] != ToWorld(Prototype.Vertices[0])`。`Nodes()` 刻意不反轉（節點索引是儲存契約）。**P1-2 做 mesh 時三角化要能吃兩種繞向**，否則平行四邊形翻面會因背面剔除整片消失 |
+| **`Placement.Vertices()` 在 flip 時反轉寫入順序** | 目的是**把繞向正規化回 CCW**，所以輸出**永遠是 CCW**（測試 `翻轉後繞向重新正規化` 釘住，五種片 × 8 旋轉 × 翻面全驗）。代價是索引對應會變：翻面時 `Vertices()[i] == ToWorld(Prototype.Vertices[n−1−i])`，所以 `Vertices()[0] != ToWorld(Prototype.Vertices[0])`。`Nodes()` 刻意不做這個反轉（節點索引是儲存契約） |
+| **背面剔除吃掉翻面的平行四邊形** | ⚠️ 這個坑**跟 `Vertices()` 無關**（它永遠 CCW，三角化不用吃兩種繞向）。真正的來源是用 `transform.localScale.y = -1` 做翻面——負縮放會反轉繞向，背面剔除就整片消失。要嘛不用負縮放（重新產生 mesh），要嘛材質設 `Cull Off` |
 | **`Scalar.MultiplyByHalfRoot2()` 的偶數 assert 不要拿掉** | 45° 旋轉的封閉性檢查 |
 | **SAT 中距離 0 算「分離」** | 只有內部交集才算重疊，否則邊貼合與點接觸全誤判 |
 | **共線邊只在邊界度數 = 2 時合併** | 捏點度數是 4，合併會毀掉拓樸 |
@@ -192,13 +214,16 @@ dotnet test Tools/DotnetTests
 | **`Region.ContainsPolygon` 只管出界，不管重疊** | 合法擺放要它與 `Geometry.ConvexOverlap` 兩個都過 |
 | **`Region` 內部有兩套座標系** | 原座標與 ×2。中點只在 ×2 那邊算，混用會差一個 2 倍而且不報錯 |
 | **專案只開了新 Input System** | `ProjectSettings` 的 `activeInputHandler: 1`。`Input.mousePosition`、`Input.GetMouseButton` 這些舊 API 在 runtime 會直接丟例外。P1-6 要用 `UnityEngine.InputSystem` 的 `Pointer.current` / `Touchscreen.current` |
+| **`transform` 不能存旋轉** | 正方形 `rotation = 0` 與 `= 2` 的 transform **完全相同**，反推不回來。旋轉一定要有自己的 int 欄位，transform 只是輸出。位置反過來可以放 transform（浮點 round-trip 無損），前提是不掛在有旋轉或縮放的父物件下 |
+| **模型的翻面是垂直翻，不是水平** | `Symmetry.MirrorAcrossXAxis` 是 (x, y) → (x, −y)。所以 Sprite 要用 `flipY` 不是 `flipX` |
+| **兩個 pixels per unit 撞名** | Sprite 匯入設定的 **Pixels Per Unit** = 紋理像素 → 世界單位（固定的資產設定）；`SnapSolver.Settings.ScreenPixelsPerModelUnit` = 模型單位 → 螢幕像素（相機 fit 算出來，**每題都變**）。搞混不會報錯，只會手感很怪 |
 
 ---
 
 ## 環境限制
 
 - **`gh` CLI 沒安裝** → 不能幫使用者開 issue／PR，只能給文字讓他自己貼
-- **Git Bash 裡沒有 `python`** → 要寫腳本用 PowerShell 或 Node
+- **Git Bash 裡沒有 `python`，也沒有 `node`** → 要寫腳本只能用 PowerShell；改檔案優先用 Edit/Write 工具（CJK 內容用 heredoc 有編碼風險）
 - **PowerShell 是 5.1** → 沒有 `&&`、`??`、三元運算子；`ConvertFrom-Json` 回 PSCustomObject
 - **CJK 檔名在 Git Bash 的 `ls` / `find` 可能查不到** → 用 PowerShell 的 `Get-ChildItem` 確認才準（這個 session 誤判過一次）
 
@@ -239,7 +264,10 @@ XML doc（`<param>` / `<returns>`）與「為什麼這樣寫」的註解一樣�
 - 他**會把程式讀到懂才往下走**（原話：「我習慣是把程式都讀到精再繼續」）。解釋要給實作細節、控制流程、邊界情況，不要只給結論。
 - 他會**從使用者情境回頭 review 架構**，而且會逐點修正。提出設計時要主動把連鎖反應推完整、把風險講白，不要報喜不報憂。
 - **commit / push 要先問**。
-- 文件更新要同步 repo 的 `.md` 與已發布的 artifact（網址不變，重新 publish 同一個檔案路徑即可）。
+- 文件更新只要改 repo 的 `.md`。**artifact 不用管，也不要問要不要同步**——
+  他會在換裝置或需要的時候自己更新，主動要求時才做（2026-09-04）。
+  真的要更新時：先 `action: "read"` 把線上版讀回來再合併，**不能直接用本地檔案覆蓋**，
+  線上版常常比本地新。網址不變，重新 publish 同一個檔案路徑即可。
 
 ### 已發布的 artifact
 
@@ -255,7 +283,7 @@ XML doc（`<param>` / `<returns>`）與「為什麼這樣寫」的註解一樣�
 
 **完整清單看 `待辦清單.md`**，這裡只列頭三件：
 
-1. **P0-8**：Unity 內編譯 + 跑一次 Test Runner（59 個）。順手修掉 `PieceView.cs` 的檔名／類別不符
+1. **P0-8**：Unity 內編譯 + 跑一次 Test Runner（63 個）。順手修掉 `PieceView.cs` 的檔名／類別不符
 2. **拍板 `互動設計.md` §2.8 的四個待決**，然後做 P1-1（座標層三個角色）
 3. **P1-2、P1-3、P1-6**：片的顯示、盒子顯示、拖曳控制
 

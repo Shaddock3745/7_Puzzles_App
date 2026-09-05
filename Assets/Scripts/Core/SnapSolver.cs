@@ -20,18 +20,24 @@ namespace Tangram.Core
         /// <summary>吸附的手感參數。全部以螢幕像素為單位，才不會因解析度而變。</summary>
         public struct Settings
         {
-            /// <summary>一個模型單位（小三角的股 = 2）對應幾個螢幕像素。</summary>
-            public float PixelsPerUnit;
+            /// <summary>
+            /// 一個模型單位（小三角的股 = 2）對應幾個**螢幕**像素。
+            ///
+            /// ⚠️ 不要跟 Unity **Sprite 匯入設定**的 Pixels Per Unit 搞混，兩者完全不同：
+            /// 那個是「紋理像素 → 世界單位」，是固定的資產設定；
+            /// 這個是「模型單位 → 螢幕像素」，由相機的 fit 算出來，**每一題都會變**。
+            /// </summary>
+            public float ScreenPixelsPerModelUnit;
             /// <summary>吸附半徑（螢幕像素，約 18）。</summary>
             public float SnapRadiusPixels;
             /// <summary>脫離半徑（螢幕像素，約 30）。遲滯：吸上去容易，甩開來難。</summary>
             public float ReleaseRadiusPixels;
 
-            /// <param name="pixelsPerUnit">一個模型單位對應幾個螢幕像素。</param>
+            /// <param name="screenPixelsPerModelUnit">一個模型單位對應幾個螢幕像素。</param>
             /// <returns>吸附 18px、脫離 30px 的預設設定。</returns>
-            public static Settings Default(float pixelsPerUnit) => new Settings
+            public static Settings Default(float screenPixelsPerModelUnit) => new Settings
             {
-                PixelsPerUnit = pixelsPerUnit,
+                ScreenPixelsPerModelUnit = screenPixelsPerModelUnit,
                 SnapRadiusPixels = 18f,
                 ReleaseRadiusPixels = 30f
             };
@@ -174,7 +180,7 @@ namespace Tangram.Core
         {
             // 遲滯就是這一行：還沒吸住要靠很近才吸得上，吸住之後要拉很遠才甩得掉
             float radiusPixels = currentlySnapped ? settings.ReleaseRadiusPixels : settings.SnapRadiusPixels;
-            double maximumDistanceInUnits = radiusPixels / Math.Max(settings.PixelsPerUnit, 1e-6f);
+            double maximumDistanceInUnits = radiusPixels / Math.Max(settings.ScreenPixelsPerModelUnit, 1e-6f);
             double maximumDistanceSquared = maximumDistanceInUnits * maximumDistanceInUnits;
 
             PiecePrototype prototype = PiecePrototype.Get(kind);
@@ -213,7 +219,7 @@ namespace Tangram.Core
 
                         candidates.Add(new Candidate(
                             new Placement(kind, rotation, flipped, candidateTranslation),
-                            (float)(Math.Sqrt(distanceSquared) * settings.PixelsPerUnit),
+                            (float)(Math.Sqrt(distanceSquared) * settings.ScreenPixelsPerModelUnit),
                             sourcePieceIndex, anchorIndex, draggedNodeIndex));
                     }
                 }
