@@ -82,22 +82,22 @@ namespace Tangram.Tests
         }
 
         // ------------------------------------------------------------------
-        // pixelsPerUnit：那個 2 是因為 orthographicSize 是半高
+        // screenPixelsPerModelUnit：那個 2 是因為 orthographicSize 是半高
         // ------------------------------------------------------------------
 
         [Test]
         public void 每單位像素_orthographicSize是半高不是全高()
         {
             // 螢幕高 800、正交半高 4 → 可見的世界高度是 8 → 每單位 100 像素
-            Assert.AreEqual(100f, ViewportMath.PixelsPerUnitFrom(800f, 4f), Tolerance);
+            Assert.AreEqual(100f, ViewportMath.ScreenPixelsPerModelUnitFrom(800f, 4f), Tolerance);
         }
 
         [Test]
         public void 每單位像素_參數不合法時回零而不是無限大()
         {
-            Assert.AreEqual(0f, ViewportMath.PixelsPerUnitFrom(800f, 0f));
-            Assert.AreEqual(0f, ViewportMath.PixelsPerUnitFrom(0f, 4f));
-            Assert.AreEqual(0f, ViewportMath.PixelsPerUnitFrom(-1f, 4f));
+            Assert.AreEqual(0f, ViewportMath.ScreenPixelsPerModelUnitFrom(800f, 0f));
+            Assert.AreEqual(0f, ViewportMath.ScreenPixelsPerModelUnitFrom(0f, 4f));
+            Assert.AreEqual(0f, ViewportMath.ScreenPixelsPerModelUnitFrom(-1f, 4f));
         }
 
         [Test]
@@ -106,9 +106,9 @@ namespace Tangram.Tests
             ViewportSolution solution = ViewportMath.Fit(
                 SquareBox(), LayoutRule.Portrait, allowRoll: true, PhoneWidth, PhoneHeight);
 
-            // orthographicSize 與 pixelsPerUnit 必須是同一件事的兩種說法
-            Assert.AreEqual(solution.PixelsPerUnit,
-                            ViewportMath.PixelsPerUnitFrom(PhoneHeight, solution.OrthographicSize),
+            // orthographicSize 與 screenPixelsPerModelUnit 必須是同一件事的兩種說法
+            Assert.AreEqual(solution.ScreenPixelsPerModelUnit,
+                            ViewportMath.ScreenPixelsPerModelUnitFrom(PhoneHeight, solution.OrthographicSize),
                             Tolerance);
         }
 
@@ -171,8 +171,8 @@ namespace Tangram.Tests
             ViewportSolution solution =
                 ViewportMath.Fit(box, rule, allowRoll: false, PhoneWidth, PhoneHeight);
 
-            float boxWidthOnScreen = box.Width * solution.PixelsPerUnit;
-            float boxHeightOnScreen = box.Height * solution.PixelsPerUnit;
+            float boxWidthOnScreen = box.Width * solution.ScreenPixelsPerModelUnit;
+            float boxHeightOnScreen = box.Height * solution.ScreenPixelsPerModelUnit;
             float areaWidthPixels = PhoneWidth * rule.BoxAreaWidthRatio;
             float areaHeightPixels = PhoneHeight * rule.BoxAreaHeightRatio;
 
@@ -315,7 +315,7 @@ namespace Tangram.Tests
 
             Assert.AreEqual(1, rolled.QuarterTurns);
             Assert.AreEqual(0, notRolled.QuarterTurns);
-            Assert.Greater(rolled.PixelsPerUnit, notRolled.PixelsPerUnit,
+            Assert.Greater(rolled.ScreenPixelsPerModelUnit, notRolled.ScreenPixelsPerModelUnit,
                            "roll 存在的唯一理由就是 fit 後比較大，沒變大就不該轉");
         }
 
@@ -465,7 +465,7 @@ namespace Tangram.Tests
             layout.SetRule(new LayoutRule(0.0f, 0.0f, 1.0f, 1.0f));
             ViewportSolution after = layout.Solve(PhoneWidth, PhoneHeight);
 
-            Assert.AreNotEqual(before.PixelsPerUnit, after.PixelsPerUnit,
+            Assert.AreNotEqual(before.ScreenPixelsPerModelUnit, after.ScreenPixelsPerModelUnit,
                                "改了輸入之後 Solve 必須反映新輸入，不能拿舊係數");
         }
 
@@ -512,7 +512,7 @@ namespace Tangram.Tests
 
             ViewportSolution solution = layout.Solve(PhoneWidth, PhoneHeight);
             Assert.IsTrue(solution.IsValid);
-            Assert.Greater(solution.PixelsPerUnit, 0f);
+            Assert.Greater(solution.ScreenPixelsPerModelUnit, 0f);
 
             // 經典正方形是方的，不需要 roll
             Assert.AreEqual(0, solution.QuarterTurns);

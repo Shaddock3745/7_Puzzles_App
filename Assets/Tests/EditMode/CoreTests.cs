@@ -110,7 +110,7 @@ namespace Tangram.Core.Tests
         // --- 吸附（附錄 B）---
 
         private static readonly Placement BigTriangle = new Placement(PieceKind.LargeTriangle, 0, false, ExactVector2.Zero);
-        private static SnapSolver.Settings FiftyPixelsPerUnit => SnapSolver.Settings.Default(50f);
+        private static SnapSolver.Settings FiftyScreenPixelsPerModelUnit => SnapSolver.Settings.Default(50f);
 
         [Test]
         public void 吸附_接近合法落點時吸上去且座標精確()
@@ -118,7 +118,7 @@ namespace Tangram.Core.Tests
             var placed = new[] { BigTriangle };
             // 正確落點是 T = (0,2)，手指停在差 0.05 單位（= 3.5px）的地方
             SnapSolver.DragResult result = SnapSolver.Resolve(
-                PieceKind.SmallTriangle, 4, false, new Vector2(0.05f, 1.95f), placed, FiftyPixelsPerUnit);
+                PieceKind.SmallTriangle, 4, false, new Vector2(0.05f, 1.95f), placed, FiftyScreenPixelsPerModelUnit);
 
             Assert.IsTrue(result.Snapped);
             Assert.AreEqual(new ExactVector2(0, 2), result.Placement.Translation);
@@ -130,7 +130,7 @@ namespace Tangram.Core.Tests
         {
             var placed = new[] { BigTriangle };
             SnapSolver.DragResult result = SnapSolver.Resolve(
-                PieceKind.SmallTriangle, 4, false, new Vector2(20f, 20f), placed, FiftyPixelsPerUnit);
+                PieceKind.SmallTriangle, 4, false, new Vector2(20f, 20f), placed, FiftyScreenPixelsPerModelUnit);
 
             Assert.IsFalse(result.Snapped);
             Assert.AreEqual(20f, result.FreePosition.x);
@@ -149,8 +149,8 @@ namespace Tangram.Core.Tests
                 return false;
             }
 
-            var looseCandidates = SnapSolver.Candidates(PieceKind.SmallTriangle, 4, false, fingerPosition, placed, FiftyPixelsPerUnit, false);
-            var stickyCandidates = SnapSolver.Candidates(PieceKind.SmallTriangle, 4, false, fingerPosition, placed, FiftyPixelsPerUnit, true);
+            var looseCandidates = SnapSolver.Candidates(PieceKind.SmallTriangle, 4, false, fingerPosition, placed, FiftyScreenPixelsPerModelUnit, false);
+            var stickyCandidates = SnapSolver.Candidates(PieceKind.SmallTriangle, 4, false, fingerPosition, placed, FiftyScreenPixelsPerModelUnit, true);
 
             Assert.IsFalse(ContainsTargetTranslation(looseCandidates), "還沒吸附時 25px 應該吸不到");
             Assert.IsTrue(ContainsTargetTranslation(stickyCandidates), "已經吸附時 25px 應該還黏著");
@@ -162,7 +162,7 @@ namespace Tangram.Core.Tests
             var placed = new[] { BigTriangle };
             // 大三角內部：所有候選都會重疊，應該落空
             SnapSolver.DragResult result = SnapSolver.Resolve(
-                PieceKind.SmallTriangle, 0, false, new Vector2(1f, 1f), placed, FiftyPixelsPerUnit);
+                PieceKind.SmallTriangle, 0, false, new Vector2(1f, 1f), placed, FiftyScreenPixelsPerModelUnit);
             Assert.IsFalse(result.Snapped);
         }
 
@@ -221,12 +221,12 @@ namespace Tangram.Core.Tests
             // 盤面完全沒有片，只靠盒子輪廓的節點
             var withoutBox = SnapSolver.Candidates(
                 PieceKind.SmallTriangle, 0, false, SnapSolver.ToUnityVector2(corner),
-                new Placement[0], FiftyPixelsPerUnit);
+                new Placement[0], FiftyScreenPixelsPerModelUnit);
             Assert.AreEqual(0, withoutBox.Count, "沒有錨點來源時不該有候選");
 
             var withBox = SnapSolver.Candidates(
                 PieceKind.SmallTriangle, 0, false, SnapSolver.ToUnityVector2(corner),
-                new Placement[0], FiftyPixelsPerUnit, false, box.BoundaryNodes);
+                new Placement[0], FiftyScreenPixelsPerModelUnit, false, box.BoundaryNodes);
             Assert.Greater(withBox.Count, 0, "盒子輪廓的節點該讓第一片就有磁性");
             Assert.IsTrue(withBox[0].IsBoxAnchor);
         }
@@ -254,7 +254,7 @@ namespace Tangram.Core.Tests
 
             var candidates = SnapSolver.Candidates(
                 PieceKind.LargeTriangle, 0, false, finger,
-                new Placement[0], FiftyPixelsPerUnit, false, box.BoundaryNodes);
+                new Placement[0], FiftyScreenPixelsPerModelUnit, false, box.BoundaryNodes);
 
             bool anyOutside = false;
             foreach (SnapSolver.Candidate candidate in candidates)
@@ -277,7 +277,7 @@ namespace Tangram.Core.Tests
 
             SnapSolver.DragResult unrestricted = SnapSolver.Resolve(
                 PieceKind.LargeTriangle, 4, false, finger,
-                new Placement[0], FiftyPixelsPerUnit, false, box.BoundaryNodes);
+                new Placement[0], FiftyScreenPixelsPerModelUnit, false, box.BoundaryNodes);
 
             Assert.IsTrue(unrestricted.Snapped, "不設限時應該吸得到最近的候選");
             Assert.IsFalse(box.Contains(unrestricted.Placement),
@@ -285,7 +285,7 @@ namespace Tangram.Core.Tests
 
             SnapSolver.DragResult restricted = SnapSolver.Resolve(
                 PieceKind.LargeTriangle, 4, false, finger,
-                new Placement[0], FiftyPixelsPerUnit, false, box.BoundaryNodes,
+                new Placement[0], FiftyScreenPixelsPerModelUnit, false, box.BoundaryNodes,
                 placement => box.Contains(placement));
 
             if (restricted.Snapped)
@@ -377,6 +377,78 @@ namespace Tangram.Core.Tests
 
             Vector2[] second = PieceVertexCache.LocalVertices(PieceKind.Square, false);
             Assert.AreNotEqual(999f, second[0].x, "回傳的必須是副本，不能是共用的那份");
+        }
+
+        [Test]
+        public void 排序_面積階數是大的在下小的在上()
+        {
+            Assert.AreEqual(0, PieceSorting.SizeRank(PieceKind.LargeTriangle), "大三角最大，階數 0");
+            Assert.AreEqual(2, PieceSorting.SizeRank(PieceKind.SmallTriangle), "小三角最小，階數最大");
+
+            // 中三角、正方形、平行四邊形面積都是 4，階數必須一樣，
+            // 否則同面積的片會被拆到不同層，間距就不夠用了
+            Assert.AreEqual(PieceSorting.SizeRank(PieceKind.MediumTriangle),
+                            PieceSorting.SizeRank(PieceKind.Square));
+            Assert.AreEqual(PieceSorting.SizeRank(PieceKind.MediumTriangle),
+                            PieceSorting.SizeRank(PieceKind.Parallelogram));
+        }
+
+        [Test]
+        public void 排序_拖曳中在未吸附之上_未吸附在已吸附之上()
+        {
+            int dragging = PieceSorting.SortingOrder(PieceKind.LargeTriangle, 0, true, true);
+            int free = PieceSorting.SortingOrder(PieceKind.SmallTriangle, 3, false, false);
+            int snapped = PieceSorting.SortingOrder(PieceKind.SmallTriangle, 3, true, false);
+
+            // 用最大的片當拖曳中、最小的片當未吸附，確認層的優先權蓋過面積
+            Assert.Greater(dragging, free, "拖曳中要壓過所有未吸附的，否則會鑽到別片下面");
+            Assert.Greater(free, snapped, "未吸附的要壓過已吸附的");
+        }
+
+        [Test]
+        public void 排序_同層小片壓在大片上面()
+        {
+            int large = PieceSorting.SortingOrder(PieceKind.LargeTriangle, 0, false, false);
+            int medium = PieceSorting.SortingOrder(PieceKind.MediumTriangle, 2, false, false);
+            int small = PieceSorting.SortingOrder(PieceKind.SmallTriangle, 3, false, false);
+
+            Assert.Greater(small, medium);
+            Assert.Greater(medium, large);
+        }
+
+        [Test]
+        public void 排序_同種片用槽索引破同分()
+        {
+            // 兩片大三角是槽 0 與 1，兩片小三角是槽 3 與 4。
+            // 值相同的話同層兩片繪製順序未定義，畫面會閃爍
+            Assert.AreNotEqual(PieceSorting.SortingOrder(PieceKind.LargeTriangle, 0, false, false),
+                               PieceSorting.SortingOrder(PieceKind.LargeTriangle, 1, false, false));
+            Assert.AreNotEqual(PieceSorting.SortingOrder(PieceKind.SmallTriangle, 3, false, false),
+                               PieceSorting.SortingOrder(PieceKind.SmallTriangle, 4, false, false));
+        }
+
+        [Test]
+        public void 排序_七片任意狀態都不會撞號()
+        {
+            var seen = new HashSet<int>();
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+            {
+                PieceKind kind = PiecePrototype.TangramSet[slotIndex];
+                foreach (bool snapped in new[] { false, true })
+                {
+                    foreach (bool dragged in new[] { false, true })
+                    {
+                        int order = PieceSorting.SortingOrder(kind, slotIndex, snapped, dragged);
+
+                        // 同一片的不同狀態本來就可能同號（拖曳中的層不看吸附與否），
+                        // 這裡要確認的是「同一個狀態組合下七片互不相同」，所以用 (片, 狀態) 當鍵
+                        Assert.IsTrue(seen.Add(order * 4 + (snapped ? 2 : 0) + (dragged ? 1 : 0)),
+                                      $"槽 {slotIndex} 的排序值撞號了");
+                        Assert.GreaterOrEqual(order, PieceSorting.BoxSortingOrder + 1,
+                                              "所有片都要在盒子之上");
+                    }
+                }
+            }
         }
 
         [Test]

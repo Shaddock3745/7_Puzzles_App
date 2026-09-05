@@ -113,7 +113,7 @@ namespace Tangram.Core
         /// <summary>相機 roll，以 90° 為單位，0~3。逆時針為正，跟 Unity 繞 Z 軸旋轉一致。</summary>
         public readonly int QuarterTurns;
         /// <summary>一個模型單位對應幾個螢幕像素。</summary>
-        public readonly float PixelsPerUnit;
+        public readonly float ScreenPixelsPerModelUnit;
         /// <summary>算這顆解時的螢幕寬（像素）。</summary>
         public readonly float ScreenWidth;
         /// <summary>算這顆解時的螢幕高（像素）。</summary>
@@ -122,16 +122,16 @@ namespace Tangram.Core
         /// <param name="cameraCenter">相機中心的世界座標。</param>
         /// <param name="orthographicSize">相機的正交半高。</param>
         /// <param name="quarterTurns">相機 roll，0~3 個 90°。</param>
-        /// <param name="pixelsPerUnit">一個模型單位幾個像素。</param>
+        /// <param name="screenPixelsPerModelUnit">一個模型單位幾個像素。</param>
         /// <param name="screenWidth">螢幕寬（像素）。</param>
         /// <param name="screenHeight">螢幕高（像素）。</param>
         public ViewportSolution(Vector2 cameraCenter, float orthographicSize, int quarterTurns,
-                                float pixelsPerUnit, float screenWidth, float screenHeight)
+                                float screenPixelsPerModelUnit, float screenWidth, float screenHeight)
         {
             CameraCenter = cameraCenter;
             OrthographicSize = orthographicSize;
             QuarterTurns = quarterTurns;
-            PixelsPerUnit = pixelsPerUnit;
+            ScreenPixelsPerModelUnit = screenPixelsPerModelUnit;
             ScreenWidth = screenWidth;
             ScreenHeight = screenHeight;
         }
@@ -141,10 +141,10 @@ namespace Tangram.Core
             => new ViewportSolution(Vector2.zero, 0f, 0, 0f, 0f, 0f);
 
         /// <summary>
-        /// 這顆解能不能用。<c>PixelsPerUnit</c> 是關鍵，因為所有換算都要除以它。
+        /// 這顆解能不能用。<c>ScreenPixelsPerModelUnit</c> 是關鍵，因為所有換算都要除以它。
         /// 螢幕尺寸為 0（初始化中、視窗最小化）或盒子退化時就會是 false。
         /// </summary>
-        public bool IsValid => PixelsPerUnit > 0f && ScreenWidth > 0f && ScreenHeight > 0f;
+        public bool IsValid => ScreenPixelsPerModelUnit > 0f && ScreenWidth > 0f && ScreenHeight > 0f;
 
         /// <summary>相機 roll 的角度，直接餵給 <c>Quaternion.Euler(0, 0, this)</c>。</summary>
         public float RollDegrees => QuarterTurns * 90f;
@@ -201,7 +201,7 @@ namespace Tangram.Core
         /// <param name="screenHeightPixels">螢幕高，像素。</param>
         /// <param name="orthographicSize">相機的正交半高，世界單位。</param>
         /// <returns>每個模型單位的像素數；參數不合法時回 0。</returns>
-        public static float PixelsPerUnitFrom(float screenHeightPixels, float orthographicSize)
+        public static float ScreenPixelsPerModelUnitFrom(float screenHeightPixels, float orthographicSize)
         {
             if (!(screenHeightPixels > 0f) || !(orthographicSize > 0f)) return 0f;
             return screenHeightPixels / (2f * orthographicSize);
@@ -250,19 +250,19 @@ namespace Tangram.Core
 
             bool shouldRoll = allowRoll && scaleWithRoll > scaleWithoutRoll;
             int quarterTurns = shouldRoll ? 1 : 0;
-            float pixelsPerUnit = shouldRoll ? scaleWithRoll : scaleWithoutRoll;
+            float screenPixelsPerModelUnit = shouldRoll ? scaleWithRoll : scaleWithoutRoll;
 
-            if (!(pixelsPerUnit > 0f)) return ViewportSolution.Invalid;
+            if (!(screenPixelsPerModelUnit > 0f)) return ViewportSolution.Invalid;
 
             // orthographicSize 是半高，而且永遠拿「實際的螢幕高」算——roll 不改變這件事，
             // 相機的垂直視野對應的永遠是螢幕的高。roll 的影響上面換過寬高就處理完了
-            float orthographicSize = screenHeight / (2f * pixelsPerUnit);
+            float orthographicSize = screenHeight / (2f * screenPixelsPerModelUnit);
 
             // 目標是讓盒子中心落在盒子區的中心。先算這個目標離螢幕中心差幾個像素，
             // 換成相機本地座標，再轉回世界座標反推相機該站哪
             Vector2 offsetInCameraLocal = new Vector2(
-                (rule.BoxAreaCenterXRatio - 0.5f) * screenWidth / pixelsPerUnit,
-                (rule.BoxAreaCenterYRatio - 0.5f) * screenHeight / pixelsPerUnit);
+                (rule.BoxAreaCenterXRatio - 0.5f) * screenWidth / screenPixelsPerModelUnit,
+                (rule.BoxAreaCenterYRatio - 0.5f) * screenHeight / screenPixelsPerModelUnit);
             Vector2 offsetInWorld = RotateQuarterTurns(offsetInCameraLocal, quarterTurns);
 
             Vector2 boxCenter = boxBounds.Center;
@@ -270,7 +270,7 @@ namespace Tangram.Core
                                                boxCenter.y - offsetInWorld.y);
 
             return new ViewportSolution(cameraCenter, orthographicSize, quarterTurns,
-                                        pixelsPerUnit, screenWidth, screenHeight);
+                                        screenPixelsPerModelUnit, screenWidth, screenHeight);
         }
 
         /// <summary>
@@ -293,8 +293,8 @@ namespace Tangram.Core
             if (!solution.IsValid) return Vector2.zero;
 
             Vector2 offsetInCameraLocal = new Vector2(
-                (screenPoint.x - solution.ScreenWidth * 0.5f) / solution.PixelsPerUnit,
-                (screenPoint.y - solution.ScreenHeight * 0.5f) / solution.PixelsPerUnit);
+                (screenPoint.x - solution.ScreenWidth * 0.5f) / solution.ScreenPixelsPerModelUnit,
+                (screenPoint.y - solution.ScreenHeight * 0.5f) / solution.ScreenPixelsPerModelUnit);
             Vector2 offsetInWorld = RotateQuarterTurns(offsetInCameraLocal, solution.QuarterTurns);
 
             return new Vector2(solution.CameraCenter.x + offsetInWorld.x,
@@ -325,8 +325,8 @@ namespace Tangram.Core
                 RotateQuarterTurnsInverse(offsetInWorld, solution.QuarterTurns);
 
             return new Vector2(
-                solution.ScreenWidth * 0.5f + offsetInCameraLocal.x * solution.PixelsPerUnit,
-                solution.ScreenHeight * 0.5f + offsetInCameraLocal.y * solution.PixelsPerUnit);
+                solution.ScreenWidth * 0.5f + offsetInCameraLocal.x * solution.ScreenPixelsPerModelUnit,
+                solution.ScreenHeight * 0.5f + offsetInCameraLocal.y * solution.ScreenPixelsPerModelUnit);
         }
     }
 }

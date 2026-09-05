@@ -63,9 +63,9 @@ Unity 6000.3.7f1 的**七巧板拼圖遊戲**，參加 2026 大專校院資訊�
 
 | | |
 |---|---|
-| 階段 | **P0 完成；P1 進行中（13 項完成 3 項：P1-1、P1-4、P1-7）；P1-2 設計定案未實作** |
-| 程式 | `Assets/Scripts/Data` 15 支、`Assets/Scripts/Core` 7 支、`Assets/Scripts/GameObject` 3 支（只有 `BoardView` 有實作） |
-| 測試 | 94 個全過（`Assets/Tests/EditMode`）。已在 Unity 的 Test Runner 與 `dotnet` 兩邊都跑過 |
+| 階段 | **P0 完成；P1 進行中（13 項完成 4 項：P1-1、P1-2、P1-4、P1-7）** |
+| 程式 | `Assets/Scripts/Data` 15 支、`Assets/Scripts/Core` 7 支、`Assets/Scripts/GameObject` 5 支（`BoxView` 還是空模板）|
+| 測試 | 99 個全過（`Assets/Tests/EditMode`）。⚠️ `dotnet` 只編 Data/Core/Tests，`GameObject/` 那幾支只有 Unity 驗得到 |
 | 看板 | GitHub Projects：`P0_Skeleton` 與 `P1_Prototype`（<https://github.com/users/Shaddock3745/projects/1>、`/2`），repo `Shaddock3745/7_Puzzles_App`。P1-1 ～ P1-9 = issue #9 ～ #17 |
 
 ### 2026-09-03：P1-4 完成（區域判定）
@@ -143,26 +143,33 @@ Resolve(..., currentlySnapped, boxRegion.BoundaryNodes,
 ⚠️ **場景上還沒有東西掛 `BoardView`。** P1-2 開工前要在 `GameScene.unity` 建個空物件掛上去、
 把 Main Camera 指給 `targetCamera`。
 
-### 2026-09-04：片的顯示層設計定案（P1-2，還沒實作）
+### 2026-09-04：P1-2 完成（片的顯示）
 
-完整規格在 `互動設計.md` §13。骨架：
+完整規格在 `互動設計.md` §13。
 
-**本體是 Sprite**（五張圖），不是原本規劃的程序生成多邊形。描邊不另外畫——
-圖本身內縮一點加小圓角，縫隙就是邊。**顏色按槽索引七色**（兩片大三角不同色），形狀按片種五張圖。
+| 檔案 | 在哪 | 可離線測 |
+|---|---|---|
+| `PieceVertexCache.cs` | `Core` | ✅ 十份浮點頂點；唯一讀 `PiecePrototype` 共用單例的地方 |
+| `PieceSorting.cs` | `Core` | ✅ 三層 + 面積 + 槽索引 |
+| `PieceSpriteLibrary.cs` | `GameObject` | ❌ 用到 `Texture2D`/`Sprite` |
+| `PieceView.cs` | `GameObject` | ❌ `MonoBehaviour` |
+| `PiecePreview.cs` | `GameObject` | ❌ **驗證鷹架，P1-5 做好就刪** |
 
-**片記住**：片種、槽索引、旋轉格數(int)、翻面(bool)、吸住了沒、正在被拖。
+**圖是執行時生成的，不是匯入的美術資源。** 這讓原本 §13.7 那兩個「做錯不會報錯」的
+匯入陷阱（Pixels Per Unit、Pivot）整個消失——都由程式算。作法是**先侵蝕「內縮 + 圓角半徑」、
+再膨脹回圓角半徑**（形態學），比多邊形偏移好寫太多。⚠️ 距離要用**真正的歐氏距離**，
+用「半平面裡最大值」會把角推成尖的，方向剛好相反。
+
+**片記住**：片種、槽索引、旋轉格數(int)、翻面、吸住了沒、正在被拖。
 **片刻意不記**：`Placement`（`BoardState` 已經存了）、位置（就是 `transform.position`）。
 
-分界的理由要記住：**旋轉不能放 transform，位置可以**。
-正方形 rotation 0 與 2 的 transform 完全相同——兩個模型狀態產生同一個 transform，
-資訊被銷毀，反推不回來。位置則是浮點寫進去讀出來沒損失（前提：不掛在有旋轉或縮放的父物件下）。
+分界的理由：**旋轉不能放 transform，位置可以**。正方形 rotation 0 與 2 的 transform
+完全相同，資訊被銷毀反推不回來；位置則是浮點 round-trip 無損（前提：不掛在有旋轉或縮放的父物件下）。
 
-**兩個 Unity 陷阱**：翻面用 `SpriteRenderer` 的**垂直**翻轉（模型的翻面是 y 取負），
-**不要用負縮放**；Sprite 匯入設定的 Pixels Per Unit 跟我們的 `ScreenPixelsPerModelUnit`
-**同名但完全不同**，前者是紋理像素→世界單位（固定），後者是模型單位→螢幕像素（每題變）。
+四個狀態欄位的 setter 都會呼叫刷新，**位置不用**——位置忘了寫是大聲的 bug（片不動一眼看到），
+其他四個忘了刷新是安靜的。
 
-已交付的程式：`PieceVertexCache.cs`（十份浮點頂點）、`ExactVector2.ToVector2()`。
-`PieceView` 本身還沒寫（使用者自己寫）。
+⚠️ 翻面用 `SpriteRenderer.flipY`（模型的翻面是 y 取負 = 垂直翻），**不要用負縮放**。
 
 ### 2026-09-03：全專案函式文件化
 
@@ -300,12 +307,12 @@ XML doc（`<param>` / `<returns>`）與「為什麼這樣寫」的註解一樣�
 
 **完整清單看 `待辦清單.md`**，這裡只列頭三件：
 
-1. **在 `GameScene.unity` 掛上 `BoardView`**（空物件 + 指定 `targetCamera`），否則後面兩項看不到任何東西
-2. **P1-2 片的顯示 `PieceView`** —— 設計已定案（`互動設計.md` §13），前置的 `PieceVertexCache`
-   與 `ExactVector2.ToVector2()` 也已經有了。剩下的是畫五張 Sprite + 寫 `PieceView` 本體
-3. **P1-3**：盒子顯示 `BoxView`
+1. **在 `GameScene.unity` 掛上 `BoardView`**（空物件 + 指定 `targetCamera`），否則後面全部看不到東西
+2. **驗一次 P1-2**：另建一個空物件掛 `PiecePreview`，按 Play 應該看到七片排一列、五種形狀、七個顏色。
+   ⚠️ `GameObject/` 那幾支 `dotnet` 編不到，這是它們第一次進 Unity 編譯器
+3. **P1-3**：盒子顯示 `BoxView`。盒子原點從 `BoardView.Layout.BoxOrigin` 拿，不要另外算一份
 4. **P1-6**：拖曳控制。⚠️ 要訂閱 `BoardView.LayoutRecomputed` 取消進行中的拖曳，
    座標換算走 `BoardView.ScreenToWorld` 不要用 `Camera.ScreenToWorldPoint`
 
-**純 C# 的部分（P1-1、P1-4、P1-7）全部做完了**，剩下的都在 Unity 那一側。
-P0-8 也結案了（Unity 內編譯通過、Test Runner 90 個全綠）。
+**純 C# 的部分（P1-1、P1-2 的可測部分、P1-4、P1-7）全部做完了**，剩下的都在 Unity 那一側。
+P0-8 也結案了（Unity 內編譯通過、Test Runner 全綠）。

@@ -11,7 +11,7 @@ using UnityEngine;
 /// <item>讀 <c>Screen.width</c> / <c>Screen.height</c></item>
 /// <item>偵測尺寸或題目變化 → 觸發重算</item>
 /// <item>把算出來的相機中心、<c>orthographicSize</c>、roll <b>寫進</b> <c>Camera</c></item>
-/// <item>把算出來的 <c>pixelsPerUnit</c> <b>寫進</b> <see cref="SnapSettings"/></item>
+/// <item>把算出來的 <c>screenPixelsPerModelUnit</c> <b>寫進</b> <see cref="SnapSettings"/></item>
 /// </list>
 ///
 /// <b>它是唯一測不了的部分，所以壓到只剩搬運。</b>所有數學都在
@@ -48,7 +48,7 @@ public class BoardView : MonoBehaviour
     /// <summary>
     /// 目前生效的吸附手感參數，餵給 <see cref="SnapSolver.Resolve"/>。
     ///
-    /// <b>唯讀是刻意的。</b><c>PixelsPerUnit</c> 只有這支算得出來（只有它讀 <c>Screen</c>），
+    /// <b>唯讀是刻意的。</b><c>ScreenPixelsPerModelUnit</c> 只有這支算得出來（只有它讀 <c>Screen</c>），
     /// 開放外面寫的話，哪天有人改了它，吸附半徑就跟畫面對不上——
     /// 而症狀只是「手感突然很怪」，沒有任何錯誤訊息，是最難查的一種 bug。
     /// </summary>
@@ -122,7 +122,7 @@ public class BoardView : MonoBehaviour
         PushToCamera(solution);
         SnapSettings = new SnapSolver.Settings
         {
-            ScreenPixelsPerModelUnit = solution.PixelsPerUnit,
+            ScreenPixelsPerModelUnit = solution.ScreenPixelsPerModelUnit,
             SnapRadiusPixels = snapRadiusPixels,
             ReleaseRadiusPixels = releaseRadiusPixels
         };
