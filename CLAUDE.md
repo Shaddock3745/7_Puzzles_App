@@ -63,9 +63,9 @@ Unity 6000.3.7f1 的**七巧板拼圖遊戲**，參加 2026 大專校院資訊�
 
 | | |
 |---|---|
-| 階段 | **P0 完成；P1 進行中（13 項完成 2 項：P1-4、P1-7）** |
-| 程式 | `Assets/Scripts/Data` 15 支、`Assets/Scripts/Core` 5 支 |
-| 測試 | 63 個全過（`Assets/Tests/EditMode`） |
+| 階段 | **P0 完成；P1 進行中（13 項完成 3 項：P1-1、P1-4、P1-7）；P1-2 設計定案未實作** |
+| 程式 | `Assets/Scripts/Data` 15 支、`Assets/Scripts/Core` 7 支、`Assets/Scripts/GameObject` 3 支（只有 `BoardView` 有實作） |
+| 測試 | 94 個全過（`Assets/Tests/EditMode`）。已在 Unity 的 Test Runner 與 `dotnet` 兩邊都跑過 |
 | 看板 | GitHub Projects：`P0_Skeleton` 與 `P1_Prototype`（<https://github.com/users/Shaddock3745/projects/1>、`/2`），repo `Shaddock3745/7_Puzzles_App`。P1-1 ～ P1-9 = issue #9 ～ #17 |
 
 ### 2026-09-03：P1-4 完成（區域判定）
@@ -107,24 +107,41 @@ Resolve(..., currentlySnapped, boxRegion.BoundaryNodes,
 另外 `SnapToOrigin` 改成 `TrySnapToOrigin`（多收 `isAllowed`、回 `bool` + `out`），
 並新增 `SnapSolver.RotationCycleLength(kind)`（三角 8 / 正方形 2 / 平行四邊形 4）。
 
-### 2026-09-04：座標與版面層設計定案（P1-1，還沒實作）
+### 2026-09-04：P1-1 完成（座標與版面層）
 
-完整規格在 `互動設計.md` §2。要記住的骨架：
+三個角色都實作完了，`互動設計.md` §2.8 的四個待決也全部拍板。
+完整 API 與設計理由見 `程式說明書.md` 第 18 章。
 
-**拆成三個角色**，而不是使用者原本提的兩段：
+| 角色 | 檔案 | 可離線測 |
+|---|---|---|
+| 一：純數學 | `Core/ViewportMath.cs` | ✅ |
+| 二：座標狀態 | `Core/BoardLayout.cs` | ✅ |
+| 三：Unity 驅動 | `GameObject/BoardView.cs` | ❌（所以只剩搬運）|
 
-1. **純數學**（`static`、無狀態、不碰 `Camera`/`Screen`/`Region`）——可以在 `dotnet` 下測
-2. **這一題的座標狀態**——持有**輸入**（盒子 `Bounds`、版面參數、允不允許 roll），**不持有算好的係數**
-3. **Unity 驅動**（`MonoBehaviour`，只搬運）——讀 `Screen`、把值寫進 `Camera` 與 `SnapSolver.Settings`
+角色一與角色二**必須**放在 `Assets/Scripts/Core/`，因為 `tests.csproj` 是靠
+`../../Assets/Scripts/Core/*.cs` 把原始碼拉進去的。放進 `GameObject/` 就測不了。
 
-會多出第三個，是因為使用者定了「**相機是輸出，不是真相**」——資料流的箭頭只進不出，
-所以必須有人負責推送，而那個人是唯一測不了的部分，要壓到最薄。
+**四個待決的定案**：roll 限定 0/90/180/270（型別上就是 `int quarterTurns`）／
+自己實作 `ScreenToWorld`（順序契約要求「相機這幀還沒更新答案也要對」，用 `Camera` 做不到）／
+覆蓋框走 world-space（但 `WorldToScreen` 還是寫了，理由是 round-trip 測試）／
+重算時取消拖曳（P1-1 只發事件，取消是 P1-6 的事）。
+
+**兩個實作時多加的保險**：
+
+- `ViewportSolution` 自己帶著算它的那組螢幕尺寸 → 型別上不可能「拿 A 螢幕的解換算 B 螢幕的座標」
+- `LastScreenWidth/Height` 的語意是「**已經成功推送過**」不是「上次看到」。
+  `Solve()` 是純函式，`RecordScreenSize()` 是另一個方法，推送成功後才呼叫。
+  中途放棄的那一幀不記錄——記了的話永遠不再重算，畫面卡住且不報錯
 
 其他定案：模型:世界 **1:1**（模型→世界只是浮點轉型，沒有係數）、置中靠相機不平移模型
 （−寬/2 在 ℤ[√2] 裡除不盡）、係數**重算不快取**、題目旋轉**轉相機**、精選題不 roll、
 未放置的片半透明、自適應版面不進 P1。
 
-**§2.8 有四個待決還沒拍板**，P1-1 開工前要先定。
+⚠️ **`BoardView.LayoutRecomputed` 目前沒有訂閱者，這是刻意留給 P1-6 的洞。**
+沒接的話症狀是「轉螢幕或拉 Game 視窗時，正在拖的片會突然黏歪」，不會有錯誤訊息。
+
+⚠️ **場景上還沒有東西掛 `BoardView`。** P1-2 開工前要在 `GameScene.unity` 建個空物件掛上去、
+把 Main Camera 指給 `targetCamera`。
 
 ### 2026-09-04：片的顯示層設計定案（P1-2，還沒實作）
 
@@ -283,8 +300,12 @@ XML doc（`<param>` / `<returns>`）與「為什麼這樣寫」的註解一樣�
 
 **完整清單看 `待辦清單.md`**，這裡只列頭三件：
 
-1. **P0-8**：Unity 內編譯 + 跑一次 Test Runner（63 個）。順手修掉 `PieceView.cs` 的檔名／類別不符
-2. **拍板 `互動設計.md` §2.8 的四個待決**，然後做 P1-1（座標層三個角色）
-3. **P1-2、P1-3、P1-6**：片的顯示、盒子顯示、拖曳控制
+1. **在 `GameScene.unity` 掛上 `BoardView`**（空物件 + 指定 `targetCamera`），否則後面兩項看不到任何東西
+2. **P1-2 片的顯示 `PieceView`** —— 設計已定案（`互動設計.md` §13），前置的 `PieceVertexCache`
+   與 `ExactVector2.ToVector2()` 也已經有了。剩下的是畫五張 Sprite + 寫 `PieceView` 本體
+3. **P1-3**：盒子顯示 `BoxView`
+4. **P1-6**：拖曳控制。⚠️ 要訂閱 `BoardView.LayoutRecomputed` 取消進行中的拖曳，
+   座標換算走 `BoardView.ScreenToWorld` 不要用 `Camera.ScreenToWorldPoint`
 
-**純 C# 的部分（P1-4、P1-7）都做完了**，剩下的全部在 Unity 那一側。
+**純 C# 的部分（P1-1、P1-4、P1-7）全部做完了**，剩下的都在 Unity 那一側。
+P0-8 也結案了（Unity 內編譯通過、Test Runner 90 個全綠）。
