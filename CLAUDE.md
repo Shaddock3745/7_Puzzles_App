@@ -64,8 +64,8 @@ Unity 6000.3.7f1 的**七巧板拼圖遊戲**，參加 2026 大專校院資訊�
 
 | | |
 |---|---|
-| 階段 | **P0 完成；P1 進行中（13 項完成 6 項：P1-1、P1-2、P1-3、P1-4、P1-6、P1-7）** |
-| 程式 | `Assets/Scripts/Data` 15 支、`Assets/Scripts/Core` 8 支、`Assets/Scripts/GameObject` 8 支 |
+| 階段 | **P0 完成；P1 進行中（13 項完成 7 項：P1-1、P1-2、P1-3、P1-4、P1-6、P1-7、P1-12）** |
+| 程式 | `Assets/Scripts/Data` 15 支、`Assets/Scripts/Core` 8 支、`Assets/Scripts/GameObject` 9 支 |
 | 測試 | 108 個全過（`Assets/Tests/EditMode`）。⚠️ `dotnet` 只編 Data/Core/Tests，`GameObject/` 那幾支只有 Unity 驗得到 |
 | 看板 | GitHub Projects：`P0_Skeleton` 與 `P1_Prototype`（<https://github.com/users/Shaddock3745/projects/1>、`/2`），repo `Shaddock3745/7_Puzzles_App`。P1-1 ～ P1-9 = issue #9 ～ #17 |
 

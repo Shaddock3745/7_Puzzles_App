@@ -26,6 +26,15 @@ public class TouchInputController : MonoBehaviour
     private PieceView dragging;
 
     /// <summary>
+    /// 正在被拖的片，沒有就是 <c>null</c>。**唯讀，給除錯 overlay 用。**
+    ///
+    /// ⚠️ 開這個屬性是因為<b>拖曳狀態正好是最難用眼睛看的東西</b>。
+    /// 它只該被讀，不要變成別人改狀態的後門——要改拖曳狀態請走
+    /// <see cref="CancelDrag"/> 或正常的指標流程。
+    /// </summary>
+    public PieceView DraggingPiece => dragging;
+
+    /// <summary>
     /// 按下的瞬間「片的原點」與「手指」的差。
     ///
     /// ⚠️ <b>沒有它片會在按下的瞬間跳到手指底下。</b>
