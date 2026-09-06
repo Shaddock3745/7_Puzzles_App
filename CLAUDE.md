@@ -64,8 +64,8 @@ Unity 6000.3.7f1 的**七巧板拼圖遊戲**，參加 2026 大專校院資訊�
 
 | | |
 |---|---|
-| 階段 | **P0 完成；P1 進行中（13 項完成 5 項：P1-1、P1-2、P1-3、P1-4、P1-7）** |
-| 程式 | `Assets/Scripts/Data` 15 支、`Assets/Scripts/Core` 8 支、`Assets/Scripts/GameObject` 7 支 |
+| 階段 | **P0 完成；P1 進行中（13 項完成 6 項：P1-1、P1-2、P1-3、P1-4、P1-6、P1-7）** |
+| 程式 | `Assets/Scripts/Data` 15 支、`Assets/Scripts/Core` 8 支、`Assets/Scripts/GameObject` 8 支 |
 | 測試 | 106 個全過（`Assets/Tests/EditMode`）。⚠️ `dotnet` 只編 Data/Core/Tests，`GameObject/` 那幾支只有 Unity 驗得到 |
 | 看板 | GitHub Projects：`P0_Skeleton` 與 `P1_Prototype`（<https://github.com/users/Shaddock3745/projects/1>、`/2`），repo `Shaddock3745/7_Puzzles_App`。P1-1 ～ P1-9 = issue #9 ～ #17 |
 
@@ -138,8 +138,8 @@ Resolve(..., currentlySnapped, boxRegion.BoundaryNodes,
 （−寬/2 在 ℤ[√2] 裡除不盡）、係數**重算不快取**、題目旋轉**轉相機**、精選題不 roll、
 未放置的片半透明、自適應版面不進 P1。
 
-⚠️ **`BoardView.LayoutRecomputed` 目前沒有訂閱者，這是刻意留給 P1-6 的洞。**
-沒接的話症狀是「轉螢幕或拉 Game 視窗時，正在拖的片會突然黏歪」，不會有錯誤訊息。
+✅ **`BoardView.LayoutRecomputed` 的洞已經由 P1-6 補上**（`TouchInputController.CancelDrag`）。
+當初沒接的話症狀是「轉螢幕或拉 Game 視窗時，正在拖的片會突然黏歪」，不會有錯誤訊息。
 
 （場景接線的現況見下面 P1-3 那一節。）
 

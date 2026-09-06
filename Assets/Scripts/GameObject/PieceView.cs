@@ -165,6 +165,15 @@ public class PieceView : MonoBehaviour
     /// <summary>吸住了而且沒在被拖 —— 也就是「這個位置已經定案」。決定要不要半透明。</summary>
     public bool IsCommitted => isSnapped && !isBeingDragged;
 
+    /// <summary>
+    /// 這片畫在第幾層。**命中測試要用它挑最上面那片**——
+    /// <c>Physics2D</c> 完全不看 <c>sortingOrder</c>，回傳順序跟繪製層級無關。
+    ///
+    /// 每次重算而不是讀 <c>SpriteRenderer</c>：這樣呼叫端不必經過渲染元件，
+    /// 而且不會有「刷新之前拿到舊值」的空窗。成本是四個整數運算。
+    /// </summary>
+    public int SortingOrder => PieceSorting.SortingOrder(Kind, SlotIndex, isSnapped, isBeingDragged);
+
     // ─────────────────────────────────────────────────────────────
 
     private void Awake()

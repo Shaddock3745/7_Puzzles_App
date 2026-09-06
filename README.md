@@ -1,2 +1,7 @@
 # 7_Puzzles_App
-Seven-Puzzle moblie app with YOLO.
+
+七巧板拼圖遊戲（Unity）。演算法即時生成題目、特徵函數算難度、ELO 換算玩家實力，三者互相驅動。
+
+不用生成式 AI、不連網。座標一律用 ℤ[√2] 精確算術，浮點只出現在繪圖與拖曳暫態。
+
+文件從 `CLAUDE.md` 開始看。

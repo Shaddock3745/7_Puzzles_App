@@ -24,6 +24,9 @@ public class LevelController : MonoBehaviour
     [Tooltip("負責畫盒子。")]
     [SerializeField] private BoxView boxView;
 
+    [Tooltip("拖曳控制。換關時要叫它取消進行中的拖曳。沒有也能跑（例如只想看盒子的場景）。")]
+    [SerializeField] private TouchInputController dragController;
+
     [Tooltip("勾起來的話 Start 會自動載入經典大正方形。P1 沒有題庫，先這樣。")]
     [SerializeField] private bool loadClassicSquareOnStart = true;
 
@@ -40,6 +43,9 @@ public class LevelController : MonoBehaviour
 
         if (boardView == null) boardView = FindFirstObjectByType<BoardView>();
         if (boxView == null) boxView = FindFirstObjectByType<BoxView>();
+
+        // 這個是選用的，所以找不到不報錯——場景可能刻意不要拖曳（例如只看盒子）
+        if (dragController == null) dragController = FindFirstObjectByType<TouchInputController>();
 
         // ⚠️ 找不到就要大聲講。原本這裡只是讓 EnterLevel 用 null 檢查跳過，
         // 結果症狀是「相機不會自己 fit、盒子不會出現」而且**沒有任何訊息**——
@@ -96,9 +102,9 @@ public class LevelController : MonoBehaviour
         //    目前七片是 PiecePreview 那支鷹架在管，它自己排一列，不看版面。
         //    位置放在這裡是因為它**必須**排在第 2 步之後（要用相機算出來的版面）
 
-        // 5. 取消進行中的拖曳 —— ⚠️ P1-6 才有拖曳指揮者，先留空。
-        //    這跟 BoardView.LayoutRecomputed 是同一個動作的兩個入口，
-        //    到時候要接到同一個地方，不要各寫一次
+        // 5. 取消進行中的拖曳。跟 BoardView.LayoutRecomputed 是同一個動作的兩個入口，
+        //    所以都接到 TouchInputController.CancelDrag，不各寫一次
+        if (dragController != null) dragController.CancelDrag();
     }
 
     /// <summary>
@@ -109,7 +115,7 @@ public class LevelController : MonoBehaviour
     /// </summary>
     public void ExitLevel()
     {
-        // ⚠️ P1-6：取消進行中的拖曳。先留空
+        if (dragController != null) dragController.CancelDrag();
         session.Unload();
     }
 }
