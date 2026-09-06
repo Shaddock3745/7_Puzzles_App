@@ -25,7 +25,8 @@ public class BoxView : MonoBehaviour
     [Tooltip("輪廓顏色。")]
     [SerializeField] private Color outlineColor = new Color(0.85f, 0.87f, 0.90f, 1f);
 
-    [Tooltip("輪廓寬度，**模型單位**（固定世界寬度）。相機拉遠時看起來會變細，P1 先這樣。")]
+    [Tooltip("輪廓寬度，模型單位（固定世界寬度）。只往盒子外面畫，不會吃到內部空間。" +
+             "相機拉遠時看起來會變細，P1 先這樣。")]
     [SerializeField] private float outlineWidth = 0.08f;
 
     [Tooltip("留空的話會用 Sprites/Default 自己建一個。指定的材質要吃頂點顏色。")]
@@ -136,12 +137,18 @@ public class BoxView : MonoBehaviour
 
     /// <summary>
     /// 輪廓：每個環的每條邊各鋪一個四邊形。外環與洞環都畫。
+    ///
+    /// <b>⚠️ 只往「外」畫，不跨過邊界線。</b>置中畫的話會往內吃掉半個線寬，
+    /// 片吸到邊上時就會看起來差一截——而那個誤差跟吸附完全無關，
+    /// 純粹是畫出來的東西佔了位置（見 `除錯記錄.md` 002）。
+    ///
+    /// 「外」的方向可以統一算：<see cref="Region"/> 的外環是 CCW、洞環是 CW，
+    /// <b>所以區域內部永遠在有向邊的左側</b>——右側就是外，兩種環都適用。
+    /// 洞的框線因此畫在洞裡面，一樣不吃可用空間。
     /// </summary>
     /// <param name="boxRegion">盒子區域。</param>
     private void AppendOutline(Region boxRegion)
     {
-        float halfWidth = outlineWidth * 0.5f;
-
         foreach (ExactVector2[] ring in boxRegion.Rings)
         {
             for (int i = 0; i < ring.Length; i++)
@@ -153,15 +160,17 @@ public class BoxView : MonoBehaviour
                 if (along.sqrMagnitude < 1e-12f) continue;
                 along.Normalize();
 
-                var across = new Vector2(-along.y, along.x) * halfWidth;
+                // 右法線 = 離開區域的方向
+                var outward = new Vector2(along.y, -along.x) * outlineWidth;
 
-                // 兩端各多伸出半個寬度，讓相鄰兩條邊在轉角處重疊。
-                // 不這樣做的話每個轉角會缺一個小口，45° 的角特別明顯
-                Vector2 extendedStart = start - along * halfWidth;
-                Vector2 extendedEnd = end + along * halfWidth;
+                // 兩端各多伸一個線寬，讓相鄰兩條邊在轉角處重疊。
+                // 多伸出去的部分全在區域外面，所以不會吃到可用空間；
+                // 很銳的外角還是可能露出小缺口，但那也在外面，不影響擺放
+                Vector2 extendedStart = start - along * outlineWidth;
+                Vector2 extendedEnd = end + along * outlineWidth;
 
-                AppendQuad(extendedStart - across, extendedStart + across,
-                           extendedEnd + across, extendedEnd - across, outlineColor);
+                AppendQuad(extendedStart, extendedStart + outward,
+                           extendedEnd + outward, extendedEnd, outlineColor);
             }
         }
     }

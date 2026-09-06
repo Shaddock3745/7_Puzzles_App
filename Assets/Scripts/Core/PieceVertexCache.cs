@@ -39,6 +39,38 @@ namespace Tangram.Core
             return (Vector2[])cached.Clone();
         }
 
+        /// <summary>沒翻面時的視覺中心，索引就是片種。宣告在 <see cref="Table"/> 之後，靠它算。</summary>
+        private static readonly Vector2[] LocalCenters = BuildCenters();
+
+        /// <summary>
+        /// 片的**視覺中心**（頂點平均），在片自己的座標系、沒有旋轉也沒有翻面。
+        ///
+        /// 用途是旋轉的軸心（互動設計 §5：「暫放狀態下旋轉的軸心是純視覺問題，
+        /// 用片的視覺中心最自然」）。<c>Transform</c> 是繞**原型原點**轉的，
+        /// 而那是某個特定頂點——不補償的話片會繞著一個角甩。
+        ///
+        /// 翻面與旋轉都是線性變換，所以**直接套在這個中心上就好**，不必重算頂點平均。
+        /// </summary>
+        /// <param name="kind">片種。</param>
+        /// <returns>頂點平均。</returns>
+        public static Vector2 LocalCenter(PieceKind kind) => LocalCenters[(int)kind];
+
+        /// <returns>每種片沒翻面時的頂點平均。</returns>
+        private static Vector2[] BuildCenters()
+        {
+            var kinds = (PieceKind[])Enum.GetValues(typeof(PieceKind));
+            var centers = new Vector2[kinds.Length];
+
+            foreach (PieceKind kind in kinds)
+            {
+                Vector2[] vertices = Table[(int)kind * FlipStateCount];
+                Vector2 sum = Vector2.zero;
+                foreach (Vector2 vertex in vertices) sum += vertex;
+                centers[(int)kind] = sum / vertices.Length;
+            }
+            return centers;
+        }
+
         /// <returns>十份頂點，索引方式見 <see cref="Table"/>。</returns>
         private static Vector2[][] BuildTable()
         {

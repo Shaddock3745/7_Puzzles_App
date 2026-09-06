@@ -30,12 +30,27 @@ public class PiecePreview : MonoBehaviour
     [Tooltip("勾起來 = 畫成已吸附（不透明）；不勾 = 未吸附（半透明）。")]
     [SerializeField] private bool showAsSnapped;
 
+    [Header("片的圖（Play 模式下改了會即時重生）")]
+    [Tooltip("往內縮多少（模型單位）。片與片之間那條縫的一半寬就是它。\n" +
+             "盒子的框線只往外畫，不會再額外吃掉空間，所以「片跟盒子邊的縫」就是這個值。")]
+    [Range(0f, 0.25f)]
+    [SerializeField] private float insetModelUnits = 0.02f;
+
+    [Tooltip("圓角半徑（模型單位）。⚠️ 銳角被吃掉的比直角多很多，" +
+             "所以大三角的斜角看起來會比正方形的直角縮更多。")]
+    [Range(0f, 0.25f)]
+    [SerializeField] private float cornerRadiusModelUnits = 0.005f;
+
     private readonly PieceView[] pieces = new PieceView[BoardState.PieceCount];
     private PieceSpriteLibrary library;
 
+    // 目前這批圖是用哪組參數生的，用來偵測 Inspector 有沒有被拉動
+    private float builtInset;
+    private float builtCornerRadius;
+
     private void Start()
     {
-        library = new PieceSpriteLibrary();
+        library = BuildLibrary();
 
         for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
         {
@@ -59,7 +74,40 @@ public class PiecePreview : MonoBehaviour
 
     private void Update()
     {
+        RebuildSpritesIfParametersChanged();
         ApplyInspectorValues();
+    }
+
+    /// <returns>用目前 Inspector 上那組參數生出來的圖庫。</returns>
+    private PieceSpriteLibrary BuildLibrary()
+    {
+        builtInset = insetModelUnits;
+        builtCornerRadius = cornerRadiusModelUnits;
+        return new PieceSpriteLibrary(insetModelUnits: insetModelUnits,
+                                      cornerRadiusModelUnits: cornerRadiusModelUnits);
+    }
+
+    /// <summary>
+    /// Inspector 上的內縮或圓角被拉動就重生五張圖，讓你在 Play 模式下拉著看。
+    ///
+    /// ⚠️ <b>重生五張圖是逐像素運算，會頓一下。</b>只在真的變動時做，
+    /// 所以拉滑桿的過程中每一格都會頓——這是調參鷹架，不是產品行為。
+    /// </summary>
+    private void RebuildSpritesIfParametersChanged()
+    {
+        const float epsilon = 1e-4f;
+        if (Mathf.Abs(insetModelUnits - builtInset) < epsilon
+            && Mathf.Abs(cornerRadiusModelUnits - builtCornerRadius) < epsilon) return;
+
+        library?.ReleaseGeneratedSprites();
+        library = BuildLibrary();
+
+        // Initialize 只重設身分、圖與碰撞盒，不碰姿態與位置，所以可以安全地再叫一次
+        foreach (PieceView piece in pieces)
+        {
+            if (piece == null) continue;
+            piece.Initialize(piece.Kind, piece.SlotIndex, library);
+        }
     }
 
     /// <summary>把 Inspector 上那三個值套到七片身上，讓你在 Play 模式下能即時拉著看。</summary>

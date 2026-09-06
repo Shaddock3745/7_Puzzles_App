@@ -452,6 +452,42 @@ namespace Tangram.Core.Tests
         }
 
         [Test]
+        public void 頂點快取_視覺中心就是頂點平均()
+        {
+            foreach (PieceKind kind in System.Enum.GetValues(typeof(PieceKind)))
+            {
+                Vector2[] vertices = PieceVertexCache.LocalVertices(kind, false);
+                Vector2 expected = Vector2.zero;
+                foreach (Vector2 vertex in vertices) expected += vertex;
+                expected /= vertices.Length;
+
+                Vector2 actual = PieceVertexCache.LocalCenter(kind);
+                Assert.AreEqual(expected.x, actual.x, 1e-5f, $"{kind} 的中心 x");
+                Assert.AreEqual(expected.y, actual.y, 1e-5f, $"{kind} 的中心 y");
+            }
+        }
+
+        [Test]
+        public void 頂點快取_視覺中心真的在片內部()
+        {
+            // 中心是旋轉的軸心。跑到形狀外面的話，轉起來會像繞著遠處的一個點公轉
+            foreach (PieceKind kind in System.Enum.GetValues(typeof(PieceKind)))
+            {
+                Vector2[] vertices = PieceVertexCache.LocalVertices(kind, false);
+                Vector2 center = PieceVertexCache.LocalCenter(kind);
+
+                for (int i = 0; i < vertices.Length; i++)
+                {
+                    Vector2 edge = vertices[(i + 1) % vertices.Length] - vertices[i];
+                    float cross = edge.x * (center.y - vertices[i].y)
+                                - edge.y * (center.x - vertices[i].x);
+                    // 頂點環是 CCW，所以內部在每條邊的左側（叉積為正）
+                    Assert.Greater(cross, 0f, $"{kind} 的中心跑到第 {i} 條邊外面了");
+                }
+            }
+        }
+
+        [Test]
         public void 頂點快取_沒有污染原型單例()
         {
             // 建表時讀過共用單例，讀完之後原型必須原封不動（翻面是產生新陣列，不是就地改）

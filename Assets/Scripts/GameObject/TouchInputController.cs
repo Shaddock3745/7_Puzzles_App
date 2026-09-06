@@ -51,8 +51,8 @@ public class TouchInputController : MonoBehaviour
             Debug.LogError("TouchInputController 找不到 BoardView：拖曳完全不會有反應。" +
                            "請在場景裡建一個掛 BoardView 的物件，或直接拖到這支的欄位上。", this);
 
-        hitFilter = new ContactFilter2D();
-        hitFilter.NoFilter();
+        // 用靜態屬性，不要用同名的 NoFilter() 方法——那支在 Unity 6 已經棄用
+        hitFilter = ContactFilter2D.noFilter;
     }
 
     private void OnEnable()

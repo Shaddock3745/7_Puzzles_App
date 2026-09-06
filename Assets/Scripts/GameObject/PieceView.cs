@@ -106,8 +106,9 @@ public class PieceView : MonoBehaviour
         get => rotation;
         set
         {
-            rotation = Symmetry.Modulo8(value);
-            RefreshVisuals();
+            int normalized = Symmetry.Modulo8(value);
+            if (normalized == rotation) return;
+            ApplyPose(normalized, isFlipped);
         }
     }
 
@@ -124,10 +125,66 @@ public class PieceView : MonoBehaviour
         set
         {
             if (isFlipped == value) return;
-            isFlipped = value;
-            RebuildHitArea();                   // 碰撞盒只有這時候要重建
-            RefreshVisuals();
+            ApplyPose(rotation, value);
         }
+    }
+
+    /// <summary>
+    /// 換姿態，並且**讓視覺中心留在原地**（互動設計 §5）。
+    ///
+    /// <c>Transform</c> 是繞**原型原點**轉的，而那是某個特定頂點——直接改角度的話，
+    /// 片會繞著一個角甩出去，看起來完全不像在原地轉。所以這裡算一下補償：
+    /// <code>
+    /// 轉之前：中心的世界座標 = 位置 + 套姿態(舊)
+    /// 轉之後：位置 = 那個中心 − 套姿態(新)
+    /// </code>
+    ///
+    /// <b>這不是把畫面騙過去。</b>繞中心旋轉，原點本來就會跟著移，
+    /// 所以「位置變了」是正確結果。
+    ///
+    /// ⚠️ <b>吸住時不補償。</b>那時候位置是從精確 <c>Placement</c> 轉來的，
+    /// 補了會漂成浮點但 <see cref="IsSnapped"/> 還是 true，兩者就不一致了。
+    /// §5 本來就規定旋轉一定發生在浮點狀態（按鈕 = 脫離吸附 → 轉一格 → 重新嘗試吸附），
+    /// 所以這個守衛擋不到任何正常流程。
+    ///
+    /// 補償是浮點運算，連續旋轉會累積誤差——但未吸附時位置本來就是浮點，
+    /// 而且**一吸上去就會被精確值整個蓋掉**，所以誤差有界。
+    /// </summary>
+    /// <param name="newRotation">新的旋轉格數，已經取過模。</param>
+    /// <param name="newFlipped">新的翻面狀態。</param>
+    private void ApplyPose(int newRotation, bool newFlipped)
+    {
+        bool flipChanged = newFlipped != isFlipped;
+        bool compensate = !isSnapped;
+        Vector2 centerWorld = Position + PosedCenterOffset(rotation, isFlipped);
+
+        rotation = newRotation;
+        isFlipped = newFlipped;
+
+        if (compensate) Position = centerWorld - PosedCenterOffset(rotation, isFlipped);
+        if (flipChanged) RebuildHitArea();      // 碰撞盒只有翻面時要重建
+        RefreshVisuals();
+    }
+
+    /// <summary>
+    /// 視覺中心相對於原型原點的位移，套用指定姿態之後。
+    ///
+    /// 順序跟模型一致：**先翻面再旋轉**（<c>Symmetry.Apply</c>）。
+    /// 翻面與旋轉都是線性變換，所以直接套在中心那一點上就好，不必重算頂點平均。
+    /// </summary>
+    /// <param name="rotationSteps">旋轉格數 0~7，每格 45°。</param>
+    /// <param name="flipped">是否翻面（對 X 軸鏡射）。</param>
+    /// <returns>從原型原點指向視覺中心的向量。</returns>
+    private Vector2 PosedCenterOffset(int rotationSteps, bool flipped)
+    {
+        Vector2 center = PieceVertexCache.LocalCenter(Kind);
+        if (flipped) center.y = -center.y;
+
+        float radians = rotationSteps * 45f * Mathf.Deg2Rad;
+        float cos = Mathf.Cos(radians);
+        float sin = Mathf.Sin(radians);
+        return new Vector2(center.x * cos - center.y * sin,
+                           center.x * sin + center.y * cos);
     }
 
     /// <summary>

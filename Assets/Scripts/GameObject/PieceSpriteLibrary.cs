@@ -57,8 +57,8 @@ public sealed class PieceSpriteLibrary
     /// <param name="insetModelUnits">往內縮多少（模型單位）。這就是片與片之間那條縫的一半寬。</param>
     /// <param name="cornerRadiusModelUnits">圓角半徑（模型單位）。</param>
     public PieceSpriteLibrary(float texturePixelsPerModelUnit = 128f,
-                              float insetModelUnits = 0.05f,
-                              float cornerRadiusModelUnits = 0.12f)
+                              float insetModelUnits = 0.02f,
+                              float cornerRadiusModelUnits = 0.005f)
     {
         this.texturePixelsPerModelUnit = texturePixelsPerModelUnit;
         this.insetModelUnits = insetModelUnits;
