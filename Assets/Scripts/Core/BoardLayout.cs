@@ -21,14 +21,9 @@ namespace Tangram.Core
     /// </summary>
     public sealed class BoardLayout
     {
-        /// <summary>
-        /// 盒子原點：題目的 walks 被平移到盤面上的哪裡。精確座標。
-        ///
-        /// 這一層自己用不到它（版面計算只需要包圍盒），但它是這一題座標系的定義，
-        /// 放在這裡讓「盒子在哪」只有一個出處——<c>BoxView</c>（P1-3）與盒內判定
-        /// 用的是同一個原點，才不會出現畫出來的盒子跟判定用的盒子差一格。
-        /// </summary>
-        public ExactVector2 BoxOrigin { get; private set; }
+        // 這裡原本有一個 BoxOrigin 欄位，2026-09-04 拿掉了：它從頭到尾只被 SetBox 寫入、
+        // 沒有任何地方讀，Solve() 也用不到（版面計算只需要包圍盒）。
+        // 盒子原點的家改成 LevelSession——它是無狀態算出來的，不存欄位就不會有第二份。
 
         /// <summary>盒子的絕對包圍盒，<b>精確座標</b>。通常來自 <c>Region.Bounds</c>。</summary>
         public BoundingBox BoxBounds { get; private set; }
@@ -72,18 +67,18 @@ namespace Tangram.Core
         /// 換題目。呼叫端通常這樣拿參數：
         /// <code>
         /// Region boxRegion = Region.FromPuzzle(puzzle, boxOrigin);
-        /// layout.SetBox(boxRegion.Bounds, boxOrigin, allowRoll: !puzzle.IsCurated);
+        /// layout.SetBox(session.Data.BoxRegion.Bounds, session.Data.AllowRoll);
         /// </code>
         /// 刻意收 <see cref="BoundingBox"/> 而不是 <c>Region</c>：版面計算只需要包圍盒，
         /// 收 <c>Region</c> 會讓這一層平白多一個相依，測試也得先組一顆 <c>Region</c> 才能跑。
+        ///
+        /// <b>不收盒子原點</b>：這一層用不到它，原點的家在 <see cref="LevelSession"/>。
         /// </summary>
         /// <param name="absoluteBoxBounds">盒子的絕對包圍盒（已經含盒子原點的平移）。</param>
-        /// <param name="boxOrigin">盒子原點，精確座標。</param>
         /// <param name="allowRoll">允不允許 roll 相機。精選題傳 false。</param>
-        public void SetBox(BoundingBox absoluteBoxBounds, ExactVector2 boxOrigin, bool allowRoll)
+        public void SetBox(BoundingBox absoluteBoxBounds, bool allowRoll)
         {
             BoxBounds = absoluteBoxBounds;
-            BoxOrigin = boxOrigin;
             AllowRoll = allowRoll;
             HasBox = true;
 

@@ -16,11 +16,12 @@ Unity 6000.3.7f1 的**七巧板拼圖遊戲**，參加 2026 大專校院資訊�
 | 檔案 | 是什麼 | 權威性 |
 |---|---|---|
 | `七巧板儲存規格.md` | **模型層的權威來源**（使用者寫的，已用程式驗證過） | 最高 |
-| `互動設計.md` | **互動層的權威來源**（盒子模式；§2 座標與版面層、§13 片的顯示層 2026-09-04 定案） | 最高 |
+| `互動設計.md` | **互動層的權威來源**（盒子模式；§2 座標與版面層、§13 片的顯示層、§14 盒子與這一關的狀態，2026-09-04 定案） | 最高 |
 | `企劃書_七巧板拼圖遊戲.md` | 競賽企劃書 | 商業面權威，技術細節已過時（見下） |
 | `程式說明書.md` | 現有程式逐支說明、API、陷阱、效能備忘 | 描述現況，不是規格 |
 | `開發進度.md` | P0～P4 工作細項、完成定義、待決事項 | 工作清單 |
 | `待辦清單.md` | **還沒做完的事的單一清單**（阻塞項、P1 剩餘、待決、技術債） | 每天的工作起點 |
+| `除錯記錄.md` | 查過的「不報錯但行為不對」的問題。每則四段：預期／實際／原因（含**怎麼發現的**）／處理（含**失敗的嘗試**） | 遇到怪症狀先翻這份 |
 
 **趕時間的話**：`待辦清單.md` 開始做事，`互動設計.md` 查規格。
 
@@ -63,9 +64,9 @@ Unity 6000.3.7f1 的**七巧板拼圖遊戲**，參加 2026 大專校院資訊�
 
 | | |
 |---|---|
-| 階段 | **P0 完成；P1 進行中（13 項完成 4 項：P1-1、P1-2、P1-4、P1-7）** |
-| 程式 | `Assets/Scripts/Data` 15 支、`Assets/Scripts/Core` 7 支、`Assets/Scripts/GameObject` 5 支（`BoxView` 還是空模板）|
-| 測試 | 99 個全過（`Assets/Tests/EditMode`）。⚠️ `dotnet` 只編 Data/Core/Tests，`GameObject/` 那幾支只有 Unity 驗得到 |
+| 階段 | **P0 完成；P1 進行中（13 項完成 5 項：P1-1、P1-2、P1-3、P1-4、P1-7）** |
+| 程式 | `Assets/Scripts/Data` 15 支、`Assets/Scripts/Core` 8 支、`Assets/Scripts/GameObject` 7 支 |
+| 測試 | 106 個全過（`Assets/Tests/EditMode`）。⚠️ `dotnet` 只編 Data/Core/Tests，`GameObject/` 那幾支只有 Unity 驗得到 |
 | 看板 | GitHub Projects：`P0_Skeleton` 與 `P1_Prototype`（<https://github.com/users/Shaddock3745/projects/1>、`/2`），repo `Shaddock3745/7_Puzzles_App`。P1-1 ～ P1-9 = issue #9 ～ #17 |
 
 ### 2026-09-03：P1-4 完成（區域判定）
@@ -140,8 +141,7 @@ Resolve(..., currentlySnapped, boxRegion.BoundaryNodes,
 ⚠️ **`BoardView.LayoutRecomputed` 目前沒有訂閱者，這是刻意留給 P1-6 的洞。**
 沒接的話症狀是「轉螢幕或拉 Game 視窗時，正在拖的片會突然黏歪」，不會有錯誤訊息。
 
-⚠️ **場景上還沒有東西掛 `BoardView`。** P1-2 開工前要在 `GameScene.unity` 建個空物件掛上去、
-把 Main Camera 指給 `targetCamera`。
+（場景接線的現況見下面 P1-3 那一節。）
 
 ### 2026-09-04：P1-2 完成（片的顯示）
 
@@ -171,9 +171,18 @@ Resolve(..., currentlySnapped, boxRegion.BoundaryNodes,
 
 ⚠️ 翻面用 `SpriteRenderer.flipY`（模型的翻面是 y 取負 = 垂直翻），**不要用負縮放**。
 
-### 2026-09-04：P1-3 設計定案（盒子 + 「這一題」的擁有者，還沒實作）
+### 2026-09-04：P1-3 完成（盒子 + 「這一關」的擁有者）
 
-完整規格在 `互動設計.md` §14。範圍比原本的「畫個盒子」大——第一次有東西負責「這一題」。
+完整規格在 `互動設計.md` §14。範圍比原本的「畫個盒子」大——第一次有東西負責「這一關」。
+
+| 檔案 | 在哪 | 可離線測 |
+|---|---|---|
+| `LevelSession.cs`（含 `LevelData`） | `Core` | ✅ 7 個測試，其中一個是重置測試 |
+| `LevelController.cs` | `GameObject` | ❌ |
+| `BoxView.cs` | `GameObject` | ❌ |
+
+✅ **場景已接線**（2026-09-04）：`GameScene.unity` 上有 `BoardView` / `BoxView` / `LevelController` / `PiecePreview` 四個物件，相機會自己 fit 到盒子。
+⚠️ **`BoxView` 物件的 transform 必須是原點**——mesh 建在世界座標，偏移會讓盒子畫到別的地方，而且不報錯。`BoxView.Awake` 現在會自己拉回來並警告。詳見 `除錯記錄.md` 001。
 
 | 角色 | 是什麼 |
 |---|---|
@@ -188,8 +197,8 @@ Resolve(..., currentlySnapped, boxRegion.BoundaryNodes,
 
 **換題是原地重置不是重建。** 重建的話所有把 `board` 存成欄位的人都會寫到死掉的那一份——
 片吸得好好的但盤面永遠空的、過關不觸發、`Changed` 訂閱安靜停掉，**完全不報錯**。
-代價是「清乾淨」變成人的責任，所以建議把 per-puzzle 狀態集中成一包、重置就換掉那一包，
-再釘一個「載 A → 全部動一遍 → 載 B → 斷言回到初始」的測試。
+代價是「清乾淨」變成人的責任，所以兩層防呆都做了：per-關 狀態集中成 `LevelData` 一包、重置就換掉整包，
+外加一個「載 A → 全部動一遍 → 載 B → 斷言回到初始」的測試（`關卡_換關之後所有狀態都回到初始`）。
 
 **換題的通知照順序直接叫，不發事件**——第 4 步（擺七片）依賴第 2 步（相機 fit），而事件沒有順序保證。
 
@@ -197,8 +206,8 @@ Resolve(..., currentlySnapped, boxRegion.BoundaryNodes,
 **洞自動出現**——那些地方本來就沒有片蓋住，所以完全不用寫「有洞多邊形的三角化」（橋接）。
 代價是盒子的畫面依賴參考解存在，P2-6a 本來就規劃要一起存。
 
-⚠️ **`BoardLayout.BoxOrigin` 是唯寫欄位**（宣告 + `SetBox` 寫入，沒有第三處，`Solve()` 沒用到）。
-P1-3 開工時拿掉它，`SetBox` 少收一個參數。盒子原點改成無狀態靜態方法算出來，值是 `ExactVector2.Zero`。
+✅ **`BoardLayout.BoxOrigin` 已經拿掉**（它是唯寫欄位，`Solve()` 從沒用過），`SetBox` 少收一個參數。
+盒子原點的家改成 `LevelSession.BoxOriginFor`——無狀態靜態方法算出來，目前值是 `ExactVector2.Zero`。
 
 ### 2026-09-03：全專案函式文件化
 
@@ -370,7 +379,7 @@ XML doc（`<param>` / `<returns>`）與「為什麼這樣寫」的註解一樣�
 1. **在 `GameScene.unity` 掛上 `BoardView`**（空物件 + 指定 `targetCamera`），否則後面全部看不到東西
 2. **驗一次 P1-2**：另建一個空物件掛 `PiecePreview`，按 Play 應該看到七片排一列、五種形狀、七個顏色。
    ⚠️ `GameObject/` 那幾支 `dotnet` 編不到，這是它們第一次進 Unity 編譯器
-3. **P1-3**：盒子顯示 `BoxView`。盒子原點從 `BoardView.Layout.BoxOrigin` 拿，不要另外算一份
+3. **接線**：`GameScene.unity` 上建物件掛 `BoardView` / `BoxView` / `LevelController`
 4. **P1-6**：拖曳控制。⚠️ 要訂閱 `BoardView.LayoutRecomputed` 取消進行中的拖曳，
    座標換算走 `BoardView.ScreenToWorld` 不要用 `Camera.ScreenToWorldPoint`
 

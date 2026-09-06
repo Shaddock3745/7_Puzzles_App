@@ -111,3 +111,7 @@ InitTestScene*.unity*
 /[Tt]ools/**/[Bb]in/
 /[Tt]ools/**/[Oo]bj/
 協作筆記.md
+
+# Unity 非正常關閉後留下的場景復原副本，不是專案內容
+/[Aa]ssets/_[Rr]ecovery/
+/[Aa]ssets/_[Rr]ecovery.meta

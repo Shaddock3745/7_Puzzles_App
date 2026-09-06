@@ -432,7 +432,7 @@ namespace Tangram.Tests
         public void 座標狀態_螢幕尺寸變化偵測()
         {
             BoardLayout layout = new BoardLayout(LayoutRule.Portrait);
-            layout.SetBox(SquareBoxExact(), ExactVector2.Zero, allowRoll: true);
+            layout.SetBox(SquareBoxExact(), allowRoll: true);
 
             Assert.IsTrue(layout.HasScreenSizeChanged(PhoneWidth, PhoneHeight),
                           "剛換題目一定要重算");
@@ -446,10 +446,10 @@ namespace Tangram.Tests
         public void 座標狀態_換題目會強迫下一次重算()
         {
             BoardLayout layout = new BoardLayout(LayoutRule.Portrait);
-            layout.SetBox(SquareBoxExact(), ExactVector2.Zero, allowRoll: true);
+            layout.SetBox(SquareBoxExact(), allowRoll: true);
             layout.RecordScreenSize(PhoneWidth, PhoneHeight);
 
-            layout.SetBox(SquareBoxExact(), new ExactVector2(3, 5), allowRoll: false);
+            layout.SetBox(SquareBoxExact(), allowRoll: false);
 
             Assert.IsTrue(layout.HasScreenSizeChanged(PhoneWidth, PhoneHeight),
                           "螢幕沒變但題目變了，還是得重算並推送");
@@ -459,7 +459,7 @@ namespace Tangram.Tests
         public void 座標狀態_重算不快取()
         {
             BoardLayout layout = new BoardLayout(LayoutRule.Portrait);
-            layout.SetBox(SquareBoxExact(), ExactVector2.Zero, allowRoll: true);
+            layout.SetBox(SquareBoxExact(), allowRoll: true);
 
             ViewportSolution before = layout.Solve(PhoneWidth, PhoneHeight);
             layout.SetRule(new LayoutRule(0.0f, 0.0f, 1.0f, 1.0f));
@@ -473,7 +473,7 @@ namespace Tangram.Tests
         public void 座標狀態_精選題的鎖定是關掉allowRoll不是寫死roll()
         {
             BoardLayout layout = new BoardLayout(LayoutRule.Portrait);
-            layout.SetBox(WideBoxExact(), ExactVector2.Zero, allowRoll: false);
+            layout.SetBox(WideBoxExact(), allowRoll: false);
 
             Assert.IsFalse(layout.AllowRoll);
             Assert.AreEqual(0, layout.Solve(PhoneWidth, PhoneHeight).QuarterTurns);
@@ -508,7 +508,7 @@ namespace Tangram.Tests
             Region boxRegion = Region.FromPuzzle(puzzle, boxOrigin);
 
             BoardLayout layout = new BoardLayout(LayoutRule.Portrait);
-            layout.SetBox(boxRegion.Bounds, boxOrigin, allowRoll: true);
+            layout.SetBox(boxRegion.Bounds, allowRoll: true);
 
             ViewportSolution solution = layout.Solve(PhoneWidth, PhoneHeight);
             Assert.IsTrue(solution.IsValid);

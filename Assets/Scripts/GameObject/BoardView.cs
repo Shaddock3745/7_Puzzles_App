@@ -35,7 +35,7 @@ public class BoardView : MonoBehaviour
     [SerializeField] private float releaseRadiusPixels = 30f;
 
     /// <summary>
-    /// 這一題的座標狀態。P1-3（<c>BoxView</c>）要拿 <c>BoxOrigin</c> 畫盒子。
+    /// 這一題的座標狀態。相機參數的來源；盒子原點**不在這裡**，在 <c>LevelSession</c>。
     /// </summary>
     public BoardLayout Layout { get; private set; }
 
@@ -83,11 +83,10 @@ public class BoardView : MonoBehaviour
     /// 換題目：設定盒子並立刻重算推送。
     /// </summary>
     /// <param name="absoluteBoxBounds">盒子的絕對包圍盒，通常是 <c>Region.Bounds</c>。</param>
-    /// <param name="boxOrigin">盒子原點，精確座標。</param>
     /// <param name="allowRoll">允不允許 roll 相機。精選題傳 false。</param>
-    public void SetBox(BoundingBox absoluteBoxBounds, ExactVector2 boxOrigin, bool allowRoll)
+    public void SetBox(BoundingBox absoluteBoxBounds, bool allowRoll)
     {
-        Layout.SetBox(absoluteBoxBounds, boxOrigin, allowRoll);
+        Layout.SetBox(absoluteBoxBounds, allowRoll);
         EnsureCurrent();
     }
 
