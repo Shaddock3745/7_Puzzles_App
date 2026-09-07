@@ -48,6 +48,11 @@ public class PiecePreview : MonoBehaviour
     private float builtInset;
     private float builtCornerRadius;
 
+    // 上一次推給七片的那組姿態值。⚠️ **只有真的被拉動才推**，見 ApplyInspectorValues
+    private int appliedRotation = -1;
+    private bool appliedFlipped;
+    private bool appliedShowAsSnapped;
+
     private void Start()
     {
         library = BuildLibrary();
@@ -110,9 +115,34 @@ public class PiecePreview : MonoBehaviour
         }
     }
 
-    /// <summary>把 Inspector 上那三個值套到七片身上，讓你在 Play 模式下能即時拉著看。</summary>
+    /// <summary>
+    /// 把 Inspector 上那三個值套到七片身上，讓你在 Play 模式下能即時拉著看。
+    ///
+    /// ⚠️ <b>只有那三個值真的被拉動才推，不是每幀推</b>（2026-09-07 修）。
+    ///
+    /// 原本是每幀無條件推，而這支<b>目前是場上唯一會生出七片的東西</b>（P1-5 還沒做），
+    /// 所以它等於每幀把七片的姿態重設回滑桿上的值：
+    /// <list type="bullet">
+    /// <item>旋轉鈕按下去改了旋轉格數，<b>下一幀就被蓋回去</b>——按鈕看起來完全沒反應</item>
+    /// <item>翻面鈕同理</item>
+    /// <item><c>IsSnapped</c> 每幀強寫，等於在跟拖曳控制器搶。拖曳之所以看起來正常，
+    /// 只是因為 <c>TouchInputController.Update</c> 剛好排在這支後面，
+    /// 而 <c>MonoBehaviour</c> 之間的順序是<b>未定義</b>的</item>
+    /// </list>
+    ///
+    /// 三個症狀都不會有任何錯誤訊息。<b>P1-5 做好之後這支要整個刪掉</b>，
+    /// 它已經在跟真正的系統搶同一批片了。
+    /// </summary>
     private void ApplyInspectorValues()
     {
+        if (rotation == appliedRotation
+            && flipped == appliedFlipped
+            && showAsSnapped == appliedShowAsSnapped) return;
+
+        appliedRotation = rotation;
+        appliedFlipped = flipped;
+        appliedShowAsSnapped = showAsSnapped;
+
         foreach (PieceView piece in pieces)
         {
             if (piece == null) continue;

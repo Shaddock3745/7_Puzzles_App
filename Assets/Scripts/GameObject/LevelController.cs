@@ -103,8 +103,8 @@ public class LevelController : MonoBehaviour
         //    位置放在這裡是因為它**必須**排在第 2 步之後（要用相機算出來的版面）
 
         // 5. 取消進行中的拖曳。跟 BoardView.LayoutRecomputed 是同一個動作的兩個入口，
-        //    所以都接到 TouchInputController.CancelDrag，不各寫一次
-        if (dragController != null) dragController.CancelDrag();
+        //    所以都接到 TouchInputController.CancelInteraction，不各寫一次
+        if (dragController != null) dragController.CancelInteraction();
     }
 
     /// <summary>
@@ -115,7 +115,7 @@ public class LevelController : MonoBehaviour
     /// </summary>
     public void ExitLevel()
     {
-        if (dragController != null) dragController.CancelDrag();
+        if (dragController != null) dragController.CancelInteraction();
         session.Unload();
     }
 }

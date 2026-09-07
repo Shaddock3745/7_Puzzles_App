@@ -10,7 +10,10 @@ using UnityEngine;
 /// 就得知道其他六片在哪、盒子在哪——每一片都得認識全世界（§13.10）。
 ///
 /// <b>記住的東西</b>：片種、槽索引（身分，生出來就不變）；
-/// 旋轉格數、翻面、吸住了沒、正在被拖（會變，是真相）。
+/// 旋轉格數、翻面、吸住了沒、正在被拖、被選取了沒（會變）。
+///
+/// ⚠️ 前四個是<b>真相</b>，「被選取了沒」不是——它的真相在輸入控制器手上
+/// （那裡才知道「至多一片」），片上這個只是被推過來畫的快取，跟「吸住了沒」同一個模式。
 ///
 /// <b>刻意不記的</b>：
 /// <list type="bullet">
@@ -32,6 +35,14 @@ public class PieceView : MonoBehaviour
     /// <summary>沒吸住時的不透明度（互動設計 §2.7「未放置的片顯示為半透明」）。</summary>
     private const float UnsnappedAlpha = 0.55f;
 
+    /// <summary>
+    /// 被選取時往白色提亮多少。
+    ///
+    /// ⚠️ <b>這是佔位用的表現</b>——描邊、外框、發光之後再說。
+    /// 換掉它不會動到任何資料流，所以先用最省事的方式讓選取看得見（P1-8）。
+    /// </summary>
+    private const float SelectedBrightenAmount = 0.45f;
+
     /// <summary>片種。決定形狀、碰撞盒、旋轉循環長度。生成時設定，之後不變。</summary>
     public PieceKind Kind { get; private set; }
 
@@ -51,6 +62,7 @@ public class PieceView : MonoBehaviour
     private bool isFlipped;
     private bool isSnapped;
     private bool isBeingDragged;
+    private bool isSelected;
 
     // ─────────────────────────────────────────────────────────────
     // 位置：直接讀寫 transform，沒有第二份，所以不可能不同步
@@ -89,7 +101,7 @@ public class PieceView : MonoBehaviour
     // ─────────────────────────────────────────────────────────────
     // 姿態與狀態：setter 一定刷新，呼叫端不可能忘記
     //
-    // 這四個忘了刷新是**安靜的** bug——畫面只是有點怪，不會有任何錯誤訊息，
+    // 這五個忘了刷新是**安靜的** bug——畫面只是有點怪，不會有任何錯誤訊息，
     // 所以保險做進 setter，而不是靠呼叫的人記得（§13.3）
     // ─────────────────────────────────────────────────────────────
 
@@ -219,6 +231,27 @@ public class PieceView : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// 有沒有被選取（互動設計 §4「高亮」）。旋轉／翻面鈕作用的就是被選取的那一片。
+    ///
+    /// ⚠️ <b>片自己不判斷該不該被選取，也不知道有沒有別片被選。</b>
+    /// 「至多一片」的不變式由輸入控制器維護，跟「正在被拖」完全一樣——
+    /// 由指揮者推進來，不要讓片自己去問。
+    ///
+    /// 依 §4 的規則：<b>沒在被拖的時候</b>，被選取的片必定不在盤面上、必定沒吸住。
+    /// §5 的軸心補償靠這條不變式才永遠成立——按鈕的顯示條件排除了拖曳中，
+    /// 所以按鈕能被按到的每一刻，那片都是浮點的。
+    /// </summary>
+    public bool IsSelected
+    {
+        get => isSelected;
+        set
+        {
+            isSelected = value;
+            RefreshVisuals();
+        }
+    }
+
     /// <summary>吸住了而且沒在被拖 —— 也就是「這個位置已經定案」。決定要不要半透明。</summary>
     public bool IsCommitted => isSnapped && !isBeingDragged;
 
@@ -259,7 +292,7 @@ public class PieceView : MonoBehaviour
     }
 
     /// <summary>
-    /// 把四個欄位算成 Unity 的值並寫進去。
+    /// 把五個欄位算成 Unity 的值並寫進去。
     ///
     /// <b>刻意不碰位置</b>——位置沒有第二份，也就沒有需要同步的東西（§13.4）。
     /// </summary>
@@ -276,6 +309,11 @@ public class PieceView : MonoBehaviour
         if (library != null)
         {
             Color color = library.ColorFor(SlotIndex);
+
+            // ⚠️ 提亮要在設定 alpha **之前**做。Lerp 到 Color.white 連 alpha 也會被拉向 1，
+            // 順序反過來的話被選取的片會突然變不透明，看起來像「已放置」
+            if (isSelected) color = Color.Lerp(color, Color.white, SelectedBrightenAmount);
+
             color.a = IsCommitted ? 1f : UnsnappedAlpha;
             spriteRenderer.color = color;
         }

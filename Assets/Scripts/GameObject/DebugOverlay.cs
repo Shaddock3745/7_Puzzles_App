@@ -111,6 +111,7 @@ public class DebugOverlay : MonoBehaviour
         builder.AppendLine($"面積    {PlacedArea(board):0.##} / 32");
 
         AppendDragLine(level);
+        AppendSelectionLine(level);
 
         BoundingBox bounds = level.BoxRegion.Bounds;
         double boxWidth = (bounds.Maximum.X - bounds.Minimum.X).ToDouble();
@@ -128,19 +129,52 @@ public class DebugOverlay : MonoBehaviour
     /// <param name="level">這一關的資料。</param>
     private void AppendDragLine(LevelData level)
     {
-        PieceView dragging = dragController != null ? dragController.DraggingPiece : null;
-        if (dragging == null)
+        PieceView pressed = dragController != null ? dragController.PressedPiece : null;
+        if (pressed == null)
         {
-            builder.AppendLine("拖曳    —");
+            builder.AppendLine("指標    —");
             return;
         }
 
+        // 「按住」與「拖曳」要分開印（互動設計 §4）。門檻內的那幾幀片一動也不動，
+        // 沒有這一格的話會以為是輸入沒反應
+        string phase = dragController.IsDragging ? "拖曳" : "按住";
+
         // 「畫面上吸住了」與「盤面登記了」刻意會在拖曳中不一致（互動設計 §13.10），
-        // 所以兩個都印出來——不然那個差異在畫面上完全看不出來
-        bool onBoard = level.Board[dragging.SlotIndex].OnBoard;
-        builder.AppendLine($"拖曳    槽{dragging.SlotIndex} {dragging.Kind} " +
-                           $"rot{dragging.Rotation}{(dragging.IsFlipped ? " 翻" : "")}   " +
-                           $"畫面{(dragging.IsSnapped ? "吸住" : "自由")} / 盤面{(onBoard ? "有" : "無")}");
+        // 所以兩個都印出來——不然那個差異在畫面上完全看不出來。
+        // ⚠️ 這一格也是驗「點一下不會偷偷 Lift」最快的地方：點一下已放置的片，
+        // 盤面那個字不該從「有」變「無」
+        bool onBoard = level.Board[pressed.SlotIndex].OnBoard;
+        builder.AppendLine($"{phase}    槽{pressed.SlotIndex} {pressed.Kind} " +
+                           $"rot{pressed.Rotation}{(pressed.IsFlipped ? " 翻" : "")}   " +
+                           $"畫面{(pressed.IsSnapped ? "吸住" : "自由")} / 盤面{(onBoard ? "有" : "無")}");
+    }
+
+    /// <summary>
+    /// 被選取（高亮）的是哪一片。
+    ///
+    /// ⚠️ 依互動設計 §4，<b>沒在被拖的時候</b>被選取的片必定不在盤面上。
+    /// 所以這一行同時是那條不變式的檢查點——沒在拖卻印出「盤面有」就代表規則破了，
+    /// 而畫面上只會表現成「按旋轉鈕的時候片飛出去」，離原因很遠。
+    ///
+    /// <b>拖曳中「盤面有」是正常的</b>：拿起已放置的片開始拖，盤面要到放手才把它 <c>Lift</c>。
+    /// 所以警告要扣掉這種情況，不然它每次拖都亮，就沒人看了。
+    /// </summary>
+    /// <param name="level">這一關的資料。</param>
+    private void AppendSelectionLine(LevelData level)
+    {
+        PieceView selected = dragController != null ? dragController.SelectedPiece : null;
+        if (selected == null)
+        {
+            builder.AppendLine("選取    —");
+            return;
+        }
+
+        bool onBoard = level.Board[selected.SlotIndex].OnBoard;
+        bool violated = onBoard && !selected.IsBeingDragged;
+        builder.AppendLine($"選取    槽{selected.SlotIndex} {selected.Kind} " +
+                           $"rot{selected.Rotation}{(selected.IsFlipped ? " 翻" : "")}   " +
+                           $"盤面{(onBoard ? "有" : "無")}{(violated ? "  ⚠️不變式破了" : "")}");
     }
 
     private void AppendCameraLine()
