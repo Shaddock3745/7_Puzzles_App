@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 > 給 Claude 看的專案交接文件。新 session／換裝置時先讀這份。
-> 最後更新：2026-09-04
+> 最後更新：2026-09-07
 
 ---
 
@@ -64,8 +64,8 @@ Unity 6000.3.7f1 的**七巧板拼圖遊戲**，參加 2026 大專校院資訊�
 
 | | |
 |---|---|
-| 階段 | **P0 完成；P1 進行中（13 項完成 7 項：P1-1、P1-2、P1-3、P1-4、P1-6、P1-7、P1-12）** |
-| 程式 | `Assets/Scripts/Data` 15 支、`Assets/Scripts/Core` 8 支、`Assets/Scripts/GameObject` 9 支 |
+| 階段 | **P0 完成；P1 進行中（13 項完成 8 項：P1-1、P1-2、P1-3、P1-4、P1-6、P1-7、P1-8、P1-12）** |
+| 程式 | `Assets/Scripts/Data` 14 支、`Assets/Scripts/Core` 9 支、`Assets/Scripts/GameObject` 9 支 |
 | 測試 | 108 個全過（`Assets/Tests/EditMode`）。⚠️ `dotnet` 只編 Data/Core/Tests，`GameObject/` 那幾支只有 Unity 驗得到 |
 | 看板 | GitHub Projects：`P0_Skeleton` 與 `P1_Prototype`（<https://github.com/users/Shaddock3745/projects/1>、`/2`），repo `Shaddock3745/7_Puzzles_App`。P1-1 ～ P1-9 = issue #9 ～ #17 |
 
@@ -209,6 +209,34 @@ Resolve(..., currentlySnapped, boxRegion.BoundaryNodes,
 ✅ **`BoardLayout.BoxOrigin` 已經拿掉**（它是唯寫欄位，`Solve()` 從沒用過），`SetBox` 少收一個參數。
 盒子原點的家改成 `LevelSession.BoxOriginFor`——無狀態靜態方法算出來，目前值是 `ExactVector2.Zero`。
 
+### 2026-09-07：P1-8 完成（選取 + 旋轉／翻面鈕）
+
+完整規格在 `互動設計.md` §4（點選與拖曳的分界、高亮）與 §5（按鈕）。
+新增 `GameObject/PieceActionButtons.cs`，其餘都改在 `TouchInputController` / `PieceView`。
+
+**一次按下有兩種結局**：手指離按下點超過門檻（**螢幕像素**，不是世界單位）就是拖曳，
+沒超過就是點選。旗標**一旦打開就不再關**——繞一圈回到原點放開，那仍然是拖曳。
+門檻內完全不跑吸附，所以判定成點選時什麼都不用還原。
+
+**高亮一條規則**：手上那片不在盤面上就選它，否則清掉。跨過門檻就亮，不等放手。
+
+> ⚠️ **不變式帶但書**：**沒在被拖的時候**，高亮的片必定不在盤面上、必定沒吸住。
+> 拖曳期間盤面還留著它舊的位置（要到放手才 `Lift`）。這樣仍然夠用，
+> 因為按鈕的顯示條件本來就排除拖曳中——**按鈕能被按到的每一刻不變式都成立**，
+> §5 的軸心補償才永遠生效。
+
+**按鈕本身不做事**，只負責「什麼時候顯示」與「把按下轉給控制器」。
+轉一格的規則住在 `TouchInputController.RotateSelected`——之後加快捷鍵或手勢不用再寫一份。
+**顯示條件與作用條件共用同一個 `ActionTarget`**，分岔會變成「看得到但按了沒反應」。
+
+✅ **`CancelDrag` 改名 `CancelInteraction`**，而且清選取必須放在「手上沒片就回去」**之前**。
+換關時多半沒人在拖，但上一關選取的那片還亮著。
+
+⚠️ **翻面鈕會順便把旋轉格數取負**（1↔3）。模型的翻面是對片自己的 x 軸鏡射，
+所以畫面上是「繞角度 θ 的直線鏡射」——θ 是奇數格時軸是斜的，看起來像被扭了一下。
+`θ' = −θ` 讓 `θ'+θ = 0`，軸永遠水平或垂直。姿態一個都沒少（翻兩次回到原狀）。
+**這條規則住在按鈕那一層，不在片的翻面設定值裡**——還原與重設那些路徑要能單獨改翻面。
+
 ### 2026-09-03：全專案函式文件化
 
 18 支程式檔全部有 XML doc（`<param>` / `<returns>`）。IDE 提示視窗會顯示，
@@ -275,6 +303,9 @@ dotnet test Tools/DotnetTests
 | **`BoardState.Clear()` 會發七次 `Changed`** | P1 加 undo 時一併處理 |
 | **`Region.ContainsPolygon` 只管出界，不管重疊** | 合法擺放要它與 `Geometry.ConvexOverlap` 兩個都過 |
 | **`Region` 內部有兩套座標系** | 原座標與 ×2。中點只在 ×2 那邊算，混用會差一個 2 倍而且不報錯 |
+| **`PiecePreview` 會跟真正的系統搶那七片** | 它是 P1-2 的鷹架，但 P1-5 還沒做，所以它是場上**唯一**會生出七片的東西。原本每幀無條件把 `Rotation`/`IsFlipped`/`IsSnapped` 蓋回 Inspector 滑桿值——旋轉鈕按了完全沒反應（除錯記錄 003）。已改成「滑桿真的被拉動才推」，但**P1-5 做好要整個刪掉** |
+| **`EventSystem.IsPointerOverGameObject()` 會晚一幀** | 它的答案由 UI 輸入模組在**它自己的 `Update`** 裡算，而 `MonoBehaviour` 之間的順序是未定義的——按下那一幀很可能拿到上一幀的答案，症狀是「按按鈕的同時也抓到了片」，時好時壞且不報錯。`TouchInputController` 改成自己比矩形（`RegisterPressBlockingArea`），沒有這個問題 |
+| **「事件有觸發但沒效果」先 grep 誰還會寫那個欄位** | 除錯記錄 003 的教訓：先給機制解釋、再找證據，方向錯了整段都是白工。`grep` 全專案的寫入者是機械性的、不會猜錯 |
 | **專案只開了新 Input System** | `ProjectSettings` 的 `activeInputHandler: 1`。`Input.mousePosition`、`Input.GetMouseButton` 這些舊 API 在 runtime 會直接丟例外。P1-6 要用 `UnityEngine.InputSystem` 的 `Pointer.current` / `Touchscreen.current` |
 | **`transform` 不能存旋轉** | 正方形 `rotation = 0` 與 `= 2` 的 transform **完全相同**，反推不回來。旋轉一定要有自己的 int 欄位，transform 只是輸出。位置反過來可以放 transform（浮點 round-trip 無損），前提是不掛在有旋轉或縮放的父物件下 |
 | **模型的翻面是垂直翻，不是水平** | `Symmetry.MirrorAcrossXAxis` 是 (x, y) → (x, −y)。所以 Sprite 要用 `flipY` 不是 `flipX` |
@@ -374,14 +405,17 @@ XML doc（`<param>` / `<returns>`）與「為什麼這樣寫」的註解一樣�
 
 ## 下一步
 
-**完整清單看 `待辦清單.md`**，這裡只列頭三件：
+**完整清單看 `待辦清單.md`**，這裡只列頭幾件：
 
-1. **在 `GameScene.unity` 掛上 `BoardView`**（空物件 + 指定 `targetCamera`），否則後面全部看不到東西
-2. **驗一次 P1-2**：另建一個空物件掛 `PiecePreview`，按 Play 應該看到七片排一列、五種形狀、七個顏色。
-   ⚠️ `GameObject/` 那幾支 `dotnet` 編不到，這是它們第一次進 Unity 編譯器
-3. **接線**：`GameScene.unity` 上建物件掛 `BoardView` / `BoxView` / `LevelController`
-4. **P1-6**：拖曳控制。⚠️ 要訂閱 `BoardView.LayoutRecomputed` 取消進行中的拖曳，
-   座標換算走 `BoardView.ScreenToWorld` 不要用 `Camera.ScreenToWorldPoint`
+1. **P1-5 待用區**（建議下一個做）。⚠️ 不只是「排七片」——**`PiecePreview` 目前是場上唯一會生出七片的東西**，
+   而它是 P1-2 的驗證鷹架：它持有那七片，卻不知道有別人也在動它們。
+   除錯記錄 003 就是這樣來的（每幀把姿態蓋回 Inspector 滑桿值，旋轉鈕看起來完全沒反應）。
+   **P1-5 做好要把 `PiecePreview` 整個刪掉**
+2. **P1-10 過關判定重寫**：`PuzzleValidator` 整個拿掉，判定就是 `AllOnBoard`
+3. **P1-9 Undo** / **P1-11 中途回饋** / **P1-13 手感調參**
 
-**純 C# 的部分（P1-1、P1-2 的可測部分、P1-4、P1-7）全部做完了**，剩下的都在 Unity 那一側。
+**拖曳 MVP 的骨幹全部走完而且實測過了**：座標、片的顯示、盒子、拖曳吸附、選取、旋轉翻面鈕。
+現在缺的是「七片一開始從哪來」（P1-5）與「怎麼算過關」（P1-10）。
+
+**純 C# 的部分（P1-1、P1-2 的可測部分、P1-4、P1-7）全部做完了。**
 P0-8 也結案了（Unity 內編譯通過、Test Runner 全綠）。
