@@ -171,7 +171,12 @@ dotnet test Tools/DotnetTests
 
 ## 環境限制
 
-- **`gh` CLI 已安裝**（2026-09-08，v2.100.0，`C:\Program Files\GitHub CLI\`）。已登入 `Shaddock3745`，權限含 `repo` 與 `project`，所以 **issue 與 Projects 看板都動得了**。⚠️ 兩件事：**登入類指令（`gh auth login` / `refresh`）一律交給使用者跑**，不要代勞；**動 GitHub 之前先問**，關 issue、開 issue、移看板欄位別人看得到，跟改本地檔案不同
+- **`gh` CLI 已安裝**（v2.100.0，`C:\Program Files\GitHub CLI\`）。已登入 `Shaddock3745`。⚠️ 四件事：
+  - **登入類指令（`gh auth login` / `refresh`）一律交給使用者跑**，不要代勞
+  - **動 GitHub 之前先問**——關 issue、開 issue、移看板欄位別人看得到，跟改本地檔案不同
+  - ⚠️ **兩台機器的 scope 不一樣。** 先確認再動：`gh auth status` 會列出來。這一台（2026-09-09 裝的）是 `gist, read:org, repo, workflow`——**沒有 `project`**，所以 **issue 動得了、看板欄位動不了**。實務上用不到，因為**關 issue 時 Projects 會自動把卡片移進 Done**。真的需要再請使用者跑 `gh auth refresh -s project`
+  - ⚠️ **剛裝完的那個 session PATH 是舊的**，`gh` 會 command not found（Git Bash 與 PowerShell 都是）。用完整路徑 `"C:\Program Files\GitHub CLI\gh.exe"` 呼叫就好，不用叫使用者重開
+- ⚠️ **PowerShell 5.1 會把原生程式的 stderr 包成 ErrorRecord**，所以 `gh` 成功時也可能顯示成紅字的 `NativeCommandError`（例如 `✓ Closed issue ...` 就是印到 stderr 的）。**看訊息內容判斷，不要看有沒有紅字**
 - **Git Bash 裡沒有 `python`，也沒有 `node`** → 要寫腳本只能用 PowerShell；改檔案優先用 Edit/Write 工具（CJK 內容用 heredoc 有編碼風險）
 - **PowerShell 是 5.1** → 沒有 `&&`、`??`、三元運算子；`ConvertFrom-Json` 回 PSCustomObject
 - **CJK 檔名在 Git Bash 的 `ls` / `find` 可能查不到** → 用 PowerShell 的 `Get-ChildItem` 確認才準（這個 session 誤判過一次）
