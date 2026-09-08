@@ -120,10 +120,25 @@ namespace Tangram.Core
             Changed?.Invoke(this);
         }
 
-        /// <summary>全部拿起。<b>注意：會連續觸發七次 Changed。</b></summary>
+        /// <summary>
+        /// 全部拿起。姿態保留，跟 <see cref="Lift"/> 一樣。
+        ///
+        /// ⚠️ <b>只觸發一次 <see cref="Changed"/></b>（2026-09-09，P1-9 順帶修）。
+        /// 原本是連呼叫七次 <c>Lift</c>，也就是連發七次事件——
+        /// 訂閱者會看到六個「中間狀態」，而那幾個狀態在遊戲裡從來不存在。
+        /// 過關判定與中途回饋都要綁 <c>Changed</c>，讓它們對著不存在的盤面各算一次
+        /// 既浪費又可能算出奇怪的中間結論（例如「剩餘區域填不滿」閃一下）。
+        /// </summary>
         public void Clear()
         {
-            for (int slotIndex = 0; slotIndex < PieceCount; slotIndex++) Lift(slotIndex);
+            var lifted = new PieceObservation[PieceCount];
+            for (int slotIndex = 0; slotIndex < PieceCount; slotIndex++)
+            {
+                PieceObservation observation = _pieces[slotIndex];
+                lifted[slotIndex] = new PieceObservation(
+                    slotIndex, observation.Kind, observation.Placement, false);
+            }
+            ReplaceAll(lifted);
         }
 
         /// <summary>目前在盤上的片，給驗證與吸附用。</summary>

@@ -35,8 +35,18 @@ namespace Tangram.Core
         /// <summary>允不允許 roll 相機。精選題要傳 false（互動設計 §2.6）。</summary>
         public readonly bool AllowRoll;
 
-        /// <summary>這一關的盤面。undo 快照堆疊之後也會放在它裡面（P1-9）。</summary>
+        /// <summary>這一關的盤面。</summary>
         public readonly BoardState Board;
+
+        /// <summary>
+        /// undo 的步驟堆疊（P1-9）。每一步是**動之前**那幾槽的樣子，
+        /// 一般一步一筆，清空是一步七筆。
+        ///
+        /// <b>放這裡而不是放長生的 <see cref="LevelSession"/> 外殼上</b>：換關是整包換掉，
+        /// 所以「換關要把堆疊清空」自動成立。忘記清的症狀是
+        /// <b>玩家在新的一關按 undo，上一關的片被拉回來</b>，而且不報錯。
+        /// </summary>
+        private readonly List<PieceObservation[]> undoSteps = new List<PieceObservation[]>();
 
         /// <summary>
         /// 每一片在不在待用區。索引就是槽索引。
@@ -117,6 +127,142 @@ namespace Tangram.Core
                     $"第 {slotIndex} 槽還在盤面上，不能直接收進待用區。先 Lift 再送回去。");
 
             inTray[slotIndex] = value;
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // undo（P1-9）
+        //
+        // 一步的定義是**只有「放進盤面」算**，清空另外算一步七筆。
+        // 旋轉、翻面、暫放、從抽屜拿出來、丟進回收框都不算——它們不動 BoardState。
+        //
+        // ⚠️ 所以它是「拿回上一片」不是「退回上一步」。玩家最後做的如果是旋轉，
+        // 按下去會跳過它去撤銷更早的入盤動作。UI 上不要叫「復原」。
+        // ─────────────────────────────────────────────────────────────
+
+        /// <summary>還有東西可以退嗎。按鈕拿它決定要不要顯示。</summary>
+        public bool CanUndo => undoSteps.Count > 0;
+
+        /// <summary>
+        /// 記下一步。傳進來的是**動之前**那幾槽的樣子，不是動之後。
+        ///
+        /// ⚠️ <b>推入點由呼叫端決定，不能搬進 <see cref="BoardState"/> 自動推</b>——
+        /// 「哪些盤面變動算一步」是政策不是機制。自動推的話
+        /// <see cref="TryUndo"/> 自己執行的 <c>Place</c> / <c>Lift</c> 也會被記進去，
+        /// 那會變成按一次 undo 就無限循環。
+        ///
+        /// 呼叫的樣子是在 <c>Place</c> <b>之前</b>先取 <c>Board[slotIndex]</c> 傳進來。
+        /// <see cref="PieceObservation"/> 是 <c>readonly struct</c>，而 <c>Board[i]</c>
+        /// 回傳的就是複本，所以不會有「記下去之後又被改掉」的別名問題。
+        /// </summary>
+        /// <param name="observationsBefore">
+        /// 動之前那幾槽的樣子。一般一筆；清空是七筆，會被當成**一步**退回去。
+        /// 空陣列或 null 會被忽略（不會壓進一個退了等於沒退的空步驟）。
+        /// </param>
+        public void PushUndoStep(params PieceObservation[] observationsBefore)
+        {
+            if (observationsBefore == null || observationsBefore.Length == 0) return;
+            undoSteps.Add(observationsBefore);
+        }
+
+        /// <summary>
+        /// 退一步。<b>模型的部分在這裡做完，畫面的部分不在</b>——
+        /// 回傳的那幾筆就是「每一槽該變回什麼樣子」，由控制器套用到 <c>PieceView</c>
+        /// （待辦清單〈畫面同步歸控制器〉）。
+        ///
+        /// 兩條分支看的是<b>動之前在不在盤上</b>：
+        /// <list type="bullet">
+        /// <item><c>true</c>＝這一步原本是「移動」→ 放回舊的擺放，仍在盤上</item>
+        /// <item><c>false</c>＝這一步原本是「放進去」→ 從盤面拿下來，送回待用區</item>
+        /// </list>
+        ///
+        /// <b>為什麼記狀態不記動作</b>：記動作的話要處理「同一片在堆疊裡有多筆，
+        /// 撤銷較早那筆時它已經不在盤上」。記 <see cref="PieceObservation"/> 記的是
+        /// 「回到什麼樣子」，每一筆跟其他筆無關，那個情況根本不存在。
+        /// 而且是免費的——那個 <c>OnBoard</c> 本來就在 struct 裡。
+        /// </summary>
+        /// <param name="restored">
+        /// 退回去的那幾槽**動之前的樣子**，也就是它們現在該有的樣子。
+        /// 沒東西可退時是 null。
+        /// </param>
+        /// <returns>有沒有真的退了一步。</returns>
+        public bool TryUndo(out IReadOnlyList<PieceObservation> restored)
+        {
+            restored = null;
+            if (undoSteps.Count == 0) return false;
+
+            PieceObservation[] step = undoSteps[undoSteps.Count - 1];
+            undoSteps.RemoveAt(undoSteps.Count - 1);
+
+            // ⚠️ 三段的順序是為了讓「在盤上」與「在待用區」互斥這條**在每個時刻都成立**，
+            // 包括 ReplaceAll 觸發 Changed 的那一刻。順序換掉的話有兩種壞法：
+            //
+            //   先設待用區再改盤面 → 要送回待用區的那幾片此刻還在盤上 → SetInTray 丟例外
+            //   先改盤面再設待用區 → Changed 送出去的那一瞬間，回到盤上的片
+            //                        待用區旗標還是 true（TrayView 會把它藏起來）
+            //
+            // 第一段只做 false 方向，而 SetInTray(_, false) 永遠不會丟例外
+            // （它只檢查 value == true 的情況），所以放在改盤面之前是安全的
+            foreach (PieceObservation before in step)
+                if (before.OnBoard) SetInTray(before.Index, false);
+
+            // 第二段：整盤一次寫完，只發一次 Changed。
+            // ⚠️ before 本身就是「該變回去的樣子」，所以這裡不需要任何轉換——
+            // 沒被這一步動到的槽保持現狀
+            PieceObservation[] next = new PieceObservation[BoardState.PieceCount];
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                next[slotIndex] = Board[slotIndex];
+            foreach (PieceObservation before in step) next[before.Index] = before;
+            Board.ReplaceAll(next);
+
+            // 第三段：這時候它們在盤面上已經是「不在盤上」了，所以設得進去
+            foreach (PieceObservation before in step)
+                if (!before.OnBoard) SetInTray(before.Index, true);
+
+            restored = step;
+            return true;
+        }
+
+        /// <summary>
+        /// 清空：<b>把盤面上放好的片全部推回待用區</b>（2026-09-09 定案）。
+        ///
+        /// ⚠️ <b>暫放的片不動。</b>清空的定義刻意只涵蓋「在盤上」那一組，
+        /// 好處是<b>動到的集合跟記下來的集合完全一樣</b>，所以 undo 是精確還原。
+        ///
+        /// 反過來（連暫放的一起收）就記不回去了：<see cref="PieceObservation"/> 只知道
+        /// 「在不在盤上」，分不出「在待用區」與「暫放」，而暫放的位置是純浮點、
+        /// 只活在 <c>PieceView</c> 上，<see cref="BoardState"/> 根本不知道。
+        /// 那會變成「undo 之後桌面上散著的那幾片跑進抽屜了」，而且沒辦法靠加欄位修。
+        ///
+        /// 跟 <see cref="TryUndo"/> 一樣，<b>模型做完就回傳，畫面由控制器套用</b>。
+        /// </summary>
+        /// <param name="cleared">
+        /// 被收回去的那幾槽**清空之前的樣子**（每一筆的 <c>OnBoard</c> 都是 true）。
+        /// 盤面本來就是空的時候是 null。
+        /// </param>
+        /// <returns>有沒有真的清掉東西。盤面空的時候回 false，而且<b>不會壓進一個空步驟</b>。</returns>
+        public bool TryClearBoardToTray(out IReadOnlyList<PieceObservation> cleared)
+        {
+            cleared = null;
+
+            var onBoard = new List<PieceObservation>(BoardState.PieceCount);
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                if (Board[slotIndex].OnBoard) onBoard.Add(Board[slotIndex]);
+
+            if (onBoard.Count == 0) return false;
+
+            // 整組當成**一步**，所以按一次 undo 就整個還原（不是一片一片退）
+            PieceObservation[] before = onBoard.ToArray();
+            PushUndoStep(before);
+
+            // ⚠️ 順序跟 TryUndo 同一組陷阱：一定先讓盤面放手，再設待用區，
+            // 不然 SetInTray 會對著還在盤上的片丟例外。
+            // Clear 送出 Changed 的那一刻，這幾片是「不在盤上也不在待用區」＝暫放，
+            // 那是合法狀態，不變式沒有破
+            Board.Clear();
+            foreach (PieceObservation observation in before) SetInTray(observation.Index, true);
+
+            cleared = before;
+            return true;
         }
     }
 

@@ -214,5 +214,315 @@ namespace Tangram.Core.Tests
             Assert.AreEqual(0, session.Data.OutOfTrayCount, "換關之後七片都該回到抽屜");
             Assert.AreEqual(0, session.Data.Board.OnBoardCount);
         }
+
+        // ─────────────────────────────────────────────────────────────
+        // undo（P1-9）。一步的定義是「只有放進盤面算」，記的是**動之前**那一槽的樣子。
+        //
+        // 這裡測得到的是模型那一半；畫面同步在 TouchInputController，dotnet 編不到。
+        // ─────────────────────────────────────────────────────────────
+
+        /// <summary>載一關，並把第 slotIndex 片從抽屜拿出來放到盤上（含推 undo 步驟）。</summary>
+        /// <param name="session">要操作的 session。</param>
+        /// <param name="slotIndex">槽索引。</param>
+        /// <param name="placement">要放的擺放。</param>
+        private static void PlaceFromTray(LevelSession session, int slotIndex, Placement placement)
+        {
+            session.Data.SetInTray(slotIndex, false);
+            session.Data.PushUndoStep(session.Data.Board[slotIndex]);   // 動之前：不在盤上
+            session.Data.Board.Place(slotIndex, placement);
+        }
+
+        [Test]
+        public void undo_一關剛開始沒有東西可以退()
+        {
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+
+            Assert.IsFalse(session.Data.CanUndo);
+            Assert.IsFalse(session.Data.TryUndo(out var restored));
+            Assert.IsNull(restored);
+        }
+
+        [Test]
+        public void undo_退回一次放置_片回到待用區而且姿態不動()
+        {
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+
+            PlaceFromTray(session, 0, solution[0]);
+            Assert.IsTrue(session.Data.CanUndo);
+
+            Assert.IsTrue(session.Data.TryUndo(out var restored));
+
+            Assert.IsFalse(session.Data.Board[0].OnBoard, "退回去之後不該還在盤上");
+            Assert.IsTrue(session.Data.IsInTray(0), "「放進盤面」的反面是回到待用區");
+            Assert.AreEqual(1, restored.Count);
+            Assert.IsFalse(restored[0].OnBoard, "回傳的是**動之前**的樣子，給控制器套用到畫面");
+            Assert.IsFalse(session.Data.CanUndo, "只推了一步，退完就沒了");
+        }
+
+        [Test]
+        public void undo_退回一次移動_片回到舊位置而且仍在盤上()
+        {
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+
+            Placement positionA = solution[0];
+            Placement positionB = solution[0].Translated(new ExactVector2(3, 3));
+
+            PlaceFromTray(session, 0, positionA);
+
+            // 第二步：盤上 → 盤上另一個位置
+            session.Data.PushUndoStep(session.Data.Board[0]);            // 動之前：在盤上 positionA
+            session.Data.Board.Place(0, positionB);
+
+            Assert.IsTrue(session.Data.TryUndo(out var restored));
+
+            Assert.IsTrue(session.Data.Board[0].OnBoard, "移動的反面仍然在盤上，不是回抽屜");
+            Assert.AreEqual(positionA, session.Data.Board[0].Placement);
+            Assert.IsTrue(restored[0].OnBoard);
+            Assert.IsTrue(session.Data.CanUndo, "還剩第一步沒退");
+        }
+
+        [Test]
+        public void undo_退回移動時要順手清掉待用區旗標()
+        {
+            // ⚠️ 這一條釘住一個**安靜的**洞：Place 不檢查待用區旗標。
+            // 少了那一步的話，模型認為片在盤上、旗標卻還是 true，
+            // TrayView 會把它藏起來 → 症狀是「undo 之後片不見了，
+            // 但過關判定認為盒子裡有它」，而且完全不報錯。
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+
+            Placement positionA = solution[0];
+            Placement positionB = solution[0].Translated(new ExactVector2(3, 3));
+
+            PlaceFromTray(session, 0, positionA);
+            session.Data.PushUndoStep(session.Data.Board[0]);
+            session.Data.Board.Place(0, positionB);
+
+            // 玩家把它拖進回收框：先 Lift 再收回抽屜（這一步不推，不算 undo 的一步）
+            session.Data.Board.Lift(0);
+            session.Data.SetInTray(0, true);
+
+            Assert.IsTrue(session.Data.TryUndo(out _));
+
+            Assert.IsTrue(session.Data.Board[0].OnBoard);
+            Assert.IsFalse(session.Data.IsInTray(0),
+                           "回到盤上的片一定不在待用區——這兩個狀態互斥");
+        }
+
+        [Test]
+        public void undo_清空是一步七筆_退一次全部回來()
+        {
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                PlaceFromTray(session, slotIndex, solution[slotIndex]);
+            Assert.IsTrue(session.Data.Board.AllOnBoard);
+
+            // 清空：七槽動之前的樣子當成**一步**推進去，然後整盤拿起來 + 送回抽屜
+            var before = new PieceObservation[BoardState.PieceCount];
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                before[slotIndex] = session.Data.Board[slotIndex];
+            session.Data.PushUndoStep(before);
+            session.Data.Board.Clear();
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                session.Data.SetInTray(slotIndex, true);
+
+            Assert.IsTrue(session.Data.TryUndo(out var restored));
+
+            Assert.AreEqual(BoardState.PieceCount, restored.Count, "七筆是**一步**，不是七步");
+            Assert.IsTrue(session.Data.Board.AllOnBoard, "退一次就全部回到盤上");
+            Assert.AreEqual(BoardState.PieceCount, session.Data.OutOfTrayCount,
+                            "回到盤上的片都該離開待用區");
+
+            // 下面還剩七片各自的「放進盤面」那七步，清空只佔一步
+            for (int step = 0; step < BoardState.PieceCount; step++)
+                Assert.IsTrue(session.Data.TryUndo(out _), $"第 {step} 片的放置還沒退");
+            Assert.IsFalse(session.Data.CanUndo);
+        }
+
+        [Test]
+        public void undo_同一片在堆疊裡有多筆_每一筆各自獨立()
+        {
+            // 記「狀態」而不是「動作」的理由：撤銷較早那筆時，
+            // 片可能已經不在當初的地方了，但每一筆自己就帶著完整答案
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+
+            Placement positionA = solution[0];
+            Placement positionB = solution[0].Translated(new ExactVector2(3, 3));
+
+            PlaceFromTray(session, 0, positionA);                        // 第 1 步：{不在盤上}
+            session.Data.PushUndoStep(session.Data.Board[0]);            // 第 2 步：{在盤上, A}
+            session.Data.Board.Place(0, positionB);
+
+            session.Data.TryUndo(out _);                                 // 退第 2 步 → 回到 A
+            Assert.AreEqual(positionA, session.Data.Board[0].Placement);
+
+            session.Data.TryUndo(out _);                                 // 退第 1 步 → 回抽屜
+            Assert.IsFalse(session.Data.Board[0].OnBoard);
+            Assert.IsTrue(session.Data.IsInTray(0));
+        }
+
+        [Test]
+        public void undo_退一步只觸發一次Changed()
+        {
+            // 過關判定與中途回饋都要綁 Changed。一步發多次的話它們會對著
+            // 「這一步的中間狀態」各算一次，而那些狀態在遊戲裡從來不存在
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                PlaceFromTray(session, slotIndex, solution[slotIndex]);
+
+            var before = new PieceObservation[BoardState.PieceCount];
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                before[slotIndex] = session.Data.Board[slotIndex];
+            session.Data.PushUndoStep(before);
+            session.Data.Board.Clear();
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                session.Data.SetInTray(slotIndex, true);
+
+            int changedCount = 0;
+            session.Data.Board.Changed += _ => changedCount++;
+
+            session.Data.TryUndo(out _);
+
+            Assert.AreEqual(1, changedCount, "七片一起回來也只算一次盤面變動");
+        }
+
+        [Test]
+        public void undo_換關之後堆疊自動清空()
+        {
+            // 忘了清的症狀是「玩家在新的一關按 undo，上一關的片被拉回來」，不報錯。
+            // 堆疊放 LevelData（換關整包換掉）就不可能忘記——這條釘住那件事
+            var session = new LevelSession();
+            var (puzzleA, solutionA) = ClassicLevel();
+            session.Load(puzzleA, solutionA, allowRoll: true);
+
+            PlaceFromTray(session, 0, solutionA[0]);
+            Assert.IsTrue(session.Data.CanUndo);
+
+            var (puzzleB, solutionB) = TranslatedLevel(new ExactVector2(6, 0));
+            session.Load(puzzleB, solutionB, allowRoll: true);
+
+            Assert.IsFalse(session.Data.CanUndo, "新的一關不該退得回上一關");
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // 清空（P1-9）。定義是「把**盤面上**放好的片推回待用區」，暫放的片不動。
+        //
+        // 動到的集合＝記進 undo 那一步的集合，所以 undo 是精確還原。
+        // ─────────────────────────────────────────────────────────────
+
+        [Test]
+        public void 清空_盤上的片回待用區_暫放的片不動()
+        {
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+
+            PlaceFromTray(session, 0, solution[0]);
+            PlaceFromTray(session, 1, solution[1]);
+
+            // 第 2 片拿出抽屜但沒放上盤面 = 暫放（純浮點，不進 BoardState）
+            session.Data.SetInTray(2, false);
+
+            Assert.IsTrue(session.Data.TryClearBoardToTray(out var cleared));
+
+            Assert.AreEqual(2, cleared.Count, "只有盤上那兩片被清");
+            Assert.AreEqual(0, session.Data.Board.OnBoardCount);
+            Assert.IsTrue(session.Data.IsInTray(0));
+            Assert.IsTrue(session.Data.IsInTray(1));
+            Assert.IsFalse(session.Data.IsInTray(2), "暫放的片不在清空的定義裡，不該被收走");
+        }
+
+        [Test]
+        public void 清空_盤面本來就空的時候不算一步()
+        {
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+            session.Data.SetInTray(3, false);           // 只有一片暫放，盤上是空的
+
+            Assert.IsFalse(session.Data.TryClearBoardToTray(out var cleared));
+            Assert.IsNull(cleared);
+            Assert.IsFalse(session.Data.CanUndo, "不能壓進一個退了等於沒退的空步驟");
+        }
+
+        [Test]
+        public void 清空_undo一次就整組還原回原位()
+        {
+            // 清空動到的集合＝記下來的集合，所以這裡是**精確**還原，
+            // 不是「大致上回來了」。這一條就是那個設計選擇的價值
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+
+            for (int slotIndex = 0; slotIndex < 3; slotIndex++)
+                PlaceFromTray(session, slotIndex, solution[slotIndex]);
+            session.Data.SetInTray(4, false);           // 一片暫放，清空不該碰它
+
+            session.Data.TryClearBoardToTray(out _);
+            Assert.IsTrue(session.Data.TryUndo(out var restored));
+
+            Assert.AreEqual(3, restored.Count, "清空是**一步**，退一次就全回來");
+            for (int slotIndex = 0; slotIndex < 3; slotIndex++)
+            {
+                Assert.IsTrue(session.Data.Board[slotIndex].OnBoard, $"第 {slotIndex} 片該回盤上");
+                Assert.AreEqual(solution[slotIndex], session.Data.Board[slotIndex].Placement,
+                                "位置要跟清空之前一模一樣");
+                Assert.IsFalse(session.Data.IsInTray(slotIndex),
+                               "回到盤上的片一定不在待用區——這兩個狀態互斥");
+            }
+            Assert.IsFalse(session.Data.IsInTray(4), "暫放的那片從頭到尾沒被動過");
+        }
+
+        [Test]
+        public void 清空_只觸發一次Changed()
+        {
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                PlaceFromTray(session, slotIndex, solution[slotIndex]);
+
+            int changedCount = 0;
+            session.Data.Board.Changed += _ => changedCount++;
+
+            session.Data.TryClearBoardToTray(out _);
+
+            Assert.AreEqual(1, changedCount, "七片一起收走也只算一次盤面變動");
+        }
+
+        [Test]
+        public void 盤面_Clear只觸發一次Changed()
+        {
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                session.Data.Board.Place(slotIndex, solution[slotIndex]);
+
+            int changedCount = 0;
+            session.Data.Board.Changed += _ => changedCount++;
+
+            session.Data.Board.Clear();
+
+            Assert.AreEqual(1, changedCount, "原本是連呼叫七次 Lift，也就是連發七次");
+            Assert.AreEqual(0, session.Data.Board.OnBoardCount);
+            Assert.AreEqual(solution[0], session.Data.Board[0].Placement, "Clear 保留姿態");
+        }
     }
 }

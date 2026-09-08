@@ -96,14 +96,39 @@ public class TouchInputController : MonoBehaviour
     }
 
     /// <summary>
+    /// 抽屜開著沒。<b>所有盤面上的按鈕在抽屜開著時一律退場</b>（2026-09-09）。
+    ///
+    /// <b>為什麼非做不可</b>：抽屜是整個螢幕寬 × 底部 22%，按鈕就在那個範圍裡。
+    /// 而 <see cref="IsOverBlockingArea"/> 是 <see cref="BeginPress"/> 問的<b>第一層</b>，
+    /// 排在抽屜前面——按鈕留在畫面上的話，它會把本來要打到縮圖的按下整個吃掉，
+    /// 症狀是<b>抽屜裡有幾片點不動</b>（正好是被按鈕蓋住的那幾格）。
+    ///
+    /// 隱藏之後那塊就不擋了（<see cref="IsOverBlockingArea"/> 會跳過停用的物件），
+    /// 按下自然往下落到抽屜那一層。
+    ///
+    /// ⚠️ 場景沒有 <c>TrayView</c> 時要回 <c>false</c>，不是 true——
+    /// 沒有抽屜的話按鈕本來就不該被壓制。
+    /// </summary>
+    private bool IsTrayDrawerOpen => trayView != null && trayView.IsOpen;
+
+    /// <summary>
     /// 按鈕現在能作用在哪一片，不能作用時是 <c>null</c>。
     ///
-    /// 條件就是互動設計 §5 的兩條：<b>有選取</b> ＋ <b>那片沒在被拖</b>。
+    /// 條件是互動設計 §5 的兩條加上 P1-5 的一條：
+    /// <b>有選取</b> ＋ <b>那片沒在被拖</b> ＋ <b>抽屜沒開著</b>。
     /// 按鈕拿它決定要不要顯示，這裡也拿它當保險——
     /// <b>顯示條件與作用條件是同一個算式，不會分岔</b>。
+    ///
+    /// ⚠️ 第三條在今天<b>其實是多餘的</b>：打開抽屜的當下會清掉選取（<c>TrayView.Toggle</c>，
+    /// 決定 17），所以抽屜開著時本來就沒有選取。寫出來是因為那條不變式
+    /// <b>由別人在別的地方維護</b>——之後多一條打開抽屜的路徑（快捷鍵、換關預設開著）
+    /// 而忘了清選取的話，按鈕就會浮在抽屜上面，然後把底下那幾格縮圖吃掉。
+    /// 顯示條件不該依賴遠處的某條規則還活著。
     /// </summary>
     public PieceView ActionTarget
-        => selectedPiece != null && !selectedPiece.IsBeingDragged ? selectedPiece : null;
+        => selectedPiece != null && !selectedPiece.IsBeingDragged && !IsTrayDrawerOpen
+            ? selectedPiece
+            : null;
 
     /// <summary>
     /// 把選取的那一片轉一格（互動設計 §5）。
@@ -727,6 +752,10 @@ public class TouchInputController : MonoBehaviour
     {
         if (lastResult.Snapped)
         {
+            // ⚠️ undo 的**唯一**推入點（P1-9）。一定要在 Place 之前取，
+            // 記的是「動之前那一槽長什麼樣」——動之後才取的話記到的是新的位置，
+            // 按 undo 會退到原地，看起來像「undo 沒反應」
+            level.PushUndoStep(level.Board[pressedPiece.SlotIndex]);
             level.Board.Place(pressedPiece.SlotIndex, lastResult.Placement);
         }
         else if (locationBeforeDrag == PieceLocation.OnBoard)
@@ -797,6 +826,154 @@ public class TouchInputController : MonoBehaviour
     /// 這只是它的公開入口，不是第二條路。
     /// </summary>
     public void ClearSelection() => SetSelection(null);
+
+    // ─────────────────────────────────────────────────────────────
+    // undo（P1-9）
+    //
+    // 模型那半在 LevelData.TryUndo，這裡只做**畫面同步**那半。
+    // 分成兩半是因為 BoardState.Changed 沒有任何訂閱者，而且它也不帶
+    // 「哪一槽變了」——所以「片要跟著動回去」沒有人會自動做。
+    //
+    // 放這支而不是新開一個投影者：寫 PieceView 的仍然只有控制器一個
+    // （跟 P1-5 的結論一致，也是除錯記錄 003 那個坑的直接教訓）。
+    // ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 現在能不能退一步。<b>按鈕的顯示條件與作用條件刻意是同一個算式</b>，
+    /// 跟 <see cref="ActionTarget"/> 同一個模式——分岔的話會出現
+    /// 「看得到但按了沒反應」或反過來，兩種都很難查。
+    ///
+    /// 條件是**沒在拖 ＋ 抽屜沒開著 ＋ 堆疊非空**（2026-09-09 定案）。
+    ///
+    /// 「沒在拖」在單指模型下其實是多餘的（拖曳中手指佔著，不會有第二次按下），
+    /// 留著是因為它是**視覺表達**：拖曳中按鈕消失，跟抽屜箭頭同一個性質。
+    ///
+    /// ⚠️ <b>「抽屜沒開著」則是非做不可的</b>，見 <see cref="IsTrayDrawerOpen"/>：
+    /// 這顆鈕就在抽屜蓋住的範圍裡，留著會把本來要打到縮圖的按下吃掉。
+    /// 而且它跟另外兩顆不同——<b>它不看選取</b>，所以沒有「開抽屜順便清選取」
+    /// 那條規則可以順帶救它，不明寫就真的會擋住。
+    /// 語意上也說得通：挑片的當下不會有人想退上一步。
+    /// </summary>
+    public bool CanUndo
+    {
+        get
+        {
+            LevelData level = LevelSession.Current?.Data;
+            return level != null && !IsDragging && !IsTrayDrawerOpen && level.CanUndo;
+        }
+    }
+
+    /// <summary>
+    /// 退一步：先讓模型退，再把退回去的那幾槽套用到畫面上。
+    ///
+    /// <b>規則住在這裡，按鈕只是眾多觸發器裡的一個</b>——之後加鍵盤快捷鍵或手勢
+    /// 都叫這裡，跟 <see cref="RotateSelected"/> 同一個安排（2026-09-07 定案）。
+    /// </summary>
+    public void UndoLastPlacement()
+    {
+        if (!CanUndo) return;
+
+        LevelData level = LevelSession.Current.Data;
+        if (!level.TryUndo(out IReadOnlyList<PieceObservation> restored)) return;
+
+        foreach (PieceObservation before in restored) ApplyRestoredPiece(before);
+
+        // 跟換關、版面重算走同一條路：退完一律清選取（2026-09-09 定案）。
+        // 留著的話那片可能剛被送回抽屜——高亮一片看不見的片，旋轉鈕跟著跳出來
+        SetSelection(null);
+    }
+
+    /// <summary>
+    /// 把一槽「退回去之後該有的樣子」寫到它的 <c>PieceView</c> 上。
+    ///
+    /// ⚠️ <b>兩條分支對姿態的處理剛好相反，而且兩邊都不能寫錯：</b>
+    /// <list type="bullet">
+    /// <item><b>回到盤上</b>——位置、旋轉、翻面<b>全部</b>以記下來的擺放為準。
+    /// 少寫姿態的話「放進盤面 → 拖出來 → 轉三次 → undo」會看到片回到舊位置但角度是新的，
+    /// 而模型記的是舊角度，畫面與模型不一致而且不報錯</item>
+    /// <item><b>離開盤面</b>——姿態<b>一個都不要動</b>。那一槽的 <c>Placement</c> 存的是
+    /// 「上次在盤上時」的姿態，玩家在暫放狀態轉過的角度它看不到；
+    /// 「順手」拿來用的話症狀是<b>undo 之後片的角度莫名其妙轉回去了</b></item>
+    /// </list>
+    /// </summary>
+    /// <param name="before">這一槽動之前的樣子，也就是它現在該有的樣子。</param>
+    private void ApplyRestoredPiece(PieceObservation before)
+    {
+        PieceView piece = trayView != null ? trayView.PieceAt(before.Index) : null;
+        if (piece == null) return;
+
+        if (before.OnBoard)
+        {
+            piece.IsVisible = true;
+            piece.Rotation = before.Placement.Rotation;
+            piece.IsFlipped = before.Placement.IsFlipped;
+            piece.SnapTo(before.Placement.Translation);   // 位置 ＋ IsSnapped 一起
+        }
+        else
+        {
+            HidePieceToTray(before.Index);
+        }
+    }
+
+    /// <summary>
+    /// 把一片收進抽屜的**畫面那半**：藏起來、取消吸附，<b>姿態一個都不動</b>。
+    ///
+    /// 「片離開盤面時姿態一律不動，只有換關會歸零」是 2026-09-09 定的一條總規則，
+    /// 涵蓋回收框、清空、undo 三條路徑。三條共用這支就不可能只改到其中一條。
+    ///
+    /// <c>IsVisible</c> 寫在這裡只是為了<b>不閃一幀</b>——<c>TrayView</c> 下一幀也會
+    /// 從 <c>LevelData</c> 投影出同樣的答案。兩邊不會打架，因為真相只有一份，
+    /// 而這裡是在改完真相的同一刻順手同步，不是第二個真相（對照除錯記錄 003）。
+    /// </summary>
+    /// <param name="slotIndex">槽索引。</param>
+    private void HidePieceToTray(int slotIndex)
+    {
+        PieceView piece = trayView != null ? trayView.PieceAt(slotIndex) : null;
+        if (piece == null) return;
+
+        piece.IsSnapped = false;
+        piece.IsVisible = false;
+    }
+
+    /// <summary>
+    /// 現在能不能清空。<b>顯示條件與作用條件共用同一個算式</b>，跟
+    /// <see cref="CanUndo"/>、<see cref="ActionTarget"/> 同一個模式。
+    ///
+    /// 條件是**沒在拖 ＋ 抽屜沒開 ＋ 盤上有片**。
+    ///
+    /// ⚠️ 第三條問的是 <c>OnBoardCount</c>，<b>不是「有片不在抽屜裡」</b>——
+    /// 清空的定義只涵蓋盤上的片，所以桌面上散著暫放的片時按鈕不該亮：
+    /// 亮了按下去什麼都不會發生，那正是 §5 在避免的「看得到但按了沒反應」。
+    /// </summary>
+    public bool CanClearBoard
+    {
+        get
+        {
+            LevelData level = LevelSession.Current?.Data;
+            return level != null && !IsDragging && !IsTrayDrawerOpen
+                   && level.Board.OnBoardCount > 0;
+        }
+    }
+
+    /// <summary>
+    /// 清空：把盤面上放好的片全部推回待用區。<b>暫放的片不動</b>（見
+    /// <see cref="LevelData.TryClearBoardToTray"/> 說明的理由）。
+    ///
+    /// 整組算 undo 的**一步**，所以按一次 undo 就整個還原。
+    /// </summary>
+    public void ClearBoard()
+    {
+        if (!CanClearBoard) return;
+
+        LevelData level = LevelSession.Current.Data;
+        if (!level.TryClearBoardToTray(out IReadOnlyList<PieceObservation> cleared)) return;
+
+        foreach (PieceObservation observation in cleared) HidePieceToTray(observation.Index);
+
+        // 跟換關、版面重算、undo 走同一條路。留著的話那片剛被送回抽屜，
+        // 會變成高亮一片看不見的片，旋轉鈕跟著跳出來
+        SetSelection(null);
+    }
 
     /// <summary>
     /// 這一下有沒有落在「不給抓片」的矩形上（也就是按鈕）。
