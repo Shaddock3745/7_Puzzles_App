@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 > 給 Claude 看的專案交接文件。新 session／換裝置時先讀這份。
-> 最後更新：2026-09-08（文件整理過一輪，重複內容全部收斂，見下面〈每件事只寫在一個地方〉）
+> 最後更新：2026-09-08（P1-5 待用區完成並實機測過；文件整理過一輪，重複內容全部收斂，見下面〈每件事只寫在一個地方〉）
 
 ---
 
@@ -90,6 +90,7 @@ Unity 6000.3.7f1 的**七巧板拼圖遊戲**，參加 2026 大專校院資訊�
 | P1-2 | 片的顯示：`PieceVertexCache` / `PieceSorting` / `PieceSpriteLibrary` / `PieceView`。**圖是執行時生成的，不是匯入的美術資源** | `互動設計` §13 | `程式說明書` §16.5、§16.6 |
 | P1-3 | 盒子與「這一關」的擁有者：`LevelSession` / `LevelController` / `BoxView`。場景已接線 | `互動設計` §14 | `程式說明書` §16.7 |
 | P1-4 | 區域判定：`Region` 加 `Geometry` 的四個判斷式，`ContainsPolygon` 五條規則 | — | `程式說明書` §13 |
+| P1-5 | 待用區**抽屜** `TrayView`，外加一次**輸入層重構**（分層命中測試、touch id、滑鼠觸控統一）。⚠️ `PiecePreview` 已刪除 | `互動設計` §15 | `程式說明書` §16.9、§16.8、§16.7 |
 | P1-6 | 拖曳控制 `TouchInputController`。**不實作 `IInputSource`** | `互動設計` §4 | `程式說明書` §16.8 |
 | P1-7 | 盒子接進吸附層：`Region.BoundaryNodes` 當錨點、`isAllowed` 當盒內硬限制 | `互動設計` §3 | `程式說明書` §13、§16 |
 | P1-8 | 選取加旋轉／翻面鈕：新增 `PieceActionButtons`，其餘改在 `TouchInputController` / `PieceView` | `互動設計` §4、§5 | `程式說明書` §16.8 |
@@ -105,7 +106,7 @@ Unity 6000.3.7f1 的**七巧板拼圖遊戲**，參加 2026 大專校院資訊�
 
 **二、⚠️ `PuzzleValidator.cs` 是過時的。** 它還是自由拼版本（用 `Canonical.PuzzleKey` 比對），檔案裡有註解標記。**不要照它的行為推論設計。** 改寫排在 P1-10。
 
-**三、⚠️ `PiecePreview` 是 P1-2 的驗證鷹架，卻是場上唯一會生出七片的東西。** P1-5 做好要整個刪掉，理由見下面的坑表與 `待辦清單.md` B 區。
+**三、待用區是「抽屜」，而它順帶重構了輸入層**（2026-09-08，P1-5）。原本以為只是「七片排開」，實際上為了讓「點縮圖 = 按鈕命中」與「點縮圖 = 直接拖出來」兩件事同時成立，擋片矩形那套換成了**分層命中測試**（先知道打到什麼，再分派）。連帶：`PiecePreview` 已刪除、觸控改成**鎖定 touch id**、`LevelData` 多了「片在不在待用區」。完整規格見 `互動設計.md` §15。
 
 ---
 
@@ -152,7 +153,9 @@ dotnet test Tools/DotnetTests
 | **`BoardState.Clear()` 會發七次 `Changed`** | P1 加 undo 時一併處理 |
 | **`Region.ContainsPolygon` 只管出界，不管重疊** | 合法擺放要它與 `Geometry.ConvexOverlap` 兩個都過 |
 | **`Region` 內部有兩套座標系** | 原座標與 ×2。中點只在 ×2 那邊算，混用會差一個 2 倍而且不報錯 |
-| **`PiecePreview` 會跟真正的系統搶那七片** | 它是 P1-2 的鷹架，但 P1-5 還沒做，所以它是場上**唯一**會生出七片的東西。原本每幀無條件把 `Rotation`/`IsFlipped`/`IsSnapped` 蓋回 Inspector 滑桿值——旋轉鈕按了完全沒反應（除錯記錄 003）。已改成「滑桿真的被拉動才推」，但**P1-5 做好要整個刪掉** |
+| **兩個系統寫同一批欄位 = 安靜的 bug**（`PiecePreview` 的教訓） | `PiecePreview` 每幀無條件把 `Rotation`/`IsFlipped`/`IsSnapped` 蓋回 Inspector 滑桿值，而控制器也在寫——症狀是「旋轉鈕按了完全沒反應」，不報錯（除錯記錄 003）。**P1-5 已經把它刪掉**，現在生七片的是 `TrayView`，而它**只寫 `IsVisible`**，跟控制器的欄位完全不重疊。新增任何會碰 `PieceView` 的東西時先問：**我寫的欄位控制器也在寫嗎？** |
+| **`LevelData.SetInTray` 對還在盤上的片會丟例外** | 那是刻意的。「在盤上」與「在待用區」互斥，默默修正的症狀是「片在抽屜裡但盤面認為它還在盒內」——過關判定與中途回饋跟著錯，不報錯。所以回收那條一定是**先 `Lift` 再 `SetInTray`** |
+| **`Pointer.current` 在手機上只反映主要觸控** | 第二根手指之後完全看不見。症狀是「手掌先碰到螢幕就整個沒反應」，而且**在 Editor 用滑鼠永遠測不到**。P1-5 已改成按下時鎖定 touch id、之後只聽那一根（`互動設計` §15.5）。新加輸入路徑時不要退回去直接讀 `Pointer.current` |
 | **`EventSystem.IsPointerOverGameObject()` 會晚一幀** | 它的答案由 UI 輸入模組在**它自己的 `Update`** 裡算，而 `MonoBehaviour` 之間的順序是未定義的——按下那一幀很可能拿到上一幀的答案，症狀是「按按鈕的同時也抓到了片」，時好時壞且不報錯。`TouchInputController` 改成自己比矩形（`RegisterPressBlockingArea`），沒有這個問題 |
 | **「事件有觸發但沒效果」先 grep 誰還會寫那個欄位** | 除錯記錄 003 的教訓：先給機制解釋、再找證據，方向錯了整段都是白工。`grep` 全專案的寫入者是機械性的、不會猜錯 |
 | **專案只開了新 Input System** | `ProjectSettings` 的 `activeInputHandler: 1`。`Input.mousePosition`、`Input.GetMouseButton` 這些舊 API 在 runtime 會直接丟例外。P1-6 要用 `UnityEngine.InputSystem` 的 `Pointer.current` / `Touchscreen.current` |
@@ -256,4 +259,6 @@ XML doc（`<param>` / `<returns>`）與「為什麼這樣寫」的註解一樣�
 
 **唯一的清單在 `待辦清單.md`**（順序、依賴、理由都在那裡），這裡不再抄一份。
 
-現在的位置：**拖曳 MVP 的骨幹全部走完而且實測過了**——座標、片的顯示、盒子、拖曳吸附、選取、旋轉翻面鈕。缺的是「七片一開始從哪來」（P1-5，建議下一個做）與「怎麼算過關」（P1-10）。
+現在的位置：**一整局玩得起來了**（2026-09-08 實機測過）——抽屜拿片、拖曳吸附、選取、旋轉翻面、回收。
+
+缺的是**「拼完了會發生什麼事」**：現在七片填滿盒子，畫面上不會有任何反應。所以下一個建議做 **P1-10 過關判定重寫**（它也是 P1-11 中途回饋的前置）。P1-9 undo 的設計已經定案，可以直接開工。
