@@ -136,5 +136,83 @@ namespace Tangram.Core.Tests
             Assert.IsFalse(session.HasLevel);
             Assert.IsNull(session.Data);
         }
+
+        // ─────────────────────────────────────────────────────────
+        // 待用區（P1-5）。「片在不在抽屜裡」的真相在 LevelData，
+        // PieceView 的顯示與否只是它的投影
+        // ─────────────────────────────────────────────────────────
+
+        [Test]
+        public void 待用區_一關開始時七片都在抽屜裡()
+        {
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                Assert.IsTrue(session.Data.IsInTray(slotIndex), $"第 {slotIndex} 槽應該在待用區");
+
+            Assert.AreEqual(0, session.Data.OutOfTrayCount);
+        }
+
+        [Test]
+        public void 待用區_拿出來再放回去()
+        {
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+
+            session.Data.SetInTray(3, false);
+            Assert.IsFalse(session.Data.IsInTray(3));
+            Assert.AreEqual(1, session.Data.OutOfTrayCount, "只有第 3 槽被拿出來");
+
+            session.Data.SetInTray(3, true);
+            Assert.IsTrue(session.Data.IsInTray(3));
+            Assert.AreEqual(0, session.Data.OutOfTrayCount);
+        }
+
+        [Test]
+        public void 待用區_還在盤上的片不能直接收回抽屜()
+        {
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+
+            session.Data.SetInTray(0, false);
+            session.Data.Board.Place(0, solution[0]);
+
+            // 「在盤上」與「在待用區」互斥。默默修正的話症狀是「片在抽屜裡但盤面
+            // 認為它還在盒內」，過關判定會跟著錯而且不報錯，所以這裡要吵
+            Assert.Throws<System.InvalidOperationException>(
+                () => session.Data.SetInTray(0, true),
+                "先 Lift 再送回待用區才是對的順序");
+
+            // 先 Lift 就可以了
+            session.Data.Board.Lift(0);
+            Assert.DoesNotThrow(() => session.Data.SetInTray(0, true));
+            Assert.IsTrue(session.Data.IsInTray(0));
+        }
+
+        [Test]
+        public void 待用區_換關之後七片自動回到抽屜()
+        {
+            var session = new LevelSession();
+            var (puzzleA, solutionA) = ClassicLevel();
+            session.Load(puzzleA, solutionA, allowRoll: true);
+
+            // 這一關把四片拿出來，其中兩片放上盤面
+            for (int slotIndex = 0; slotIndex < 4; slotIndex++) session.Data.SetInTray(slotIndex, false);
+            session.Data.Board.Place(0, solutionA[0]);
+            session.Data.Board.Place(1, solutionA[1]);
+            Assert.AreEqual(4, session.Data.OutOfTrayCount);
+
+            var (puzzleB, solutionB) = TranslatedLevel(new ExactVector2(6, 0));
+            session.Load(puzzleB, solutionB, allowRoll: true);
+
+            // 換關是整包換掉，所以待用區不必另外重置——這條測試就是釘住那件事。
+            // 之後往 LevelData 新增 per-關 欄位時，這個性質也要跟著成立
+            Assert.AreEqual(0, session.Data.OutOfTrayCount, "換關之後七片都該回到抽屜");
+            Assert.AreEqual(0, session.Data.Board.OnBoardCount);
+        }
     }
 }

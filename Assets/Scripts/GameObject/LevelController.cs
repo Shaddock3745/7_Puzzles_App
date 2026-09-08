@@ -27,6 +27,9 @@ public class LevelController : MonoBehaviour
     [Tooltip("拖曳控制。換關時要叫它取消進行中的拖曳。沒有也能跑（例如只想看盒子的場景）。")]
     [SerializeField] private TouchInputController dragController;
 
+    [Tooltip("待用區抽屜。換關時要叫它把七片的姿態重設。沒有也能跑。")]
+    [SerializeField] private TrayView trayView;
+
     [Tooltip("勾起來的話 Start 會自動載入經典大正方形。P1 沒有題庫，先這樣。")]
     [SerializeField] private bool loadClassicSquareOnStart = true;
 
@@ -44,8 +47,9 @@ public class LevelController : MonoBehaviour
         if (boardView == null) boardView = FindFirstObjectByType<BoardView>();
         if (boxView == null) boxView = FindFirstObjectByType<BoxView>();
 
-        // 這個是選用的，所以找不到不報錯——場景可能刻意不要拖曳（例如只看盒子）
+        // 這兩個是選用的，所以找不到不報錯——場景可能刻意不要拖曳（例如只看盒子）
         if (dragController == null) dragController = FindFirstObjectByType<TouchInputController>();
+        if (trayView == null) trayView = FindFirstObjectByType<TrayView>();
 
         // ⚠️ 找不到就要大聲講。原本這裡只是讓 EnterLevel 用 null 檢查跳過，
         // 結果症狀是「相機不會自己 fit、盒子不會出現」而且**沒有任何訊息**——
@@ -98,12 +102,17 @@ public class LevelController : MonoBehaviour
         // 3. 畫盒子
         if (boxView != null) boxView.Redraw(level.BoxRegion, level.ReferenceSolution);
 
-        // 4. 七片重置姿態並擺到位置 —— ⚠️ P1-5 才有人負責，先留空。
-        //    目前七片是 PiecePreview 那支鷹架在管，它自己排一列，不看版面。
-        //    位置放在這裡是因為它**必須**排在第 2 步之後（要用相機算出來的版面）
+        // 4. 七片重置姿態（P1-5）。**必須排在第 2 步之後**——抽屜的版面要用
+        //    相機算出來的「一個模型單位佔幾像素」。
+        //
+        //    位置不用管：七片這時候全在抽屜裡（看不到），而「七片回到待用區」
+        //    是 LevelData 建構時就成立的，不必在這裡再做一次——換關是整包換掉，
+        //    所以那件事不可能被忘記（互動設計 §14.4）
+        if (trayView != null) trayView.ResetPiecePoses();
 
-        // 5. 取消進行中的拖曳。跟 BoardView.LayoutRecomputed 是同一個動作的兩個入口，
-        //    所以都接到 TouchInputController.CancelInteraction，不各寫一次
+        // 5. 取消進行中的互動。跟 BoardView.LayoutRecomputed 是同一個動作的兩個入口，
+        //    所以都接到 TouchInputController.CancelInteraction，不各寫一次。
+        //    它同時會把輸入層歸零（清選取、放掉鎖定的那根手指）
         if (dragController != null) dragController.CancelInteraction();
     }
 

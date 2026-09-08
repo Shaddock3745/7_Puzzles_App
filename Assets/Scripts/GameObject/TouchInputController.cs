@@ -27,6 +27,9 @@ public class TouchInputController : MonoBehaviour
     [Tooltip("座標換算與吸附參數的來源。留空的話 Awake 會自己找。")]
     [SerializeField] private BoardView boardView;
 
+    [Tooltip("待用區抽屜。留空的話 Awake 會自己找；場景沒有它也能跑（就是不能從抽屜拿片）。")]
+    [SerializeField] private TrayView trayView;
+
     [Tooltip("超過這個距離才算拖曳，沒超過就是點選。單位是螢幕像素。實際手感玩過再調（P1-13）。")]
     [SerializeField] private float moveThresholdPixels = 10f;
 
@@ -223,10 +226,26 @@ public class TouchInputController : MonoBehaviour
 
     private SnapSolver.DragResult lastResult;
 
-    // 取消拖曳時要還原到哪
+    /// <summary>
+    /// 按下之前那一片在哪。取消互動要靠它還原，
+    /// 而它<b>順帶記住了「這次按下是從抽屜來的」</b>——所以不需要另一個旗標。
+    /// </summary>
+    private enum PieceLocation
+    {
+        /// <summary>在待用區（抽屜裡，看不到也點不到）。</summary>
+        Tray,
+
+        /// <summary>暫放在盤面上：看得到、沒吸住、不在 <c>BoardState</c> 裡。</summary>
+        Loose,
+
+        /// <summary>在盤面上。</summary>
+        OnBoard
+    }
+
+    // 取消互動時要還原到哪。位置與「吸住了沒」只有 Loose / OnBoard 時才有意義
+    private PieceLocation locationBeforeDrag;
     private Vector2 positionBeforeDrag;
     private bool snappedBeforeDrag;
-    private bool onBoardBeforeDrag;
 
     private readonly List<Collider2D> hits = new List<Collider2D>();
     private ContactFilter2D hitFilter;
@@ -237,6 +256,9 @@ public class TouchInputController : MonoBehaviour
         if (boardView == null)
             Debug.LogError("TouchInputController 找不到 BoardView：拖曳完全不會有反應。" +
                            "請在場景裡建一個掛 BoardView 的物件，或直接拖到這支的欄位上。", this);
+
+        // 這個是選用的，找不到不報錯——沒有抽屜的場景照樣能拖盤面上的片
+        if (trayView == null) trayView = FindFirstObjectByType<TrayView>();
 
         // 用靜態屬性，不要用同名的 NoFilter() 方法——那支在 Unity 6 已經棄用
         hitFilter = ContactFilter2D.noFilter;
@@ -291,66 +313,278 @@ public class TouchInputController : MonoBehaviour
         LevelData level = LevelSession.Current?.Data;
         if (level == null) return;
 
-        Pointer pointer = Pointer.current;
-        if (pointer == null) return;
-
-        // 螢幕座標留著給門檻用，世界座標給命中測試與吸附用
-        Vector2 screenPoint = pointer.position.ReadValue();
-        Vector2 worldPoint = boardView.ScreenToWorld(screenPoint);
-
         if (pressedPiece == null)
         {
-            // 落在按鈕上的按下**整個不理**——連 BeginPress 都不進去。
-            // 這正是我們要的：不進去就不會跑「按在空白處清選取」那一段，
-            // 所以按旋轉鈕不會把自己的作用對象清掉
-            if (pointer.press.wasPressedThisFrame && !IsOverBlockingArea(screenPoint))
-                BeginPress(level, worldPoint, screenPoint);
+            // 只有「這一幀剛落下」的指標才會被鎖定（待辦清單決定 12）。
+            // 換關那一瞬間還按著的手指因此自動不合格，不需要另外維護排除清單
+            if (TryAcquirePointer(out Vector2 pressPoint) && !BeginPress(level, pressPoint))
+                activePointerId = NoPointerId;   // 這一下沒有變成互動（按鈕、抽屜、空白）
             return;
         }
 
-        if (pointer.press.wasReleasedThisFrame) { EndPress(level); return; }
+        PointerState state = PollPointer(out Vector2 screenPoint);
 
-        // 沒收到放開事件也要收尾（例如視窗失焦），否則那片會永遠停在按著的狀態
-        if (!pointer.press.isPressed) { EndPress(level); return; }
+        switch (state)
+        {
+            case PointerState.Held:
+                UpdatePress(level, boardView.ScreenToWorld(screenPoint), screenPoint);
+                return;
 
-        UpdatePress(level, worldPoint, screenPoint);
+            case PointerState.Ended:
+                EndPress(level, screenPoint);
+                return;
+
+            default:
+                // 被系統取消（來電、下拉通知）或那根手指整個不見了。
+                // ⚠️ 走還原，**不是結算**（待辦清單決定 13）——玩家並沒有真的放手，
+                // 結算的話他回到遊戲會發現片自己被放進盒子了
+                CancelInteraction();
+                return;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 指標：滑鼠與觸控統一成一層（待辦清單決定 14）
+    //
+    // ⚠️ 不能只讀 Pointer.current。它在手機上反映的是**主要觸控**（第一根手指），
+    // 第二根之後完全看不見——症狀是「手掌先碰到螢幕，真正要用的手指就完全沒反應」，
+    // 而且在 Editor 用滑鼠永遠測不到。
+    //
+    // 作法是**按下時記住是哪一根，之後只聽那一根**。這不是做多點觸控，
+    // 是「無視其他手指」的正確實作：只有一根手指時行為跟以前完全相同。
+    // ─────────────────────────────────────────────────────────────
+
+    /// <summary>滑鼠／觸控筆用的假 id。真的觸控 id 不會是負的。</summary>
+    private const int MousePointerId = -1;
+
+    /// <summary>沒有鎖定任何指標。</summary>
+    private const int NoPointerId = int.MinValue;
+
+    /// <summary>這次互動鎖定的指標。<see cref="NoPointerId"/> 表示現在沒有。</summary>
+    private int activePointerId = NoPointerId;
+
+    /// <summary>鎖定的那根手指這一幀的狀態。</summary>
+    private enum PointerState
+    {
+        /// <summary>還按著。</summary>
+        Held,
+
+        /// <summary>正常放開 —— 要結算。</summary>
+        Ended,
+
+        /// <summary>被系統取消 —— 要還原。</summary>
+        Canceled,
+
+        /// <summary>整根不見了（裝置拔掉、觸控紀錄被回收）—— 當成取消處理比較安全。</summary>
+        Lost
     }
 
     /// <summary>
-    /// 按下：挑一片、記下抓取偏移與還原點。<b>這裡還不知道是點選還是拖曳</b>，
-    /// 所以什麼都不動——連 <c>IsBeingDragged</c> 都還不打開
-    /// （打開的話點一下就會看到那片閃到最上層一下）。
+    /// 找一根<b>這一幀剛落下</b>的指標並鎖定它。
     /// </summary>
-    /// <param name="level">這一關的資料。</param>
-    /// <param name="worldPoint">手指的世界座標。</param>
-    /// <param name="screenPoint">手指的螢幕座標，門檻要用。</param>
-    private void BeginPress(LevelData level, Vector2 worldPoint, Vector2 screenPoint)
+    /// <param name="screenPoint">鎖定成功時是它的螢幕座標。</param>
+    /// <returns>有沒有鎖定到。</returns>
+    private bool TryAcquirePointer(out Vector2 screenPoint)
     {
-        PieceView piece = TopmostPieceAt(worldPoint);
-        if (piece == null)
+        screenPoint = Vector2.zero;
+
+        Touchscreen touchscreen = Touchscreen.current;
+        if (touchscreen != null)
         {
-            // 按在空白處 → 清掉選取。
-            //
-            // §4 的規則寫「放手時算」，但空白這一條**當場清是等價的**：
-            // 按下與放開之間沒有任何跟選取有關的畫面，玩家分不出差別。
-            // 換來的是省掉「這次按下有沒有抓到片」那個狀態，以及 Update 裡
-            // 「手上沒片但要等放開」的另一條路
-            SetSelection(null);
-            return;
+            foreach (var touch in touchscreen.touches)
+            {
+                // ⚠️ 要完整寫出命名空間：UnityEngine.TouchPhase（舊版 Input）同名，
+                // 只寫 TouchPhase 會編不過
+                if (touch.phase.ReadValue() != UnityEngine.InputSystem.TouchPhase.Began) continue;
+
+                activePointerId = touch.touchId.ReadValue();
+                screenPoint = touch.position.ReadValue();
+                return true;
+            }
         }
 
+        // 桌機（或編輯器）的滑鼠。手機上 Pointer.current 就是 Touchscreen 本身，
+        // 那條已經在上面處理過了，再走一次會變成同一根手指被鎖兩次
+        Pointer pointer = Pointer.current;
+        if (pointer == null || pointer is Touchscreen) return false;
+        if (!pointer.press.wasPressedThisFrame) return false;
+
+        activePointerId = MousePointerId;
+        screenPoint = pointer.position.ReadValue();
+        return true;
+    }
+
+    /// <summary>讀鎖定的那根指標這一幀怎麼樣了。</summary>
+    /// <param name="screenPoint">它的螢幕座標；讀不到時是零。</param>
+    /// <returns>這一幀的狀態。</returns>
+    private PointerState PollPointer(out Vector2 screenPoint)
+    {
+        screenPoint = Vector2.zero;
+
+        if (activePointerId == MousePointerId)
+        {
+            Pointer pointer = Pointer.current;
+            if (pointer == null) return PointerState.Lost;
+
+            screenPoint = pointer.position.ReadValue();
+
+            // 沒收到放開事件也要收尾（例如視窗失焦）。滑鼠沒有「被系統取消」這種狀態，
+            // 所以這裡維持原本的行為：當成正常放開
+            if (pointer.press.wasReleasedThisFrame || !pointer.press.isPressed)
+                return PointerState.Ended;
+            return PointerState.Held;
+        }
+
+        Touchscreen touchscreen = Touchscreen.current;
+        if (touchscreen == null) return PointerState.Lost;
+
+        foreach (var touch in touchscreen.touches)
+        {
+            if (touch.touchId.ReadValue() != activePointerId) continue;
+
+            screenPoint = touch.position.ReadValue();
+            UnityEngine.InputSystem.TouchPhase phase = touch.phase.ReadValue();
+
+            if (phase == UnityEngine.InputSystem.TouchPhase.Canceled) return PointerState.Canceled;
+            if (phase == UnityEngine.InputSystem.TouchPhase.Ended) return PointerState.Ended;
+
+            // 收不到 Ended 也要收尾。用 press 而不是只看 phase，
+            // 是因為 phase 在某些平台上結束後會先變成別的值
+            if (!touch.press.isPressed) return PointerState.Ended;
+            return PointerState.Held;
+        }
+        return PointerState.Lost;
+    }
+
+    /// <summary>
+    /// 按下：先問「打到什麼」，再照類別分派（待辦清單〈分類與偏移的定案〉）。
+    ///
+    /// <b>分層命中測試取代了原本的「先擋 → 抓片」。</b>舊的擋法把兩件事綁成一件——
+    /// 「不要做命中測試」與「不要開始拖曳」。按鈕要兩者都成立，
+    /// 但<b>抽屜的縮圖要前者成立、後者不成立</b>（點下去要能直接拖出來），
+    /// 舊機制表達不了這個區別，會卡成死結：按下被吃掉 → 沒有拖曳 →
+    /// 抽屜不會自動收折 → 手指還在擋片區裡 → 再按一次又被吃掉。
+    ///
+    /// 問各層的順序是<b>畫在上面的先問</b>：螢幕座標那幾層 → 世界座標那層 → 空白。
+    ///
+    /// <b>命中結果只活這一幀</b>，不進跨幀狀態——分派完成之後，
+    /// 從盤面抓的跟從抽屜召喚的後續完全一樣（門檻、吸附、放手、取消都共用）。
+    /// </summary>
+    /// <param name="level">這一關的資料。</param>
+    /// <param name="screenPoint">按下的螢幕座標。</param>
+    /// <returns>這一下有沒有變成一次互動（有的話 <see cref="pressedPiece"/> 就有值了）。</returns>
+    private bool BeginPress(LevelData level, Vector2 screenPoint)
+    {
+        // 第一層：註冊過的 UI 矩形（旋轉鈕、翻面鈕）。整個不理——
+        // 不進來就不會跑下面「按在空白處清選取」那一段，
+        // 所以按旋轉鈕不會把自己的作用對象清掉
+        if (IsOverBlockingArea(screenPoint)) return false;
+
+        // 第二層：抽屜
+        if (trayView != null)
+        {
+            switch (trayView.HitTest(screenPoint, out int traySlotIndex))
+            {
+                case TrayView.Hit.Arrow:
+                    trayView.Toggle();
+                    return false;
+
+                // ⚠️ 抽屜本體（含縮圖之間的空隙）要**明確地什麼都不做**，
+                // 不能讓它掉到下面的「空白」去——否則玩家在抽屜裡點歪一下，
+                // 盤面上選取的那片就莫名其妙不亮了
+                case TrayView.Hit.DrawerBody:
+                    return false;
+
+                case TrayView.Hit.Thumbnail:
+                    return BeginPressOnPiece(level, trayView.PieceAt(traySlotIndex),
+                                             screenPoint, worldPoint: Vector2.zero, fromTray: true);
+            }
+        }
+
+        // 第三層：盤面上的片
+        Vector2 pieceWorldPoint = boardView.ScreenToWorld(screenPoint);
+        PieceView piece = TopmostPieceAt(pieceWorldPoint);
+        if (piece != null)
+            return BeginPressOnPiece(level, piece, screenPoint, pieceWorldPoint, fromTray: false);
+
+        // 都沒中 = 按在空白處 → 清掉選取。
+        //
+        // §4 的規則寫「放手時算」，但空白這一條**當場清是等價的**：
+        // 按下與放開之間沒有任何跟選取有關的畫面，玩家分不出差別。
+        // 換來的是省掉「這次按下有沒有抓到片」那個狀態
+        SetSelection(null);
+        return false;
+    }
+
+    /// <summary>
+    /// 記下一次互動的狀態。<b>這裡還不知道是點選還是拖曳</b>，所以什麼都不動——
+    /// 連 <c>IsBeingDragged</c> 都還不打開（打開的話點一下就會看到那片閃到最上層一下）。
+    ///
+    /// <b>從抽屜來的片這時候還隱藏著</b>，要到跨過門檻才召喚（決定 18）。
+    /// 所以它的抓取偏移也要等到那時候才算得出來——在那之前它根本沒有位置。
+    /// 規則是「<b>片有位置的那一刻就算偏移</b>」，兩條路只是時刻不同，公式只有一份。
+    /// </summary>
+    /// <param name="level">這一關的資料。</param>
+    /// <param name="piece">這次要操作的片。null 表示分類器給了無效的槽，直接放棄。</param>
+    /// <param name="screenPoint">按下的螢幕座標，門檻要用。</param>
+    /// <param name="worldPoint">按下的世界座標。<paramref name="fromTray"/> 為 true 時不會被用到。</param>
+    /// <param name="fromTray">是不是從抽屜的縮圖按下的。</param>
+    /// <returns>有沒有成功開始一次互動。</returns>
+    private bool BeginPressOnPiece(LevelData level, PieceView piece,
+                                   Vector2 screenPoint, Vector2 worldPoint, bool fromTray)
+    {
+        if (piece == null) return false;
+
         pressedPiece = piece;
-        grabOffset = piece.Position - worldPoint;
         pressScreenPosition = screenPoint;
         movedPastThreshold = false;
-
         positionBeforeDrag = piece.Position;
-        snappedBeforeDrag = piece.IsSnapped;
-        onBoardBeforeDrag = level.Board[piece.SlotIndex].OnBoard;
+
+        if (fromTray)
+        {
+            locationBeforeDrag = PieceLocation.Tray;
+            snappedBeforeDrag = false;
+            grabOffset = Vector2.zero;      // 召喚時才算得出來
+        }
+        else
+        {
+            locationBeforeDrag = level.Board[piece.SlotIndex].OnBoard
+                ? PieceLocation.OnBoard
+                : PieceLocation.Loose;
+            snappedBeforeDrag = piece.IsSnapped;
+            grabOffset = piece.Position - worldPoint;
+        }
 
         // 保險：跨過門檻那一幀 UpdatePress 一定會覆蓋它，所以這行其實用不到。
         // 留著是為了「Snapped = true 但 Placement 沒填」在任何時刻都不可能成立
         lastResult = SnapSolver.DragResult.Free(piece.Position);
+        return true;
+    }
+
+    /// <summary>
+    /// 把片從抽屜裡拿出來，放到手指底下。<b>只有跨過門檻那一幀會叫一次。</b>
+    ///
+    /// <b>為什麼延到跨門檻</b>（決定 18）：按下就召喚的話，玩家點一下不動就放開，
+    /// 片會留在畫面上——那破壞了「<b>門檻內畫面完全靜止</b>」那條規則，
+    /// 而那條是有代價換來的（它同時修掉了「點一下把片從盤面拿掉」那個 bug）。
+    /// 代價只是按下到片出現有門檻那 10 像素的空窗，而手指本來就在動。
+    /// </summary>
+    /// <param name="level">這一關的資料。</param>
+    /// <param name="worldPoint">手指的世界座標。</param>
+    private void SummonFromTray(LevelData level, Vector2 worldPoint)
+    {
+        level.SetInTray(pressedPiece.SlotIndex, false);
+        pressedPiece.IsVisible = true;
+        pressedPiece.IsSnapped = false;
+
+        // 把**視覺中心**對到手指。sprite 的 pivot 在原型原點（某個頂點）不是中心，
+        // 所以要補一段——而那個補償量跟姿態有關，共用 PieceView 那一份算法
+        pressedPiece.Position = worldPoint - pressedPiece.PosedCenterOffset;
+
+        // 片有位置了，偏移就算得出來。從這一行之後，這條路跟「從盤面抓起來」
+        // 完全一樣，每幀的更新、放手、取消都不必分辨來源
+        grabOffset = pressedPiece.Position - worldPoint;
+        positionBeforeDrag = pressedPiece.Position;
     }
 
     /// <summary>
@@ -372,6 +606,12 @@ public class TouchInputController : MonoBehaviour
             }
 
             movedPastThreshold = true;
+
+            // 從抽屜來的片到這一刻才真的被拿出來（決定 18）。
+            // ⚠️ 一定要排在下面那些之前——片還隱藏著的時候，
+            // 打開 IsBeingDragged 或選取它都是在對一片看不見的東西動手
+            if (locationBeforeDrag == PieceLocation.Tray) SummonFromTray(level, worldPoint);
+
             pressedPiece.IsBeingDragged = true;
 
             // 一開始移動就亮，不等放手（2026-09-07）。
@@ -425,24 +665,58 @@ public class TouchInputController : MonoBehaviour
     /// 而且時好時壞——按住幾幀再放，吸附跑過通常會重新吸回同一格就沒事。
     /// </summary>
     /// <param name="level">這一關的資料。</param>
-    private void EndPress(LevelData level)
+    /// <param name="screenPoint">放手時的螢幕座標。回收框的判定要用它。</param>
+    private void EndPress(LevelData level, Vector2 screenPoint)
     {
         if (movedPastThreshold)
         {
-            CommitDrag(level);
+            // 回收**優先於吸附**（決定 22）：兩者同時成立時，
+            // 玩家把手指移進框裡的意圖比「這裡剛好是合法位置」明確得多。
+            // 判定用**手指**的位置不是片的，這樣「看到的框」跟「判定的區域」是同一個
+            if (trayView != null && trayView.IsOverRecycleArea(screenPoint)) RecycleDrag(level);
+            else CommitDrag(level);
+
             pressedPiece.IsBeingDragged = false;
         }
 
-        // §4 的高亮規則：手上那片不在盤面上就選它，否則清掉。
-        // **點選與拖曳兩條路共用**，所以寫在分岔外面。
+        // §4 的高亮規則，加上 P1-5 之後收成一句：
+        // **片要看得到、而且不在盤上，才可能被選取。**
         //
-        // ⚠️ 一定要在 CommitDrag **之後**才讀 OnBoard——那一步才剛把它寫進去。
+        // ⚠️ 「在待用區」這個條件不能省。從抽屜按下但沒跨過門檻時，
+        // pressedPiece 已經指向那一片，但**它還隱藏著**——少了這條就會高亮一片
+        // 看不見的片，旋轉／翻面鈕跟著跳出來，玩家一按就轉了一片看不到的東西，
+        // 而且完全不報錯。回收之後那片也在待用區，同一條規則一起涵蓋了。
+        //
+        // ⚠️ 一定要在 CommitDrag / RecycleDrag **之後**才讀——那兩步才剛把狀態寫進去。
         // 反過來的話「拖進盒子放好」會讀到舊值、把剛放好的片留成高亮，
         // 而 §5 的補償守衛假設高亮的片沒吸住，接著按旋轉鈕就會看到片飛出去
-        SetSelection(level.Board[pressedPiece.SlotIndex].OnBoard ? null : pressedPiece);
+        int slotIndex = pressedPiece.SlotIndex;
+        bool stillHidden = level.IsInTray(slotIndex);
+        SetSelection(level.Board[slotIndex].OnBoard || stillHidden ? null : pressedPiece);
 
         pressedPiece = null;
         movedPastThreshold = false;
+        activePointerId = NoPointerId;
+    }
+
+    /// <summary>
+    /// 放手在回收框上：這一片收回待用區。
+    ///
+    /// ⚠️ <b>順序不能反。</b><c>SetInTray</c> 對還在盤上的片會丟例外（那是刻意的，
+    /// 因為「在盤上」與「在待用區」互斥），所以一定先 <c>Lift</c>。
+    /// 少了 <c>Lift</c> 的話症狀是「片收回抽屜了，但盤面認為它還在盒內」——
+    /// 過關判定與中途回饋都會跟著錯。
+    /// </summary>
+    /// <param name="level">這一關的資料。</param>
+    private void RecycleDrag(LevelData level)
+    {
+        int slotIndex = pressedPiece.SlotIndex;
+
+        if (level.Board[slotIndex].OnBoard) level.Board.Lift(slotIndex);
+
+        pressedPiece.IsSnapped = false;
+        level.SetInTray(slotIndex, true);
+        pressedPiece.IsVisible = false;
     }
 
     /// <summary>
@@ -455,7 +729,7 @@ public class TouchInputController : MonoBehaviour
         {
             level.Board.Place(pressedPiece.SlotIndex, lastResult.Placement);
         }
-        else if (onBoardBeforeDrag)
+        else if (locationBeforeDrag == PieceLocation.OnBoard)
         {
             // 本來在盤上、拖到沒吸住的地方 → 變成暫放，要從盤面拿下來。
             // 漏掉這行的話盤面會留著它舊的位置：畫面上片在盒外、模型認為它還在盒內，
@@ -486,18 +760,43 @@ public class TouchInputController : MonoBehaviour
     {
         SetSelection(null);
 
+        // 鎖定的指標一定要跟著放掉。忘了的話症狀是「換關之後怎麼點都沒反應」——
+        // 因為還鎖著上一關那根早就抬起來的手指
+        activePointerId = NoPointerId;
+
         if (pressedPiece == null) return;
 
         if (movedPastThreshold)
         {
-            pressedPiece.Position = positionBeforeDrag;
-            pressedPiece.IsSnapped = snappedBeforeDrag;
+            if (locationBeforeDrag == PieceLocation.Tray)
+            {
+                // 從抽屜召喚出來的：收回去。
+                // 它必定還沒進盤面（進盤面只發生在放手那一刻），所以 SetInTray 不會丟例外
+                pressedPiece.IsSnapped = false;
+                LevelSession.Current?.Data?.SetInTray(pressedPiece.SlotIndex, true);
+                pressedPiece.IsVisible = false;
+            }
+            else
+            {
+                pressedPiece.Position = positionBeforeDrag;
+                pressedPiece.IsSnapped = snappedBeforeDrag;
+            }
+
             pressedPiece.IsBeingDragged = false;
         }
 
         pressedPiece = null;
         movedPastThreshold = false;
     }
+
+    /// <summary>
+    /// 清掉選取。<c>TrayView</c> 在打開抽屜時叫這裡（決定 17）——
+    /// 抽屜整個蓋住盤面，留著選取的話旋轉／翻面鈕會被蓋在底下，變成「看得到但按不到」。
+    ///
+    /// <b>「至多一片被選取」的不變式仍然只由 <see cref="SetSelection"/> 維護</b>，
+    /// 這只是它的公開入口，不是第二條路。
+    /// </summary>
+    public void ClearSelection() => SetSelection(null);
 
     /// <summary>
     /// 這一下有沒有落在「不給抓片」的矩形上（也就是按鈕）。

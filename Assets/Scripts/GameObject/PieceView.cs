@@ -64,6 +64,10 @@ public class PieceView : MonoBehaviour
     private bool isBeingDragged;
     private bool isSelected;
 
+    // 預設看得到。P1-5 的 TrayView 會在第一幀把七片推成「在抽屜裡」，
+    // 但**沒有 TrayView 的場景照樣能用**（例如只想看拖曳的除錯場景）
+    private bool isVisible = true;
+
     // ─────────────────────────────────────────────────────────────
     // 位置：直接讀寫 transform，沒有第二份，所以不可能不同步
     // ─────────────────────────────────────────────────────────────
@@ -168,12 +172,12 @@ public class PieceView : MonoBehaviour
     {
         bool flipChanged = newFlipped != isFlipped;
         bool compensate = !isSnapped;
-        Vector2 centerWorld = Position + PosedCenterOffset(rotation, isFlipped);
+        Vector2 centerWorld = Position + CenterOffsetFor(rotation, isFlipped);
 
         rotation = newRotation;
         isFlipped = newFlipped;
 
-        if (compensate) Position = centerWorld - PosedCenterOffset(rotation, isFlipped);
+        if (compensate) Position = centerWorld - CenterOffsetFor(rotation, isFlipped);
         if (flipChanged) RebuildHitArea();      // 碰撞盒只有翻面時要重建
         RefreshVisuals();
     }
@@ -187,7 +191,7 @@ public class PieceView : MonoBehaviour
     /// <param name="rotationSteps">旋轉格數 0~7，每格 45°。</param>
     /// <param name="flipped">是否翻面（對 X 軸鏡射）。</param>
     /// <returns>從原型原點指向視覺中心的向量。</returns>
-    private Vector2 PosedCenterOffset(int rotationSteps, bool flipped)
+    private Vector2 CenterOffsetFor(int rotationSteps, bool flipped)
     {
         Vector2 center = PieceVertexCache.LocalCenter(Kind);
         if (flipped) center.y = -center.y;
@@ -252,6 +256,32 @@ public class PieceView : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// 看得到嗎（P1-5）。<c>false</c> = 收在待用區的抽屜裡：<b>看不到，也點不到</b>。
+    ///
+    /// ⚠️ <b>這不是真相，是投影。</b>真相是 <c>LevelData.IsInTray(slot)</c>，
+    /// 由 <c>TrayView</c> 每幀推過來——跟 <see cref="IsSnapped"/>、<see cref="IsSelected"/>
+    /// 同一個模式。片自己不知道抽屜是什麼。
+    ///
+    /// <b>用關掉渲染與碰撞，不用 <c>SetActive</c></b>：物件要一直活著，
+    /// 姿態（<see cref="Rotation"/> / <see cref="IsFlipped"/>）才會留在那裡不被動到——
+    /// 「待用區記住上一次的角度」就是靠這個免費成立的，不必另外存一份。
+    /// </summary>
+    public bool IsVisible
+    {
+        get => isVisible;
+        set
+        {
+            if (isVisible == value) return;
+            isVisible = value;
+
+            // 兩個一起關才是「看不到也點不到」。只關渲染的話片會變成隱形地雷——
+            // 玩家點到空白處卻抓到一片看不見的片，而且完全不報錯
+            if (spriteRenderer != null) spriteRenderer.enabled = isVisible;
+            if (hitArea != null) hitArea.enabled = isVisible;
+        }
+    }
+
     /// <summary>吸住了而且沒在被拖 —— 也就是「這個位置已經定案」。決定要不要半透明。</summary>
     public bool IsCommitted => isSnapped && !isBeingDragged;
 
@@ -287,9 +317,28 @@ public class PieceView : MonoBehaviour
         library = spriteLibrary;
 
         spriteRenderer.sprite = library.SpriteFor(kind);
+
+        // ⚠️ 這兩行不能省。IsVisible 的 setter 在 Awake 之前被叫到時會靜靜地什麼都不做
+        //（兩個元件還是 null），所以要在拿到元件之後把當下的值補推一次。
+        // 少了它，開場設成隱藏的片會看得到也點得到，而且不報錯
+        spriteRenderer.enabled = isVisible;
+        hitArea.enabled = isVisible;
+
         RebuildHitArea();
         RefreshVisuals();
     }
+
+    /// <summary>
+    /// 目前姿態下，<b>視覺中心相對 transform 原點</b>的位移。
+    ///
+    /// 用途有二：§5 旋轉的軸心補償（內部用），以及 P1-5 從抽屜召喚時
+    /// 「把片的中心對到手指」——後者要的位置是<c>手指座標 − 這個值</c>。
+    ///
+    /// ⚠️ <b>它會隨姿態改變</b>（片轉過之後中心的相對位置也轉了），所以不能拿原型的來代替。
+    /// 開這個屬性就是為了讓召喚那一邊<b>共用同一份算法</b>——各算一份的話兩邊遲早不一致，
+    /// 而症狀是「轉過的片從抽屜拿出來會偏一點」，很難聯想到原因。
+    /// </summary>
+    public Vector2 PosedCenterOffset => CenterOffsetFor(rotation, isFlipped);
 
     /// <summary>
     /// 把五個欄位算成 Unity 的值並寫進去。

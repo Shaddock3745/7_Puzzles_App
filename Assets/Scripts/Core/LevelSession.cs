@@ -38,6 +38,14 @@ namespace Tangram.Core
         /// <summary>這一關的盤面。undo 快照堆疊之後也會放在它裡面（P1-9）。</summary>
         public readonly BoardState Board;
 
+        /// <summary>
+        /// 每一片在不在待用區。索引就是槽索引。
+        ///
+        /// <b>這是「片在不在抽屜裡」的唯一真相</b>（P1-5，待辦清單 A-4）。
+        /// <c>PieceView</c> 的顯示與否是它的投影，不是第二份狀態。
+        /// </summary>
+        private readonly bool[] inTray = new bool[BoardState.PieceCount];
+
         /// <summary>提示用掉幾次。上限 3（互動設計 §9）。</summary>
         public int HintsUsed { get; private set; }
 
@@ -60,6 +68,11 @@ namespace Tangram.Core
             Board = new BoardState();
             HintsUsed = 0;
             IsSolved = false;
+
+            // 一關的開頭七片都在抽屜裡。換關是整包換掉（見類別說明），
+            // 所以「換關要把七片送回待用區」不必另外寫一步，也就不可能忘記
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                inTray[slotIndex] = true;
         }
 
         /// <summary>用掉一次提示。</summary>
@@ -67,6 +80,44 @@ namespace Tangram.Core
 
         /// <summary>標記過關。</summary>
         public void MarkSolved() => IsSolved = true;
+
+        /// <param name="slotIndex">槽索引 0~6。</param>
+        /// <returns>這一片在不在待用區（也就是抽屜裡、畫面上看不到）。</returns>
+        public bool IsInTray(int slotIndex) => inTray[slotIndex];
+
+        /// <summary>已經被拿出抽屜的片有幾片。除錯 overlay 用。</summary>
+        public int OutOfTrayCount
+        {
+            get
+            {
+                int count = 0;
+                for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                    if (!inTray[slotIndex]) count++;
+                return count;
+            }
+        }
+
+        /// <summary>
+        /// 把一片放進或拿出待用區。
+        ///
+        /// ⚠️ <b>「在盤上」與「在待用區」是互斥的</b>，違反會丟例外而不是默默修正——
+        /// 默默修正的話症狀是「片在抽屜裡但盤面認為它還在盒內」，
+        /// 過關判定與中途回饋會跟著錯而且沒有任何訊息。
+        /// 所以回收一片盤上的片時，順序一定是**先 <c>Lift</c> 再送回待用區**。
+        /// </summary>
+        /// <param name="slotIndex">槽索引 0~6。</param>
+        /// <param name="value">true = 收進待用區；false = 拿出來（畫面上會出現）。</param>
+        /// <exception cref="System.InvalidOperationException">
+        /// 想把一片<b>還在盤上</b>的片收進待用區時丟出。
+        /// </exception>
+        public void SetInTray(int slotIndex, bool value)
+        {
+            if (value && Board[slotIndex].OnBoard)
+                throw new System.InvalidOperationException(
+                    $"第 {slotIndex} 槽還在盤面上，不能直接收進待用區。先 Lift 再送回去。");
+
+            inTray[slotIndex] = value;
+        }
     }
 
     /// <summary>
