@@ -578,6 +578,7 @@ MonoBehaviour:
   boardView: {fileID: 1403617021}
   boxView: {fileID: 595082540}
   dragController: {fileID: 1965392179}
+  trayView: {fileID: 0}
   loadClassicSquareOnStart: 1
 --- !u!4 &709453391
 Transform:
@@ -1093,6 +1094,57 @@ RectTransform:
   m_AnchoredPosition: {x: -40, y: 40}
   m_SizeDelta: {x: 60, y: 60}
   m_Pivot: {x: 0.5, y: 0.5}
+--- !u!1 &1609142067
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1609142069}
+  - component: {fileID: 1609142068}
+  m_Layer: 0
+  m_Name: TrayView
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1609142068
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1609142067}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c5f4a531f531917b51e4ee519da49301, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TrayView
+  boardView: {fileID: 1403617021}
+  inputController: {fileID: 1965392179}
+  drawerHeightFraction: 0.22
+  arrowSizePixels: 96
+  thumbnailFillRatio: 0.72
+  insetModelUnits: 0.02
+  cornerRadiusModelUnits: 0.005
+--- !u!4 &1609142069
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1609142067}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1793145409
 GameObject:
   m_ObjectHideFlags: 0
@@ -1232,56 +1284,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1793145409}
   m_CullTransparentMesh: 1
---- !u!1 &1852849536
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1852849538}
-  - component: {fileID: 1852849537}
-  m_Layer: 0
-  m_Name: PiecePreview
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &1852849537
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1852849536}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c9aa37a2877b0a34f80a63a81406f852, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PiecePreview
-  spacing: 5
-  rotation: 0
-  flipped: 0
-  showAsSnapped: 0
-  insetModelUnits: 0.02
-  cornerRadiusModelUnits: 0.005
---- !u!4 &1852849538
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1852849536}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -8.39687, y: 0.73846, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1934556466
 GameObject:
   m_ObjectHideFlags: 0
@@ -1359,6 +1361,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TouchInputController
   boardView: {fileID: 1403617021}
+  trayView: {fileID: 0}
   moveThresholdPixels: 10
   pressBlockingAreas:
   - {fileID: 1581549639}
@@ -1389,6 +1392,6 @@ SceneRoots:
   - {fileID: 1403617022}
   - {fileID: 595082543}
   - {fileID: 709453391}
-  - {fileID: 1852849538}
   - {fileID: 1965392180}
   - {fileID: 412129230}
+  - {fileID: 1609142069}
