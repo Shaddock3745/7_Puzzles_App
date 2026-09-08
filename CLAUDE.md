@@ -77,8 +77,8 @@ Unity 6000.3.7f1 的**七巧板拼圖遊戲**，參加 2026 大專校院資訊�
 |---|---|
 | 階段 | **P0 完成；P1 進行中** |
 | 完成幾項、幾支程式、幾個測試 | 看 `開發進度.md` 的「現況」——**只有那裡是準的**，其他文件一律不抄這些數字 |
-| 看板 | GitHub Projects：`P0_Skeleton` 與 `P1_Prototype`（<https://github.com/users/Shaddock3745/projects/1>、`/2`），repo `Shaddock3745/7_Puzzles_App`。P1-1 ～ P1-9 = issue #9 ～ #17 |
-| ⚠️ commit 怎麼關 issue | 光寫 `#12` 只會**連結**，不會關。要關必須寫 `Closes #12`（或 `Fixes` / `Resolves`） |
+| 看板 | GitHub Projects：`P0_Skeleton` 與 `P1_Prototype`（<https://github.com/users/Shaddock3745/projects/1>、`/2`），repo `Shaddock3745/7_Puzzles_App`。**編號對照與現況見 `開發進度.md` 的〈看板怎麼接下去〉**，`gh issue list --state all` 隨時可重查 |
+| ⚠️ commit 怎麼關 issue | 光寫 `#12` 只會**連結**，不會關。要關必須寫 `Closes #12`（或 `Fixes` / `Resolves`），而且多個要各寫一次——`Closes #9 #10` 只會關掉第一個 |
 
 ### P1 已完成的項目：去哪查
 
@@ -164,7 +164,7 @@ dotnet test Tools/DotnetTests
 
 ## 環境限制
 
-- **`gh` CLI 沒安裝** → 不能幫使用者開 issue／PR，只能給文字讓他自己貼
+- **`gh` CLI 已安裝**（2026-09-08，v2.100.0，`C:\Program Files\GitHub CLI\`）。已登入 `Shaddock3745`，權限含 `repo` 與 `project`，所以 **issue 與 Projects 看板都動得了**。⚠️ 兩件事：**登入類指令（`gh auth login` / `refresh`）一律交給使用者跑**，不要代勞；**動 GitHub 之前先問**，關 issue、開 issue、移看板欄位別人看得到，跟改本地檔案不同
 - **Git Bash 裡沒有 `python`，也沒有 `node`** → 要寫腳本只能用 PowerShell；改檔案優先用 Edit/Write 工具（CJK 內容用 heredoc 有編碼風險）
 - **PowerShell 是 5.1** → 沒有 `&&`、`??`、三元運算子；`ConvertFrom-Json` 回 PSCustomObject
 - **CJK 檔名在 Git Bash 的 `ls` / `find` 可能查不到** → 用 PowerShell 的 `Get-ChildItem` 確認才準（這個 session 誤判過一次）
