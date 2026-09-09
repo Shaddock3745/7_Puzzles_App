@@ -601,9 +601,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DebugOverlay
   showOverlay: 1
-  fontSize: 14
-  boardView: {fileID: 0}
-  dragController: {fileID: 0}
+  fontSize: 60
+  boardView: {fileID: 1403617021}
+  dragController: {fileID: 1965392179}
 --- !u!4 &412129230
 Transform:
   m_ObjectHideFlags: 0

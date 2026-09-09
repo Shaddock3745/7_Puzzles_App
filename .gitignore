@@ -115,3 +115,12 @@ InitTestScene*.unity*
 # Unity 非正常關閉後留下的場景復原副本，不是專案內容
 /[Aa]ssets/_[Rr]ecovery/
 /[Aa]ssets/_[Rr]ecovery.meta
+
+# Unity Performance Testing 套件跑測試時自動生成的，內容是空的。
+# ⚠️ 它們在 Assets/Resources/ 底下，那個資料夾的東西**一定會被打包進 build**，
+# 所以不但不該進版控，留著還會多帶兩個沒用的檔案上實機。
+/Assets/Resources/PerformanceTestRunInfo.json
+/Assets/Resources/PerformanceTestRunInfo.json.meta
+/Assets/Resources/PerformanceTestRunSettings.json
+/Assets/Resources/PerformanceTestRunSettings.json.meta
+/Assets/Resources.meta
