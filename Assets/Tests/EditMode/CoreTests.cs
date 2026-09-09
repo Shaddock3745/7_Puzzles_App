@@ -210,6 +210,67 @@ namespace Tangram.Core.Tests
                     $"邊界節點 {node} 應該落在邊界上");
         }
 
+        /// <summary>
+        /// ⚠️ <b>候選的產生順序是契約</b>（P2-1，issue #22）。
+        ///
+        /// <c>Candidates</c> 依螢幕距離排序，而 <c>List.Sort</c> <b>不穩定</b>——
+        /// 距離相同的候選誰在前面，完全由產生順序決定，而 <c>Resolve</c> 取的是
+        /// 「由近到遠第一個通過驗證的」。所以順序換掉會讓吸附選到不同落點，
+        /// 而輸入層沒有測試，症狀只會是「玩起來覺得怪」，不會有東西變紅。
+        ///
+        /// ⚠️ <b>但這一條沒辦法在這裡驗</b>：回傳前已經排序過，而不穩定排序對同距離的
+        /// 候選會怎麼重排是實作決定的，斷言它等於在斷言 introsort 的巧合。
+        /// <b>產生順序的契約釘在原語那一層</b>（<c>PlacementCandidateTests.枚舉_順序是錨點外層節點內層</c>），
+        /// 那裡拿得到還沒排序的結果。
+        ///
+        /// 所以這裡守的是另外兩件抽離時最容易弄丟的事：
+        /// <b>候選一個都不能少</b>（extraAnchors 那一趟很容易在重構時漏掉），
+        /// 以及<b>來源片索引標對</b>（盒子錨點必須是 −1，不能被當成第 0 片）。
+        /// 用「大到不會篩掉任何東西的吸附半徑」把整份攤開來比。
+        /// </summary>
+        [Test]
+        public void 候選_不多不少而且來源標對()
+        {
+            Region box = ClassicSquareBox();
+            Placement[] solution = Fixtures.ClassicSquare();
+            var placed = new[] { solution[0], solution[1] };
+
+            // 半徑大到不會篩掉任何候選，這樣比到的就是完整的產生順序
+            var noFiltering = new SnapSolver.Settings
+            {
+                ScreenPixelsPerModelUnit = 1f,
+                SnapRadiusPixels = 100000f,
+                ReleaseRadiusPixels = 100000f
+            };
+
+            const PieceKind kind = PieceKind.SmallTriangle;
+            const int rotation = 1;
+
+            List<SnapSolver.Candidate> candidates = SnapSolver.Candidates(
+                kind, rotation, false, Vector2.zero, placed, noFiltering, false, box.BoundaryNodes);
+
+            var pose = new PieceNodeSet(kind, rotation, false);
+            var expected = new List<(int targetPiece, int targetNode, int draggedNode)>();
+
+            for (int pieceIndex = 0; pieceIndex < placed.Length; pieceIndex++)
+                for (int anchorIndex = 0; anchorIndex < placed[pieceIndex].NodeCount; anchorIndex++)
+                    for (int nodeIndex = 0; nodeIndex < pose.NodeCount; nodeIndex++)
+                        expected.Add((pieceIndex, anchorIndex, nodeIndex));
+
+            for (int anchorIndex = 0; anchorIndex < box.BoundaryNodes.Length; anchorIndex++)
+                for (int nodeIndex = 0; nodeIndex < pose.NodeCount; nodeIndex++)
+                    expected.Add((-1, anchorIndex, nodeIndex));
+
+            Assert.AreEqual(expected.Count, candidates.Count, "半徑夠大時不該篩掉任何候選");
+
+            var produced = new List<(int, int, int)>();
+            foreach (SnapSolver.Candidate candidate in candidates)
+                produced.Add((candidate.TargetPiece, candidate.TargetNode, candidate.DraggedNode));
+
+            CollectionAssert.AreEquivalent(expected, produced,
+                "候選的（來源片, 錨點, 拖曳節點）三元組必須不多不少，而且來源標對");
+        }
+
         [Test]
         public void 盒子_Candidates只做距離篩選_不管盒內限制()
         {

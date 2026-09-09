@@ -153,6 +153,11 @@ namespace Tangram.Core
         /// 由近到遠排序。結果必為精確值。
         ///
         /// 錨點 = 已放置片的所有節點 ∪ extraAnchors（盒子輪廓的節點）。
+        ///
+        /// ⚠️ <b>「什麼叫貼合」不在這裡，在 <see cref="PlacementCandidates"/></b>（P2-1）。
+        /// 這一支只多做三件互動層的事：把螢幕像素的半徑換算成模型單位、
+        /// 標記錨點來自哪一片、依離手指的距離排序。出題器與求解器直接用那支，
+        /// 所以三邊看到的「貼合」永遠是同一個定義。
         /// </summary>
         /// <param name="kind">拖曳中那一片的片種。</param>
         /// <param name="rotation">拖曳中的旋轉值 0~7。</param>
@@ -183,12 +188,11 @@ namespace Tangram.Core
             double maximumDistanceInUnits = radiusPixels / Math.Max(settings.ScreenPixelsPerModelUnit, 1e-6f);
             double maximumDistanceSquared = maximumDistanceInUnits * maximumDistanceInUnits;
 
-            PiecePrototype prototype = PiecePrototype.Get(kind);
-            var draggedPieceNodes = new ExactVector2[prototype.NodeCount];
-            for (int i = 0; i < prototype.NodeCount; i++)
-                draggedPieceNodes[i] = Symmetry.Apply(rotation, flipped, prototype.Nodes[i]);
+            // 一次算好，底下每一組錨點都重複用
+            var pose = new PieceNodeSet(kind, rotation, flipped);
 
             var candidates = new List<Candidate>();
+            var batch = new List<PlacementCandidate>();
 
             for (int pieceIndex = 0; pieceIndex < placedPieces.Count; pieceIndex++)
             {
@@ -201,27 +205,32 @@ namespace Tangram.Core
             candidates.Sort((left, right) => left.PixelDistance.CompareTo(right.PixelDistance));
             return candidates;
 
-            // 把一組錨點跟拖曳片的每個節點配對，通過篩選的收進 candidates
+            // 把一組錨點交給共用的枚舉，再補上互動層才知道的兩件事：來源片索引與螢幕像素距離
             void CollectFromAnchors(IReadOnlyList<ExactVector2> anchors, int sourcePieceIndex)
             {
-                for (int anchorIndex = 0; anchorIndex < anchors.Count; anchorIndex++)
+                // 每組錨點清空重用，這樣 batch 裡的順序就是這一組的順序，
+                // 不必記 batch 的起點——而順序必須維持「錨點外層、節點內層」（見下面的 ⚠️）
+                batch.Clear();
+                PlacementCandidates.EnumerateWithin(
+                    pose, anchors, batch,
+                    freePosition.x, freePosition.y, maximumDistanceSquared);
+
+                for (int i = 0; i < batch.Count; i++)
                 {
-                    for (int draggedNodeIndex = 0; draggedNodeIndex < draggedPieceNodes.Length; draggedNodeIndex++)
-                    {
-                        // 精確：錨點座標減掉拖曳片節點的相對位置，就是候選的平移量
-                        ExactVector2 candidateTranslation =
-                            anchors[anchorIndex] - draggedPieceNodes[draggedNodeIndex];
+                    PlacementCandidate candidate = batch[i];
 
-                        double deltaX = candidateTranslation.X.ToDouble() - freePosition.x;
-                        double deltaY = candidateTranslation.Y.ToDouble() - freePosition.y;
-                        double distanceSquared = deltaX * deltaX + deltaY * deltaY;
-                        if (distanceSquared > maximumDistanceSquared) continue;
+                    // 只對通過篩選的候選算一次距離。通過的通常只有個位數，
+                    // 所以「篩選時算過、這裡再算一次」比讓枚舉層回報距離划算，
+                    // 也讓那一層不必知道螢幕像素的存在
+                    ExactVector2 translation = candidate.Placement.Translation;
+                    double deltaX = translation.X.ToDouble() - freePosition.x;
+                    double deltaY = translation.Y.ToDouble() - freePosition.y;
+                    double distanceSquared = deltaX * deltaX + deltaY * deltaY;
 
-                        candidates.Add(new Candidate(
-                            new Placement(kind, rotation, flipped, candidateTranslation),
-                            (float)(Math.Sqrt(distanceSquared) * settings.ScreenPixelsPerModelUnit),
-                            sourcePieceIndex, anchorIndex, draggedNodeIndex));
-                    }
+                    candidates.Add(new Candidate(
+                        candidate.Placement,
+                        (float)(Math.Sqrt(distanceSquared) * settings.ScreenPixelsPerModelUnit),
+                        sourcePieceIndex, candidate.AnchorIndex, candidate.PieceNodeIndex));
                 }
             }
         }
