@@ -54,7 +54,10 @@ public class BoxView : MonoBehaviour
         if (boxMaterial == null) boxMaterial = new Material(Shader.Find("Sprites/Default"));
         meshRenderer.sharedMaterial = boxMaterial;
 
-        // 盒子在所有片之下（互動設計 §13.6）
+        // 盒子在所有片之下（互動設計 §13.6）。
+        // ⚠️ 決定它在片之下的是 **sorting layer**，不是 sortingOrder——
+        // 兩者在不同層，order 根本不會拿來比。設 order 只是讓層內有個確定的值
+        meshRenderer.sortingLayerName = PieceSorting.BoxSortingLayer;
         meshRenderer.sortingOrder = PieceSorting.BoxSortingOrder;
     }
 

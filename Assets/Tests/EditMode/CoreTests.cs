@@ -43,65 +43,29 @@ namespace Tangram.Core.Tests
                 board.Place(squareSlot, new Placement(PieceKind.Parallelogram, 0, false, ExactVector2.Zero)));
         }
 
-        [Test]
-        public void 驗證_拼出大正方形算過關()
-        {
-            BoardState board = SolvedBoard();
-            Puzzle target = Puzzle.FromPlacements(Fixtures.ClassicSquare());
-            ValidationResult result = PuzzleValidator.Check(board, target);
-            Assert.AreEqual(ValidationState.Solved, result.State, result.ToString());
-            Assert.AreEqual(target.Key, result.ShapeKey);
-        }
+        // ⚠️ 原本這裡有五個 PuzzleValidator 的測試（Solved / Incomplete / Disconnected /
+        // WrongShape / 整體旋轉鏡射）。**2026-09-09 隨 PuzzleValidator 一起刪掉**——
+        // 那支是自由拼版本，盒子模式下整套狀態機都不成立了：
+        //
+        //   Disconnected 不可能——吸附的硬限制不准片吸到盒外，所以盤上的片必定相連
+        //   WrongShape   不可能——盒子就是題目，填得進去就是對的形狀
+        //   整體旋轉鏡射 不需要——盒子在盤面上有固定位置，玩家不會整組轉
+        //
+        // 剩下的 Solved / Incomplete 退化成 board.AllOnBoard 一個布林，
+        // 判定本身測在 LevelTests 的〈過關判定〉那一組。
 
         [Test]
-        public void 驗證_整體旋轉鏡射後仍算過關()
+        public void 盤面_放滿之後可以收成一筆解()
         {
-            Puzzle target = Puzzle.FromPlacements(Fixtures.ClassicSquare());
-            foreach (var (rotation, flipped) in Symmetry.GlobalTransforms)
-            {
-                var moved = new List<Placement>();
-                foreach (Placement piece in Fixtures.ClassicSquare()) moved.Add(piece.ApplyGlobal(rotation, flipped));
-                Assert.AreEqual(ValidationState.Solved,
-                    PuzzleValidator.Check(moved, target).State, $"rotation={rotation} flipped={flipped}");
-            }
-        }
-
-        [Test]
-        public void 驗證_少一片是Incomplete()
-        {
+            // 這一條原本掛在 PuzzleValidator.ToArrangement 上。那支只是個四行包裝，
+            // 而且**它的替代寫法更安全**：它會無條件讀七個槽（沒放的片讀到的是上次的
+            // 姿態，是垃圾），改成拿「在盤上的那些」就沒有這個陷阱。
+            //
+            // 留著這條測試是因為 P2 出題器與 P3 存檔都會用到「盤面 → 一筆解」這件事
             BoardState board = SolvedBoard();
-            board.Lift(0);
-            ValidationResult result = PuzzleValidator.Check(board, Puzzle.FromPlacements(Fixtures.ClassicSquare()));
-            Assert.AreEqual(ValidationState.Incomplete, result.State);
-            Assert.AreEqual(6, result.PlacedCount);
-        }
+            Arrangement arrangement =
+                Arrangement.FromPlacements(board.OnBoardPlacements()).WithKeys();
 
-        [Test]
-        public void 驗證_有片飄走是Disconnected()
-        {
-            BoardState board = SolvedBoard();
-            Placement piece = board[0].Placement;
-            board.Place(0, piece.Translated(new ExactVector2(100, 100)));
-            ValidationResult result = PuzzleValidator.Check(board, Puzzle.FromPlacements(Fixtures.ClassicSquare()));
-            Assert.AreEqual(ValidationState.Disconnected, result.State);
-        }
-
-        [Test]
-        public void 驗證_形狀不對是WrongShape()
-        {
-            // 拿另一個形狀當題目：把正方形的解當盤面，題目卻是別的
-            BoardState board = SolvedBoard();
-            var other = new Puzzle("不存在的題目key", new Walk[0], PuzzleSource.Generated);
-            ValidationResult result = PuzzleValidator.Check(board, other);
-            Assert.AreEqual(ValidationState.WrongShape, result.State);
-            Assert.IsNotNull(result.ShapeKey);
-        }
-
-        [Test]
-        public void 驗證_過關後可以收成一筆解()
-        {
-            BoardState board = SolvedBoard();
-            Arrangement arrangement = PuzzleValidator.ToArrangement(board);
             Assert.AreEqual(7, arrangement.Pieces.Length);
             Assert.AreEqual(6, arrangement.Links.Length);
             Assert.AreEqual(Puzzle.FromPlacements(Fixtures.ClassicSquare()).Key, arrangement.PuzzleKey);
@@ -444,8 +408,13 @@ namespace Tangram.Core.Tests
                         // 這裡要確認的是「同一個狀態組合下七片互不相同」，所以用 (片, 狀態) 當鍵
                         Assert.IsTrue(seen.Add(order * 4 + (snapped ? 2 : 0) + (dragged ? 1 : 0)),
                                       $"槽 {slotIndex} 的排序值撞號了");
-                        Assert.GreaterOrEqual(order, PieceSorting.BoxSortingOrder + 1,
-                                              "所有片都要在盒子之上");
+
+                        // ⚠️ 這裡原本還斷言「order 要大於 BoxSortingOrder」，
+                        // **2026-09-09 拿掉了**：片跟盒子已經不在同一個 sorting layer
+                        //（Box → Piece），兩者的 order 根本不會被拿來比。
+                        // 留著的話它測的是一個不再成立的前提，而且會擋住
+                        // 「把層內的 order 從 0 開始算」這種正常的整理
+                        Assert.GreaterOrEqual(order, 0, "sortingOrder 不該是負的");
                     }
                 }
             }

@@ -28,8 +28,39 @@ namespace Tangram.Core
         /// <summary>同一層裡面積階數之間的間距。要大於最大槽索引（6）。</summary>
         public const int SizeRankStride = 10;
 
-        /// <summary>盒子要畫在所有片之下，用這個值。</summary>
-        public const int BoxSortingOrder = -1;
+        /// <summary>盒子在自己那層裡的順序。<b>它跟片的先後由 sorting layer 決定，不靠這個數字。</b></summary>
+        public const int BoxSortingOrder = 0;
+
+        // ─────────────────────────────────────────────────────────────
+        // Sorting layer：跨系統的先後由**一個地方**決定（2026-09-09）
+        //
+        // ⚠️ 在這之前所有 renderer 都在 Default 層，先後全靠各自挑的數字硬撐——
+        // 抽屜挑了 2000～2002、片是 0～226、Canvas 是 0。那不是排序，是巧合：
+        // 沒有任何東西會在它被破壞時報錯，而症狀是「某個東西被蓋住了」。
+        //
+        // 現在改成由 ProjectSettings 的 sorting layer 清單決定，**清單的順序就是層級**：
+        //
+        //     Default → Box → Piece → GameUI → CompleteUI
+        //               盒子   七片    抽屜與   完成彈窗
+        //                             四顆鈕
+        //
+        // 各系統的 sortingOrder 從此**只在自己那層裡有意義**，不必再跟別人比大小。
+        //
+        // ⚠️ 這些字串必須跟 ProjectSettings/TagManager.asset 對得上。
+        // 打錯字的話 Unity 會把那個 renderer 留在 Default 層，**症狀就是被蓋住**。
+        // ─────────────────────────────────────────────────────────────
+
+        /// <summary>盒子。畫在所有片之下。</summary>
+        public const string BoxSortingLayer = "Box";
+
+        /// <summary>七片。層內的先後才用 <see cref="SortingOrder"/> 算。</summary>
+        public const string PieceSortingLayer = "Piece";
+
+        /// <summary>遊戲中的 UI：待用區抽屜、箭頭、回收框，以及四顆按鈕的 Canvas。</summary>
+        public const string GameUiSortingLayer = "GameUI";
+
+        /// <summary>完成彈窗。<b>蓋在所有東西上面</b>，因為它出現時整個盤面都鎖住了。</summary>
+        public const string CompleteUiSortingLayer = "CompleteUI";
 
         /// <param name="kind">片種，決定面積階數。</param>
         /// <param name="slotIndex">槽索引 0~6，只用來破同分。</param>

@@ -144,6 +144,7 @@ public class TrayView : MonoBehaviour
 
             var thumbnail = thumbnailObject.AddComponent<SpriteRenderer>();
             thumbnail.sprite = library.SpriteFor(kind);
+            thumbnail.sortingLayerName = PieceSorting.GameUiSortingLayer;
             thumbnail.sortingOrder = ThumbnailSortingOrder;
             thumbnails[slotIndex] = thumbnail;
         }
@@ -166,7 +167,7 @@ public class TrayView : MonoBehaviour
     }
 
     /// <param name="objectName">物件名稱，只影響 Hierarchy 好不好讀。</param>
-    /// <param name="sortingOrder">繪製順序。抽屜要蓋在片上面，所以都是很大的數字。</param>
+    /// <param name="sortingOrder">在 <c>GameUI</c> 層裡的先後。<b>只跟同層的東西比。</b></param>
     /// <param name="tint">顏色。</param>
     /// <returns>掛在 <see cref="overlayRoot"/> 底下的一個純色方塊。</returns>
     private SpriteRenderer BuildBlock(string objectName, int sortingOrder, Color tint)
@@ -177,6 +178,7 @@ public class TrayView : MonoBehaviour
         var renderer = blockObject.AddComponent<SpriteRenderer>();
         renderer.sprite = blockSprite;
         renderer.color = tint;
+        renderer.sortingLayerName = PieceSorting.GameUiSortingLayer;
         renderer.sortingOrder = sortingOrder;
         return renderer;
     }
@@ -197,9 +199,15 @@ public class TrayView : MonoBehaviour
                                     new Vector2(0.5f, 0.5f), pixelsPerUnit: 1f);
     }
 
-    private const int DrawerSortingOrder = 2000;
-    private const int ThumbnailSortingOrder = 2001;
-    private const int OverlayTopSortingOrder = 2002;
+    // 抽屜這三個東西的先後。⚠️ **只在 GameUI 層裡有意義**——
+    // 它們跟片、盒子、彈窗的先後是 sorting layer 決定的，不會拿來比大小。
+    //
+    // 2026-09-09 之前這三個是 2000 / 2001 / 2002，因為當時所有東西都在 Default 層，
+    // 要蓋過片（0～226）就只能挑一個「夠大」的數字。那不是排序是巧合：
+    // 沒有東西會在它被破壞時報錯，而症狀是「某個東西被蓋住了」。
+    private const int DrawerSortingOrder = 0;
+    private const int ThumbnailSortingOrder = 1;
+    private const int OverlayTopSortingOrder = 2;
 
     // ─────────────────────────────────────────────────────────────
     // 螢幕上的三塊矩形。每幀從 Screen 重算，不快取——
@@ -243,11 +251,10 @@ public class TrayView : MonoBehaviour
     {
         slotIndex = -1;
 
-        // 拖曳中箭頭是隱藏的（那時候那塊是回收框），隱藏的東西不該擋——
-        // 跟按鈕「隱藏中就不擋」是同一條規則（互動設計 §5），
-        // 不然那塊區域會變成永遠點不到片的死角
-        bool dragging = inputController != null && inputController.IsDragging;
-        if (!dragging && ArrowRect.Contains(screenPoint)) return Hit.Arrow;
+        // 拖曳中箭頭是隱藏的（那時候那塊是回收框），過關之後也是（整個盤面鎖住，
+        // P1-10）。隱藏的東西不該擋——跟按鈕「隱藏中就不擋」是同一條規則
+        //（互動設計 §5），不然那塊區域會變成永遠點不到片的死角
+        if (IsArrowShown && ArrowRect.Contains(screenPoint)) return Hit.Arrow;
 
         if (!IsOpen) return Hit.None;
         if (!DrawerRect.Contains(screenPoint)) return Hit.None;
@@ -263,6 +270,29 @@ public class TrayView : MonoBehaviour
         // ⚠️ 回 DrawerBody 而不是 None 很重要：None 會讓控制器走「點到空白 → 清選取」，
         // 玩家在抽屜裡點歪一下，盤面上選取的那片就莫名其妙不亮了
         return Hit.DrawerBody;
+    }
+
+    /// <summary>
+    /// 箭頭現在該不該出現。<b>顯示條件與命中條件共用同一個算式</b>，
+    /// 跟四顆按鈕同一個模式（互動設計 §5）——分岔的話會出現
+    /// 「看得到但按了沒反應」或反過來，兩種都很難查。
+    ///
+    /// 兩個條件：
+    /// <list type="bullet">
+    /// <item><b>沒在拖</b>——拖曳中那塊是回收框，兩者分時互斥（決定 21）</item>
+    /// <item><b>沒過關</b>——過關之後整個盤面鎖住，完成彈窗蓋滿畫面（P1-10）</item>
+    /// </list>
+    ///
+    /// ⚠️ 這裡<b>不看抽屜開著沒</b>。抽屜開著時箭頭必須還按得到，不然關不起來——
+    /// 這是它跟那四顆鈕唯一不同的地方。
+    /// </summary>
+    private bool IsArrowShown
+    {
+        get
+        {
+            if (inputController == null) return true;
+            return !inputController.IsDragging && !inputController.IsLevelComplete;
+        }
     }
 
     /// <summary>拖曳中才顯示的回收框。放手時由控制器問一次。</summary>
@@ -395,7 +425,9 @@ public class TrayView : MonoBehaviour
             camera.transform.position + camera.transform.forward * OverlayCameraDistance,
             camera.transform.rotation);
 
-        SetOverlayShown(drawer: IsOpen, arrow: !dragging, recycle: dragging);
+        // ⚠️ arrow 用 IsArrowShown 而不是 !dragging——顯示條件與 HitTest 用的
+        // 必須是同一個算式，不然會出現「箭頭不見了但那塊還是擋著片」
+        SetOverlayShown(drawer: IsOpen, arrow: IsArrowShown, recycle: dragging);
 
         Rect arrow = ArrowRect;
         PlaceBlock(arrowTab, arrow, pixelsPerUnit);

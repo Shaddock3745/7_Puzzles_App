@@ -65,9 +65,23 @@ public class LevelController : MonoBehaviour
     private void Start()
     {
         if (!loadClassicSquareOnStart) return;
+        EnterClassicSquare();
+    }
 
-        // P1 沒有題庫，直接用基準的經典大正方形當唯一一關。
-        // 它同時是題目也是參考解——盒子的填色就是靠這七片三角化出來的
+    /// <summary>
+    /// 載入經典大正方形這一關。<b>開局與「下一關」共用這一支。</b>
+    ///
+    /// P1 沒有題庫，所以它同時是題目也是參考解——盒子的填色就是靠這七片三角化出來的。
+    ///
+    /// ⚠️ <b>「下一關」目前接的是同一個題目</b>（P1-10，暫時的）。之後會換成
+    /// 「難度回饋 → 挑下一題」，但**換關這條路徑本身不會變**——
+    /// 差別只在傳進 <see cref="EnterLevel"/> 的是哪一個題目。
+    ///
+    /// 💡 所以測「下一關」的時候<b>畫面看起來會跟原本一模一樣</b>，
+    /// 只有七片回到抽屜、undo 堆疊清空。那是正常的，不是沒換到。
+    /// </summary>
+    public void EnterClassicSquare()
+    {
         Placement[] solution = Fixtures.ClassicSquare();
         EnterLevel(Puzzle.FromPlacements(solution), solution, allowRoll: true);
     }

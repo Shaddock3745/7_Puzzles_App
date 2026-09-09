@@ -367,6 +367,9 @@ public class PieceView : MonoBehaviour
             spriteRenderer.color = color;
         }
 
+        // ⚠️ 這個 order **只在 Piece 層裡有意義**——跟盒子、抽屜、UI 的先後
+        // 是 sorting layer 決定的，不會跟它們比大小
+        spriteRenderer.sortingLayerName = PieceSorting.PieceSortingLayer;
         spriteRenderer.sortingOrder =
             PieceSorting.SortingOrder(Kind, SlotIndex, isSnapped, isBeingDragged);
     }

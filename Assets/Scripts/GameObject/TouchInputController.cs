@@ -112,6 +112,26 @@ public class TouchInputController : MonoBehaviour
     private bool IsTrayDrawerOpen => trayView != null && trayView.IsOpen;
 
     /// <summary>
+    /// 這一關結束了沒（P1-10）。<b>過關之後盤面整個鎖住</b>——完成彈窗會蓋滿畫面，
+    /// 玩家只剩「退出」與「下一關」兩個出口。
+    ///
+    /// 四個顯示條件（旋轉／翻面、undo、清空、抽屜箭頭）都要 AND 這一項。
+    /// ⚠️ 但 <see cref="IsTrayDrawerOpen"/> <b>不能</b>套到箭頭上——
+    /// 箭頭在抽屜開著時必須還按得到，不然抽屜關不起來。所以四個共用的只有這一項。
+    ///
+    /// 💡 漏掉其中一個不會造成功能性的錯：彈窗註冊了全螢幕擋片區，按下早就被吃掉了。
+    /// 漏掉只會看到一顆按不動的鈕——但那正是 §5 要避免的「擺一個按不到的按鈕玩家會去戳」。
+    /// </summary>
+    public bool IsLevelComplete
+    {
+        get
+        {
+            LevelData level = LevelSession.Current?.Data;
+            return level != null && level.IsSolved;
+        }
+    }
+
+    /// <summary>
     /// 按鈕現在能作用在哪一片，不能作用時是 <c>null</c>。
     ///
     /// 條件是互動設計 §5 的兩條加上 P1-5 的一條：
@@ -126,7 +146,8 @@ public class TouchInputController : MonoBehaviour
     /// 顯示條件不該依賴遠處的某條規則還活著。
     /// </summary>
     public PieceView ActionTarget
-        => selectedPiece != null && !selectedPiece.IsBeingDragged && !IsTrayDrawerOpen
+        => selectedPiece != null && !selectedPiece.IsBeingDragged
+           && !IsTrayDrawerOpen && !IsLevelComplete
             ? selectedPiece
             : null;
 
@@ -702,6 +723,15 @@ public class TouchInputController : MonoBehaviour
             else CommitDrag(level);
 
             pressedPiece.IsBeingDragged = false;
+
+            // 過關判定（P1-10）。**鬆手這一格是唯一需要問的時機**：
+            // CommitDrag 是全專案唯一會讓片進盤面的地方，而 undo 與回收只會讓片變少
+            // 或原地不動——所以「還沒過關 → 過關」這個轉換只可能發生在這裡。
+            // 不必每幀檢查，也不必訂閱 Board.Changed。
+            //
+            // ⚠️ 一定要在 movedPastThreshold 這個區塊**裡面**：點選那條完全不碰盤面，
+            // 在外面問等於每次點一下都白算一次
+            level.MarkSolvedIfAllOnBoard();
         }
 
         // §4 的高亮規則，加上 P1-5 之後收成一句：
@@ -859,7 +889,8 @@ public class TouchInputController : MonoBehaviour
         get
         {
             LevelData level = LevelSession.Current?.Data;
-            return level != null && !IsDragging && !IsTrayDrawerOpen && level.CanUndo;
+            return level != null && !IsDragging && !IsTrayDrawerOpen && !IsLevelComplete
+                   && level.CanUndo;
         }
     }
 
@@ -950,7 +981,7 @@ public class TouchInputController : MonoBehaviour
         get
         {
             LevelData level = LevelSession.Current?.Data;
-            return level != null && !IsDragging && !IsTrayDrawerOpen
+            return level != null && !IsDragging && !IsTrayDrawerOpen && !IsLevelComplete
                    && level.Board.OnBoardCount > 0;
         }
     }

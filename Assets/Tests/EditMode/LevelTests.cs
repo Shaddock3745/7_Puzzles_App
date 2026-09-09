@@ -505,6 +505,80 @@ namespace Tangram.Core.Tests
             Assert.AreEqual(1, changedCount, "七片一起收走也只算一次盤面變動");
         }
 
+        // ─────────────────────────────────────────────────────────────
+        // 過關判定（P1-10）。判定就是 AllOnBoard——它等價於面積判定，
+        // 靠的是吸附的硬限制（只吸得進盒內、不能重疊）。
+        // ─────────────────────────────────────────────────────────────
+
+        [Test]
+        public void 過關_七片都在盤上才算過關()
+        {
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount - 1; slotIndex++)
+            {
+                PlaceFromTray(session, slotIndex, solution[slotIndex]);
+                Assert.IsFalse(session.Data.MarkSolvedIfAllOnBoard(),
+                               $"才放了 {slotIndex + 1} 片，不該過關");
+            }
+
+            PlaceFromTray(session, BoardState.PieceCount - 1, solution[BoardState.PieceCount - 1]);
+            Assert.IsTrue(session.Data.MarkSolvedIfAllOnBoard(), "第七片放上去就該過關");
+            Assert.IsTrue(session.Data.IsSolved);
+        }
+
+        [Test]
+        public void 過關_一關剛開始不算過關()
+        {
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+
+            Assert.IsFalse(session.Data.IsSolved);
+            Assert.IsFalse(session.Data.MarkSolvedIfAllOnBoard());
+        }
+
+        [Test]
+        public void 過關_是單向的_拿掉一片也不會變回未過關()
+        {
+            // 過關之後彈窗蓋滿畫面，玩家只剩「退出」與「下一關」兩個出口，
+            // 所以不需要「退回未過關」那條路。這一條把那個假設釘住——
+            // 之後要是加了「關掉彈窗繼續看」，這條會紅，提醒你回來重想
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                PlaceFromTray(session, slotIndex, solution[slotIndex]);
+            Assert.IsTrue(session.Data.MarkSolvedIfAllOnBoard());
+
+            session.Data.Board.Lift(0);
+
+            Assert.IsFalse(session.Data.Board.AllOnBoard);
+            Assert.IsTrue(session.Data.IsSolved, "單向：只會設 true，不會設回 false");
+        }
+
+        [Test]
+        public void 過關_換關之後回到未過關()
+        {
+            // 這就是「彈窗不需要有人記得關掉它」的原理：換關整包換掉 → 旗標歸零
+            // → 彈窗下一幀自己消失
+            var session = new LevelSession();
+            var (puzzleA, solutionA) = ClassicLevel();
+            session.Load(puzzleA, solutionA, allowRoll: true);
+
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                PlaceFromTray(session, slotIndex, solutionA[slotIndex]);
+            Assert.IsTrue(session.Data.MarkSolvedIfAllOnBoard());
+
+            var (puzzleB, solutionB) = TranslatedLevel(new ExactVector2(6, 0));
+            session.Load(puzzleB, solutionB, allowRoll: true);
+
+            Assert.IsFalse(session.Data.IsSolved, "新的一關不該一開始就是過關狀態");
+        }
+
         [Test]
         public void 盤面_Clear只觸發一次Changed()
         {

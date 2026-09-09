@@ -91,6 +91,28 @@ namespace Tangram.Core
         /// <summary>標記過關。</summary>
         public void MarkSolved() => IsSolved = true;
 
+        /// <summary>
+        /// 七片都在盤上就標記過關（P1-10，互動設計 §7）。
+        ///
+        /// <b>判定就是 <see cref="BoardState.AllOnBoard"/>，不需要算面積、也不需要比形狀。</b>
+        /// ⚠️ 這個等價關係<b>是靠吸附的硬限制撐著的</b>：片只吸得進盒內、而且不能重疊
+        /// （<c>SnapSolver</c> 的 <c>isAllowed</c> 與重疊排除），所以「在盤上」⟹「合法擺放」。
+        /// 七片面積總和 32 = 盒子面積，於是七片都在盤上就必然填滿。
+        ///
+        /// <b>哪天硬限制鬆掉（例如開放盒外自由拼），這一條就不成立了</b>——
+        /// 那時候要回來改判定，而這段註解是唯一的警訊。
+        ///
+        /// <b>單向的</b>：只會把 <see cref="IsSolved"/> 設成 true，不會設回 false。
+        /// 過關之後彈窗會蓋住整個畫面，玩家只剩「退出」與「下一關」兩個出口，
+        /// 所以不需要「退回未過關」那條路；真正的重置是換關（整包資料換掉）。
+        /// </summary>
+        /// <returns>這一關過關了沒（呼叫之後的狀態）。</returns>
+        public bool MarkSolvedIfAllOnBoard()
+        {
+            if (Board.AllOnBoard) MarkSolved();
+            return IsSolved;
+        }
+
         /// <param name="slotIndex">槽索引 0~6。</param>
         /// <returns>這一片在不在待用區（也就是抽屜裡、畫面上看不到）。</returns>
         public bool IsInTray(int slotIndex) => inTray[slotIndex];
