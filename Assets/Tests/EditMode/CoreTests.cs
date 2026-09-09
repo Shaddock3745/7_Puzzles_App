@@ -279,10 +279,19 @@ namespace Tangram.Core.Tests
         public void 輸入來源_盤面變動會發事件()
         {
             var source = new ScriptedInputSource();
-            int fired = 0;
-            source.BoardChanged += _ => fired++;
+            var changedSlots = new List<int>();
+            source.BoardChanged += (board, changedSlotIndex) => changedSlots.Add(changedSlotIndex);
+
             source.LoadPlacements(Fixtures.ClassicSquare());
-            Assert.Greater(fired, 0);
+
+            Assert.Greater(changedSlots.Count, 0);
+
+            // 「動到哪一槽」也要一起轉發（2026-09-09 加的第二個參數）。
+            // LoadPlacements 是先 Clear 再逐槽 Place，所以第一次是整盤、其餘是單槽
+            Assert.AreEqual(BoardState.AllSlots, changedSlots[0], "Clear 要回報整盤");
+            for (int i = 1; i < changedSlots.Count; i++)
+                Assert.That(changedSlots[i], Is.InRange(0, BoardState.PieceCount - 1),
+                            "逐槽 Place 要回報那一槽的索引");
         }
 
         [Test]

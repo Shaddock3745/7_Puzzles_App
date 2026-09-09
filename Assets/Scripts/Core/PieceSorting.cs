@@ -62,6 +62,22 @@ namespace Tangram.Core
         /// <summary>完成彈窗。<b>蓋在所有東西上面</b>，因為它出現時整個盤面都鎖住了。</summary>
         public const string CompleteUiSortingLayer = "CompleteUI";
 
+        // ─────────────────────────────────────────────────────────────
+        // GameUI 層內的先後。⚠️ **這四個必須放在一起**——
+        // 它們是同一層裡互相比大小的數字，散在各自的檔案裡的話，
+        // 就會變回「跨檔案的數字巧合」，也就是 2026-09-09 剛清掉的那種東西。
+        // ─────────────────────────────────────────────────────────────
+
+        /// <summary>抽屜面板（最底下）。</summary>
+        public const int TrayDrawerSortingOrder = 0;
+
+        /// <summary>抽屜裡的縮圖。</summary>
+        public const int TrayThumbnailSortingOrder = 1;
+
+        /// <summary>箭頭／回收框。</summary>
+        public const int TrayOverlaySortingOrder = 2;
+
+
         /// <param name="kind">片種，決定面積階數。</param>
         /// <param name="slotIndex">槽索引 0~6，只用來破同分。</param>
         /// <param name="isSnapped">畫面上吸住了沒。注意這**不是** <c>BoardState.OnBoard</c>——

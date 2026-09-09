@@ -43,8 +43,27 @@ namespace Tangram.Core
 
         private readonly PieceObservation[] _pieces = new PieceObservation[PieceCount];
 
-        /// <summary>盤面內容有任何變動時觸發。參數就是這個 BoardState 自己。</summary>
-        public event Action<BoardState> Changed;
+        /// <summary>
+        /// <see cref="Changed"/> 的第二個參數用這個值，表示「動到的不只一槽」
+        /// （<see cref="ReplaceAll"/> 與 <see cref="Clear"/>，也就是清空與 undo）。
+        /// </summary>
+        public const int AllSlots = -1;
+
+        /// <summary>
+        /// 盤面內容有任何變動時觸發。
+        ///
+        /// 參數是這個 <c>BoardState</c> 自己，加上<b>動到哪一槽</b>——
+        /// 整盤一次寫完時是 <see cref="AllSlots"/>。
+        ///
+        /// ⚠️ <b>「哪一槽」是 2026-09-09 才加的</b>，趁還沒有任何訂閱者的時候改。
+        /// 之前只傳盤面，訂閱者想知道「動的是哪一片」就得自己跟上一次的內容比對——
+        /// 那等於每個訂閱者各存一份盤面副本，而且是安靜地不同步。
+        ///
+        /// ⚠️ <b>一次操作只發一次。</b><see cref="Clear"/> 與 undo 都走
+        /// <see cref="ReplaceAll"/>，不是連呼叫七次 <see cref="Lift"/>——
+        /// 不然訂閱者會看到六個「在遊戲裡從來不存在」的中間狀態。
+        /// </summary>
+        public event Action<BoardState, int> Changed;
 
         /// <summary>建一個七片都不在盤上的空盤面，片種依 TangramSet 固定。</summary>
         public BoardState()
@@ -107,7 +126,7 @@ namespace Tangram.Core
                     $"第 {slotIndex} 片是 {_pieces[slotIndex].Kind}，不能放 {placement.Kind}");
 
             _pieces[slotIndex] = new PieceObservation(slotIndex, placement.Kind, placement, true);
-            Changed?.Invoke(this);
+            Changed?.Invoke(this, slotIndex);
         }
 
         /// <summary>拿離盤面（回待用區／這一幀沒看到）。姿態保留，方便拿回來。</summary>
@@ -117,7 +136,7 @@ namespace Tangram.Core
             PieceObservation observation = _pieces[slotIndex];
             _pieces[slotIndex] = new PieceObservation(
                 slotIndex, observation.Kind, observation.Placement, false);
-            Changed?.Invoke(this);
+            Changed?.Invoke(this, slotIndex);
         }
 
         /// <summary>
@@ -187,7 +206,7 @@ namespace Tangram.Core
                     throw new ArgumentException($"第 {slotIndex} 片種類不符");
                 _pieces[slotIndex] = observations[slotIndex];
             }
-            Changed?.Invoke(this);
+            Changed?.Invoke(this, AllSlots);
         }
     }
 }

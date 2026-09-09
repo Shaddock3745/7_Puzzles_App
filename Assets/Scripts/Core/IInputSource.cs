@@ -23,8 +23,8 @@ namespace Tangram.Core
         /// <summary>這個來源維護的盤面。切換來源時由 GameManager 決定要不要沿用。</summary>
         BoardState Board { get; }
 
-        /// <summary>盤面有變動時觸發（等同 Board.Changed，轉一層方便訂閱與取消）。</summary>
-        event Action<BoardState> BoardChanged;
+        /// <summary>盤面有變動時觸發（等同 Board.Changed，轉一層方便訂閱與取消）。第二個參數是動到哪一槽，整盤時是 <c>BoardState.AllSlots</c>。</summary>
+        event Action<BoardState, int> BoardChanged;
 
         /// <summary>開始接受輸入。</summary>
         void Activate();
@@ -47,7 +47,7 @@ namespace Tangram.Core
         public bool IsActive { get; private set; }
         public BoardState Board { get; }
 
-        public event Action<BoardState> BoardChanged;
+        public event Action<BoardState, int> BoardChanged;
 
         /// <param name="name">顯示用名稱。</param>
         /// <param name="board">要接管的盤面，傳 null 就自己建一個新的空盤面。</param>
@@ -55,7 +55,8 @@ namespace Tangram.Core
         {
             Name = name;
             Board = board ?? new BoardState();
-            Board.Changed += changedBoard => BoardChanged?.Invoke(changedBoard);
+            Board.Changed += (changedBoard, changedSlotIndex) =>
+                BoardChanged?.Invoke(changedBoard, changedSlotIndex);
         }
 
         /// <summary>開始接受輸入。這個實作只改旗標。</summary>

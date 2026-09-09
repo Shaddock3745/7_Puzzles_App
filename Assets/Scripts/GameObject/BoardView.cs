@@ -28,11 +28,13 @@ public class BoardView : MonoBehaviour
     [Tooltip("要驅動的正交相機。留空的話 Awake 會抓 Camera.main。")]
     [SerializeField] private Camera targetCamera;
 
-    [Tooltip("吸附半徑，螢幕像素。P1-13 調參用。")]
-    [SerializeField] private float snapRadiusPixels = 18f;
+    [Tooltip("吸附半徑，單位 dp（1 dp = 1/160 英寸）。2026-09-09 實機調出來的值。" +
+             "⚠️ 改了要重進 Play 才生效，見 SnapSettings 的說明。")]
+    [SerializeField] private float snapRadiusDp = 12f;
 
-    [Tooltip("脫離半徑，螢幕像素。要比吸附半徑大，這個差距就是遲滯。")]
-    [SerializeField] private float releaseRadiusPixels = 30f;
+    [Tooltip("脫離半徑，單位 dp。⚠️ 要比吸附半徑大，這個差距就是遲滯——" +
+             "太接近的話片會在邊界反覆吸上／甩開，看起來像在抖。")]
+    [SerializeField] private float releaseRadiusDp = 18f;
 
     /// <summary>
     /// 這一題的座標狀態。相機參數的來源；盒子原點**不在這裡**，在 <c>LevelSession</c>。
@@ -52,6 +54,15 @@ public class BoardView : MonoBehaviour
     /// 開放外面寫的話，哪天有人改了它，吸附半徑就跟畫面對不上——
     /// 而症狀只是「手感突然很怪」，沒有任何錯誤訊息，是最難查的一種 bug。
     /// </summary>
+    /// <remarks>
+    /// ⚠️ <b>兩個半徑是在版面重算那一格算一次存起來的，而版面重算只在螢幕尺寸變了才跑。</b>
+    /// 所以在 Play 模式下改 Inspector 的值<b>不會即時生效，而且不報錯</b>——
+    /// 要重進 Play（或轉一次螢幕方向）才看得到。
+    ///
+    /// 2026-09-09 曾經為了「拉滑桿調手感」改成每次讀都現算，
+    /// 調完 P1-13 的數值之後改回來——那個需求是一次性的，
+    /// 而現算會讓「dp → 像素」每幀跑很多次。**數值已經定了（12 / 18），不再需要即時調。**
+    /// </remarks>
     public SnapSolver.Settings SnapSettings { get; private set; }
 
     /// <summary>
@@ -119,11 +130,14 @@ public class BoardView : MonoBehaviour
 
         Solution = solution;
         PushToCamera(solution);
+
+        // dp → 螢幕像素在這裡轉一次。SnapSolver 收的仍然是螢幕像素——
+        // 它是純 C#、測得到，不該知道 Screen.dpi 這種東西的存在
         SnapSettings = new SnapSolver.Settings
         {
             ScreenPixelsPerModelUnit = solution.ScreenPixelsPerModelUnit,
-            SnapRadiusPixels = snapRadiusPixels,
-            ReleaseRadiusPixels = releaseRadiusPixels
+            SnapRadiusPixels = ScreenMetrics.ToPixels(snapRadiusDp),
+            ReleaseRadiusPixels = ScreenMetrics.ToPixels(releaseRadiusDp)
         };
 
         // ⚠️ 這一行永遠是最後一步。LastScreenWidth/Height 的語意是

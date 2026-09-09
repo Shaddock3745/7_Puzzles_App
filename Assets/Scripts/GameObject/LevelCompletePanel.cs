@@ -150,13 +150,13 @@ public class LevelCompletePanel : MonoBehaviour
     ///
     /// ⚠️ <b>目前接的是同一個大正方形</b>，只為了驗證換關這條路徑（P1-10，暫時的）。
     /// 之後會變成「難度回饋 → 挑下一題」，但換關本身走的還是
-    /// <see cref="LevelController.EnterLevel"/> 那條已經實測過的五步順序。
+    /// <see cref="LevelController.EnterNextLevel"/>，而它內部走的還是那條已經實測過的五步順序。
     ///
     /// 💡 <b>畫面看起來會跟原本一模一樣</b>——只有七片回到抽屜、undo 堆疊清空、
     /// 過關旗標歸零（於是這個彈窗下一幀自己消失）。那是正常的。
     /// </summary>
     public void OnNextLevelPressed()
     {
-        if (levelController != null) levelController.EnterClassicSquare();
+        if (levelController != null) levelController.EnterNextLevel();
     }
 }

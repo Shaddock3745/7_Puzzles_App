@@ -394,7 +394,7 @@ namespace Tangram.Core.Tests
                 session.Data.SetInTray(slotIndex, true);
 
             int changedCount = 0;
-            session.Data.Board.Changed += _ => changedCount++;
+            session.Data.Board.Changed += (board, slotIndex) => changedCount++;
 
             session.Data.TryUndo(out _);
 
@@ -498,7 +498,7 @@ namespace Tangram.Core.Tests
                 PlaceFromTray(session, slotIndex, solution[slotIndex]);
 
             int changedCount = 0;
-            session.Data.Board.Changed += _ => changedCount++;
+            session.Data.Board.Changed += (board, slotIndex) => changedCount++;
 
             session.Data.TryClearBoardToTray(out _);
 
@@ -590,13 +590,101 @@ namespace Tangram.Core.Tests
                 session.Data.Board.Place(slotIndex, solution[slotIndex]);
 
             int changedCount = 0;
-            session.Data.Board.Changed += _ => changedCount++;
+            session.Data.Board.Changed += (board, slotIndex) => changedCount++;
 
             session.Data.Board.Clear();
 
             Assert.AreEqual(1, changedCount, "原本是連呼叫七次 Lift，也就是連發七次");
             Assert.AreEqual(0, session.Data.Board.OnBoardCount);
             Assert.AreEqual(solution[0], session.Data.Board[0].Placement, "Clear 保留姿態");
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // 跨元件的 UI 決定（P1-13）。右下角那塊區域的角色是**三態**，
+        // 不是兩個平行布林——這一組就是釘住「不可能兩個同時成立」。
+        //
+        // 這條規則以前住在 GameObject/（TrayView 的 IsArrowShown 加
+        // LayoutOverlay 的 dragging），dotnet 編不到，一個測試都沒有。
+        // ─────────────────────────────────────────────────────────────
+
+        [Test]
+        public void 右下角_預設是箭頭()
+        {
+            var ui = new SharedUiState();
+            Assert.AreEqual(TrayCornerRole.Arrow, ui.TrayCorner,
+                            "什麼都還沒發生的時候那塊該是箭頭，不然一開局抽屜就打不開");
+        }
+
+        [Test]
+        public void 右下角_拖曳中是回收框_沒在拖是箭頭()
+        {
+            var ui = new SharedUiState();
+
+            ui.UpdateTrayCorner(isDragging: true, isLevelComplete: false);
+            Assert.AreEqual(TrayCornerRole.RecycleBox, ui.TrayCorner);
+
+            ui.UpdateTrayCorner(isDragging: false, isLevelComplete: false);
+            Assert.AreEqual(TrayCornerRole.Arrow, ui.TrayCorner, "放手之後要變回箭頭");
+        }
+
+        [Test]
+        public void 右下角_過關就什麼都不是()
+        {
+            var ui = new SharedUiState();
+            ui.UpdateTrayCorner(isDragging: false, isLevelComplete: true);
+
+            Assert.AreEqual(TrayCornerRole.Hidden, ui.TrayCorner,
+                            "過關之後盤面整個鎖住，完成彈窗蓋滿畫面");
+        }
+
+        [Test]
+        public void 右下角_過關優先於拖曳中()
+        {
+            // 理論上兩者不可能同時成立（過關是在放手那一格判定的），
+            // 但三態的價值就是「萬一同時成立也只有一個答案」——
+            // 換成兩個平行布林的話，答案會取決於哪個 if 先跑
+            var ui = new SharedUiState();
+            ui.UpdateTrayCorner(isDragging: true, isLevelComplete: true);
+
+            Assert.AreEqual(TrayCornerRole.Hidden, ui.TrayCorner);
+        }
+
+        [Test]
+        public void 右下角_任何輸入組合都只有一個角色()
+        {
+            // 「箭頭與回收框同時顯示」這種組合在形狀上就不存在——
+            // 這正是待辦清單決定 9（不要用平行布林表達互斥狀態）要的東西
+            var ui = new SharedUiState();
+
+            foreach (bool dragging in new[] { false, true })
+            {
+                foreach (bool complete in new[] { false, true })
+                {
+                    ui.UpdateTrayCorner(dragging, complete);
+
+                    int matchCount = 0;
+                    if (ui.TrayCorner == TrayCornerRole.Arrow) matchCount++;
+                    if (ui.TrayCorner == TrayCornerRole.RecycleBox) matchCount++;
+                    if (ui.TrayCorner == TrayCornerRole.Hidden) matchCount++;
+
+                    Assert.AreEqual(1, matchCount, $"dragging={dragging} complete={complete}");
+                }
+            }
+        }
+
+        [Test]
+        public void 右下角_是投影所以不需要重置()
+        {
+            // store 不跟著 LevelData 整包換掉，所以「換關要不要重置」是每個值都要回答的問題。
+            // 這個值的答案是「不用」——它每幀被無條件重寫，是自癒的。
+            // 這條測試把那個性質釘住：不管之前是什麼，餵新的輸入就會覆蓋掉
+            var ui = new SharedUiState();
+            ui.UpdateTrayCorner(isDragging: false, isLevelComplete: true);
+            Assert.AreEqual(TrayCornerRole.Hidden, ui.TrayCorner);
+
+            // 換關之後控制器下一幀餵進來的就是「沒在拖、沒過關」
+            ui.UpdateTrayCorner(isDragging: false, isLevelComplete: false);
+            Assert.AreEqual(TrayCornerRole.Arrow, ui.TrayCorner, "不必有人記得重置它");
         }
     }
 }

@@ -13,10 +13,16 @@ using UnityEngine;
 /// <item><b>回答命中</b>：「這個螢幕座標歸你嗎、是哪一槽」</item>
 /// </list>
 ///
-/// ⚠️ <b>它不動片的姿態、位置、吸附、選取。</b>那些的寫入者只有
-/// <see cref="TouchInputController"/> 一個。這裡只寫 <see cref="PieceView.IsVisible"/>，
-/// 兩邊的欄位完全不重疊，所以<b>不是 <c>PiecePreview</c> 那個坑</b>——
-/// 那支的問題是每幀無條件寫控制器也在寫的同一批欄位（除錯記錄 003）。
+/// ⚠️ <b>它不動片的姿態、位置、吸附、選取。</b>這裡只寫 <see cref="PieceView.IsVisible"/>。
+///
+/// ⚠️ 這裡原本寫「兩邊的欄位完全不重疊」——<b>那是錯的</b>（2026-09-09 更正）：
+/// 控制器也寫 <c>IsVisible</c>（召喚、回收、undo 與清空的收尾）。
+/// <b>真正的差別是真相在哪</b>：這支的真相是 <c>LevelData.IsInTray</c>，它只是每幀投影；
+/// <c>PiecePreview</c> 的真相是它自己的 Inspector 滑桿，那才是第二份真相（除錯記錄 003）。
+///
+/// <b>它不認識 <c>TouchInputController</c></b>（2026-09-09）。原本有三條邊
+///（拖曳中沒、過關沒、清選取），現在前兩個收進 <see cref="SharedUiState"/> 的三態、
+/// 第三個歸控制器自己做，所以那個雙向依賴斷成單向了。
 ///
 /// <b>取代了 <c>PiecePreview</c></b>（P1-5 做好就刪，2026-09-08 執行）。
 ///
@@ -45,15 +51,13 @@ public class TrayView : MonoBehaviour
     [Tooltip("座標換算的來源（要它的「一個模型單位佔幾像素」）。留空的話 Awake 會自己找。")]
     [SerializeField] private BoardView boardView;
 
-    [Tooltip("拖曳狀態的來源。抽屜靠它決定要不要自動收折、回收框要不要出現。留空會自己找。")]
-    [SerializeField] private TouchInputController inputController;
 
     [Tooltip("抽屜開著時佔畫面高度的比例。")]
     [Range(0.1f, 0.5f)]
     [SerializeField] private float drawerHeightFraction = 0.22f;
 
-    [Tooltip("箭頭（也是回收框）的邊長，螢幕像素。")]
-    [SerializeField] private float arrowSizePixels = 96f;
+    [Tooltip("箭頭（也是回收框）的邊長，單位 dp。48 dp 是 Android 建議的最小可觸控尺寸。")]
+    [SerializeField] private float arrowSizeDp = 56f;
 
     [Tooltip("縮圖佔一格的比例。1 = 塞滿，會貼在一起。")]
     [Range(0.3f, 1f)]
@@ -98,7 +102,6 @@ public class TrayView : MonoBehaviour
     private void Awake()
     {
         if (boardView == null) boardView = FindFirstObjectByType<BoardView>();
-        if (inputController == null) inputController = FindFirstObjectByType<TouchInputController>();
 
         if (boardView == null)
             Debug.LogError("TrayView 找不到 BoardView：算不出「一個模型單位佔幾像素」，" +
@@ -205,9 +208,9 @@ public class TrayView : MonoBehaviour
     // 2026-09-09 之前這三個是 2000 / 2001 / 2002，因為當時所有東西都在 Default 層，
     // 要蓋過片（0～226）就只能挑一個「夠大」的數字。那不是排序是巧合：
     // 沒有東西會在它被破壞時報錯，而症狀是「某個東西被蓋住了」。
-    private const int DrawerSortingOrder = 0;
-    private const int ThumbnailSortingOrder = 1;
-    private const int OverlayTopSortingOrder = 2;
+    private const int DrawerSortingOrder = PieceSorting.TrayDrawerSortingOrder;
+    private const int ThumbnailSortingOrder = PieceSorting.TrayThumbnailSortingOrder;
+    private const int OverlayTopSortingOrder = PieceSorting.TrayOverlaySortingOrder;
 
     // ─────────────────────────────────────────────────────────────
     // 螢幕上的三塊矩形。每幀從 Screen 重算，不快取——
@@ -228,7 +231,8 @@ public class TrayView : MonoBehaviour
     {
         get
         {
-            float size = arrowSizePixels;
+            // dp → 螢幕像素每次重算，跟三塊矩形一樣不快取（見上面那段說明）
+            float size = ScreenMetrics.ToPixels(arrowSizeDp);
             float y = IsOpen ? DrawerRect.height : 0f;
             return new Rect(Screen.width - size, y, size, size);
         }
@@ -254,7 +258,7 @@ public class TrayView : MonoBehaviour
         // 拖曳中箭頭是隱藏的（那時候那塊是回收框），過關之後也是（整個盤面鎖住，
         // P1-10）。隱藏的東西不該擋——跟按鈕「隱藏中就不擋」是同一條規則
         //（互動設計 §5），不然那塊區域會變成永遠點不到片的死角
-        if (IsArrowShown && ArrowRect.Contains(screenPoint)) return Hit.Arrow;
+        if (CornerRole == TrayCornerRole.Arrow && ArrowRect.Contains(screenPoint)) return Hit.Arrow;
 
         if (!IsOpen) return Hit.None;
         if (!DrawerRect.Contains(screenPoint)) return Hit.None;
@@ -273,32 +277,29 @@ public class TrayView : MonoBehaviour
     }
 
     /// <summary>
-    /// 箭頭現在該不該出現。<b>顯示條件與命中條件共用同一個算式</b>，
-    /// 跟四顆按鈕同一個模式（互動設計 §5）——分岔的話會出現
-    /// 「看得到但按了沒反應」或反過來，兩種都很難查。
+    /// 右下角那一塊現在是什麼角色。<b>顯示與命中共用同一個答案</b>——
+    /// 分岔的話會出現「看得到但按了沒反應」或反過來，兩種都很難查。
     ///
-    /// 兩個條件：
-    /// <list type="bullet">
-    /// <item><b>沒在拖</b>——拖曳中那塊是回收框，兩者分時互斥（決定 21）</item>
-    /// <item><b>沒過關</b>——過關之後整個盤面鎖住，完成彈窗蓋滿畫面（P1-10）</item>
-    /// </list>
+    /// ⚠️ <b>2026-09-09 之前這是兩個平行布林</b>（箭頭顯不顯示、回收框顯不顯示），
+    /// 而且各自去問控制器 <c>IsDragging</c> / <c>IsLevelComplete</c>。
+    /// 那有兩個問題：兩個布林表達三個互斥狀態（違反決定 9），
+    /// 而且它是<b>抽屜認識控制器</b>的來源。現在規則住在 <see cref="SharedUiState"/>，
+    /// 這支只讀答案。
     ///
-    /// ⚠️ 這裡<b>不看抽屜開著沒</b>。抽屜開著時箭頭必須還按得到，不然關不起來——
-    /// 這是它跟那四顆鈕唯一不同的地方。
+    /// ⚠️ <b>角色不看抽屜開著沒</b>。抽屜開著時箭頭必須還按得到，不然關不起來——
+    /// 這是它跟四顆鈕唯一不同的地方。
+    ///
+    /// store 還沒設好時退回 <see cref="TrayCornerRole.Arrow"/>：那是「什麼都還沒發生」
+    /// 時該有的樣子，也讓場景單獨跑（沒有 <c>LevelController</c>）時抽屜仍然打得開。
     /// </summary>
-    private bool IsArrowShown
-    {
-        get
-        {
-            if (inputController == null) return true;
-            return !inputController.IsDragging && !inputController.IsLevelComplete;
-        }
-    }
+    private TrayCornerRole CornerRole =>
+        SharedUiState.Current?.TrayCorner ?? TrayCornerRole.Arrow;
 
     /// <summary>拖曳中才顯示的回收框。放手時由控制器問一次。</summary>
     /// <param name="screenPoint">手指的螢幕座標。</param>
     /// <returns>手指在不在回收框裡。</returns>
-    public bool IsOverRecycleArea(Vector2 screenPoint) => ArrowRect.Contains(screenPoint);
+    public bool IsOverRecycleArea(Vector2 screenPoint)
+        => CornerRole == TrayCornerRole.RecycleBox && ArrowRect.Contains(screenPoint);
 
     /// <summary>
     /// 開或關抽屜。控制器在分類到 <see cref="Hit.Arrow"/> 時叫這裡。
@@ -309,7 +310,8 @@ public class TrayView : MonoBehaviour
     public void Toggle()
     {
         IsOpen = !IsOpen;
-        if (IsOpen && inputController != null) inputController.ClearSelection();
+        // ⚠️ 清選取**不在這裡**（2026-09-09 搬走）。決定要開抽屜的是控制器，
+        // 由它順手清才是對的歸屬——而且那原本是這支認識控制器的三條邊之一
     }
 
     /// <summary>關上抽屜。</summary>
@@ -347,13 +349,10 @@ public class TrayView : MonoBehaviour
         EnforcePieceRootIdentity();
         ProjectTrayStateToPieces();
 
-        bool dragging = inputController != null && inputController.IsDragging;
-
-        // 決定 19：跨過門檻就自動收折。抽屜自己看拖曳狀態，不必控制器來通知——
-        // 這樣它跟旋轉鈕一樣「不訂閱任何東西，只是狀態的函數」（互動設計 §5）
-        if (dragging) Close();
-
-        LayoutOverlay(dragging);
+        // ⚠️ 自動收折**不在這裡**（2026-09-09 搬走）。原本是每幀看到「有在拖」就 Close()，
+        // 把一個**一次性動作**寫成了每幀重複執行的冪等操作。
+        // 它現在是控制器「跨過門檻那一格」的第 2 件事，跟 §15.4 的敘述一致
+        LayoutOverlay();
     }
 
     /// <summary>
@@ -406,8 +405,7 @@ public class TrayView : MonoBehaviour
     /// <b>整組掛在一個「跟著相機轉」的父物件底下</b>，所以這裡只要算螢幕座標，
     /// 不必自己處理相機的 roll（互動設計 §2.6：題目旋轉是轉相機）。
     /// </summary>
-    /// <param name="dragging">現在是不是正在拖曳。決定箭頭與回收框誰出現。</param>
-    private void LayoutOverlay(bool dragging)
+    private void LayoutOverlay()
     {
         float pixelsPerUnit = PixelsPerUnit();
         Camera camera = Camera.main;
@@ -425,9 +423,12 @@ public class TrayView : MonoBehaviour
             camera.transform.position + camera.transform.forward * OverlayCameraDistance,
             camera.transform.rotation);
 
-        // ⚠️ arrow 用 IsArrowShown 而不是 !dragging——顯示條件與 HitTest 用的
-        // 必須是同一個算式，不然會出現「箭頭不見了但那塊還是擋著片」
-        SetOverlayShown(drawer: IsOpen, arrow: IsArrowShown, recycle: dragging);
+        // ⚠️ 兩個都從**同一個三態**推出來，不是兩個各自算的布林——
+        // 這樣「箭頭與回收框同時顯示」在形狀上就不可能，而不是靠算式互相排除
+        TrayCornerRole role = CornerRole;
+        SetOverlayShown(drawer: IsOpen,
+                        arrow: role == TrayCornerRole.Arrow,
+                        recycle: role == TrayCornerRole.RecycleBox);
 
         Rect arrow = ArrowRect;
         PlaceBlock(arrowTab, arrow, pixelsPerUnit);

@@ -44,6 +44,11 @@ public class LevelController : MonoBehaviour
         // 測試不會走這條路——它們自己 new 一個 LevelSession
         LevelSession.Current = session;
 
+        // 跨元件的 UI 決定（P1-13）。⚠️ 一定要在這裡指定，不能用惰性單例——
+        // 關掉 Domain Reload 的話 static 欄位會跨播放session 存活，
+        // 惰性單例會把上一次播放的狀態帶進來，而且完全不報錯
+        SharedUiState.Current = new SharedUiState();
+
         if (boardView == null) boardView = FindFirstObjectByType<BoardView>();
         if (boxView == null) boxView = FindFirstObjectByType<BoxView>();
 
@@ -65,26 +70,43 @@ public class LevelController : MonoBehaviour
     private void Start()
     {
         if (!loadClassicSquareOnStart) return;
-        EnterClassicSquare();
+        EnterNextLevel();
     }
 
     /// <summary>
-    /// 載入經典大正方形這一關。<b>開局與「下一關」共用這一支。</b>
+    /// 進下一關。<b>開局與完成彈窗的「下一關」共用這一支。</b>
     ///
-    /// P1 沒有題庫，所以它同時是題目也是參考解——盒子的填色就是靠這七片三角化出來的。
+    /// ⚠️ <b>這個名字是接縫，刻意不叫「載入大正方形」</b>（2026-09-09）。
+    /// 呼叫端（<see cref="LevelCompletePanel"/>、<c>Start</c>）該表達的是
+    /// 「玩家要進下一關」這個**意圖**，不是「載入哪一題」這個**當下的實作**。
     ///
-    /// ⚠️ <b>「下一關」目前接的是同一個題目</b>（P1-10，暫時的）。之後會換成
-    /// 「難度回饋 → 挑下一題」，但**換關這條路徑本身不會變**——
-    /// 差別只在傳進 <see cref="EnterLevel"/> 的是哪一個題目。
+    /// 名字裡寫死題目的話，P2 接上題庫時<b>呼叫端也得跟著改</b>，
+    /// 而且方法名本身會過期（叫 <c>EnterClassicSquare</c> 卻載入別的題目更糟）。
+    /// 現在挑題的決定只住在這支裡面，換掉時**外面一行都不用動**。
     ///
-    /// 💡 所以測「下一關」的時候<b>畫面看起來會跟原本一模一樣</b>，
-    /// 只有七片回到抽屜、undo 堆疊清空。那是正常的，不是沒換到。
+    /// 💡 <b>不需要為此開一個介面。</b>實作只有一個、呼叫端也只有兩個，
+    /// 介面只會多一層轉接——接縫是「語意穩定的方法名」，不一定要是型別。
+    /// （同一條標準讓 P1-6 決定不實作 <c>IInputSource</c>。）
+    ///
+    /// <b>目前的實作</b>：P1 沒有題庫，永遠回經典大正方形。
+    /// 它同時是題目也是參考解——盒子的填色就是靠這七片三角化出來的。
+    /// 之後會換成「難度回饋 → 挑下一題」。
+    ///
+    /// 💡 所以現在測「下一關」的時候<b>畫面看起來會跟原本一模一樣</b>，
+    /// 只有七片回到抽屜、undo 堆疊清空、過關旗標歸零。那是正常的，不是沒換到。
     /// </summary>
-    public void EnterClassicSquare()
+    public void EnterNextLevel()
     {
-        Placement[] solution = Fixtures.ClassicSquare();
+        Placement[] solution = PickNextPuzzleSolution();
         EnterLevel(Puzzle.FromPlacements(solution), solution, allowRoll: true);
     }
+
+    /// <summary>
+    /// 挑下一題。<b>「挑哪一題」的規則只住在這裡</b>——P2 接上題庫、
+    /// P3 接上難度回饋時，要改的就是這一支。
+    /// </summary>
+    /// <returns>那一題的參考解（P1 恆為經典大正方形）。</returns>
+    private static Placement[] PickNextPuzzleSolution() => Fixtures.ClassicSquare();
 
     /// <summary>
     /// 進來一關。<b>這五步的順序不能動</b>（互動設計 §14.3）。

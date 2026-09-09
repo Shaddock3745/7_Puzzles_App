@@ -8,7 +8,7 @@ using UnityEngine.InputSystem;
 /// 指標輸入（P1-6，互動設計 §4）。按下挑一片 → 每幀問吸附器 → 放手才交給盤面。
 ///
 /// <b>一次按下有兩種結局</b>（§4「點選與拖曳的分界」，2026-09-07 加）：
-/// 手指離按下點超過 <see cref="moveThresholdPixels"/> 就是**拖曳**，沒超過就是**點選**。
+/// 手指離按下點超過 <see cref="moveThresholdDp"/> 就是**拖曳**，沒超過就是**點選**。
 /// <b>點選完全不碰盤面，也不碰位置</b>——P1-8 的「選一片起來轉」會掛在那條路上。
 ///
 /// <b>刻意不實作 <c>IInputSource</c></b>（2026-09-04 定案）。那個介面的約定是
@@ -30,8 +30,8 @@ public class TouchInputController : MonoBehaviour
     [Tooltip("待用區抽屜。留空的話 Awake 會自己找；場景沒有它也能跑（就是不能從抽屜拿片）。")]
     [SerializeField] private TrayView trayView;
 
-    [Tooltip("超過這個距離才算拖曳，沒超過就是點選。單位是螢幕像素。實際手感玩過再調（P1-13）。")]
-    [SerializeField] private float moveThresholdPixels = 10f;
+    [Tooltip("超過這個距離才算拖曳，沒超過就是點選。單位 dp。2026-09-09 實機調過。")]
+    [SerializeField] private float moveThresholdDp = 4f;
 
     [Tooltip("落在這些矩形上的按下要整個忽略。旋轉鈕與翻面鈕會自己註冊，不用填；" +
              "這裡是留給之後其他 UI 的。")]
@@ -139,11 +139,11 @@ public class TouchInputController : MonoBehaviour
     /// 按鈕拿它決定要不要顯示，這裡也拿它當保險——
     /// <b>顯示條件與作用條件是同一個算式，不會分岔</b>。
     ///
-    /// ⚠️ 第三條在今天<b>其實是多餘的</b>：打開抽屜的當下會清掉選取（<c>TrayView.Toggle</c>，
-    /// 決定 17），所以抽屜開著時本來就沒有選取。寫出來是因為那條不變式
-    /// <b>由別人在別的地方維護</b>——之後多一條打開抽屜的路徑（快捷鍵、換關預設開著）
-    /// 而忘了清選取的話，按鈕就會浮在抽屜上面，然後把底下那幾格縮圖吃掉。
-    /// 顯示條件不該依賴遠處的某條規則還活著。
+    /// ⚠️ 第三條在今天<b>其實是多餘的</b>：打開抽屜的當下會清掉選取（決定 17，
+    /// 做在 <see cref="BeginPress"/> 的箭頭分支裡），所以抽屜開著時本來就沒有選取。
+    /// 寫出來是因為那條不變式<b>由另一段程式維護</b>——之後多一條打開抽屜的路徑
+    ///（快捷鍵、換關預設開著）而忘了清選取的話，按鈕就會浮在抽屜上面，
+    /// 然後把底下那幾格縮圖吃掉。顯示條件不該依賴遠處的某條規則還活著。
     /// </summary>
     public PieceView ActionTarget
         => selectedPiece != null && !selectedPiece.IsBeingDragged
@@ -359,6 +359,14 @@ public class TouchInputController : MonoBehaviour
         LevelData level = LevelSession.Current?.Data;
         if (level == null) return;
 
+        // ⚠️ 這一句要排在任何命中測試**之前**，理由跟上面的 EnsureCurrent 完全一樣：
+        // 同一格裡先寫後讀才拿得到新值。BeginPress 問 TrayView.HitTest 時，
+        // TrayView 讀的就是這裡剛寫進去的角色——排在後面的話它會拿到上一幀的答案，
+        // 而那正是這個專案為了 EventSystem 晚一幀吃過虧的同一類問題。
+        //
+        // **每幀無條件寫**，不是「變的時候才推」。漏推一次就永遠不同步而且不報錯
+        SharedUiState.Current?.UpdateTrayCorner(IsDragging, IsLevelComplete);
+
         if (pressedPiece == null)
         {
             // 只有「這一幀剛落下」的指標才會被鎖定（待辦清單決定 12）。
@@ -532,7 +540,14 @@ public class TouchInputController : MonoBehaviour
             switch (trayView.HitTest(screenPoint, out int traySlotIndex))
             {
                 case TrayView.Hit.Arrow:
+                    // ⚠️ 清選取搬到這裡了（2026-09-09）。原本是 TrayView.Toggle 自己叫
+                    // 控制器的 ClearSelection——那是抽屜認識控制器的三條邊之一。
+                    // 決定要開抽屜的本來就是這裡，順手把選取清掉才是對的歸屬。
+                    //
+                    // 為什麼開抽屜要清選取（決定 17）：抽屜整個蓋住盤面，
+                    // 留著選取的話旋轉／翻面鈕會被蓋在底下，變成「看得到但按不到」
                     trayView.Toggle();
+                    if (trayView.IsOpen) SetSelection(null);
                     return false;
 
                 // ⚠️ 抽屜本體（含縮圖之間的空隙）要**明確地什麼都不做**，
@@ -643,7 +658,7 @@ public class TouchInputController : MonoBehaviour
     {
         if (!movedPastThreshold)
         {
-            float threshold = Mathf.Max(moveThresholdPixels, 0f);
+            float threshold = Mathf.Max(ScreenMetrics.ToPixels(moveThresholdDp), 0f);
             if ((screenPoint - pressScreenPosition).sqrMagnitude < threshold * threshold)
             {
                 // 還在門檻內：**片一動也不動**。這是刻意的——
@@ -657,6 +672,13 @@ public class TouchInputController : MonoBehaviour
             // ⚠️ 一定要排在下面那些之前——片還隱藏著的時候，
             // 打開 IsBeingDragged 或選取它都是在對一片看不見的東西動手
             if (locationBeforeDrag == PieceLocation.Tray) SummonFromTray(level, worldPoint);
+
+            // 抽屜自動收折（決定 19）。⚠️ **這一步 2026-09-09 才搬回這裡**——
+            // 原本是 TrayView.Update 每幀看到「有在拖」就 Close()，也就是把一個
+            // **一次性動作**寫成了「每幀重複執行的冪等操作」，而且那是抽屜認識控制器的
+            // 三條邊之一。互動設計 §15.4 一直寫著「跨過門檻那一刻同時發生五件事」，
+            // 搬回來之後文件跟程式才真的對得上
+            if (trayView != null) trayView.Close();
 
             pressedPiece.IsBeingDragged = true;
 
@@ -848,14 +870,11 @@ public class TouchInputController : MonoBehaviour
         movedPastThreshold = false;
     }
 
-    /// <summary>
-    /// 清掉選取。<c>TrayView</c> 在打開抽屜時叫這裡（決定 17）——
-    /// 抽屜整個蓋住盤面，留著選取的話旋轉／翻面鈕會被蓋在底下，變成「看得到但按不到」。
-    ///
-    /// <b>「至多一片被選取」的不變式仍然只由 <see cref="SetSelection"/> 維護</b>，
-    /// 這只是它的公開入口，不是第二條路。
-    /// </summary>
-    public void ClearSelection() => SetSelection(null);
+    // ⚠️ 這裡原本有一個 public 的 ClearSelection()，唯一的呼叫者是 TrayView.Toggle
+    //（開抽屜時清選取）。2026-09-09 那件事搬進 BeginPress 的箭頭分支之後它就沒有
+    // 呼叫者了，所以一併刪掉——留著的話是一個「別人可以繞過正常流程改選取」的後門，
+    // 而「至多一片被選取」的不變式只該由 SetSelection 維護。
+    // 之後真的有第二個外部觸發點（快捷鍵之類）再開回來。
 
     // ─────────────────────────────────────────────────────────────
     // undo（P1-9）
