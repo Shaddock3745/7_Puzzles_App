@@ -38,8 +38,13 @@ namespace Tangram.Data
         /// 呼叫前該先過 <see cref="Geometry.NoOverlap"/>。
         /// </param>
         /// <returns>
-        /// 所有封閉環，外環與洞環混在一起、順序不保證（取決於哪條未使用的半邊索引最小）。
-        /// 要分辨用 <see cref="Walk.IsOuter"/>。共線段已經合併，但捏點會被保留。
+        /// 所有封閉環，外環與洞環混在一起。要分辨用 <see cref="Walk.IsOuter"/>。
+        /// 共線段已經合併，但捏點會被保留。
+        ///
+        /// ⚠️ <b>環的「順序」不保證</b>（取決於哪條未使用的半邊索引最小，也就是片的枚舉順序），
+        /// 但<b>環的「內容」保證一樣</b>——同一組片不管以什麼順序傳進來，
+        /// 都會描出同一組環（見 <see cref="NextBoundaryEdge"/>）。
+        /// 要固定順序請走 <c>Canonical.NormalizePuzzle</c>，它會依 key 排序。
         /// </returns>
         /// <exception cref="InvalidOperationException">
         /// 有邊不在 45° 網格上，或追環中斷（邊界不封閉，通常代表輸入有重疊）。
@@ -114,14 +119,27 @@ namespace Tangram.Data
                     ring.Add(currentEdgeIndex);
 
                     ExactVector2 arrivalVertex = boundaryEdges[currentEdgeIndex].End;
-                    if (arrivalVertex == boundaryEdges[startEdgeIndex].Start) break;
-
                     int nextEdgeIndex = NextBoundaryEdge(
-                        boundaryEdges, outgoingEdgesByVertex, isUsed,
+                        boundaryEdges, outgoingEdgesByVertex,
                         arrivalVertex, boundaryEdges[currentEdgeIndex].Direction);
 
                     if (nextEdgeIndex < 0)
                         throw new InvalidOperationException("追環中斷：邊界不封閉 " + arrivalVertex);
+
+                    // ⚠️ 收工條件看的是「下一條是不是起點那條邊」，不是「有沒有走回起點那個頂點」。
+                    // 捏點會被同一圈經過兩次，所以用頂點問的話，起點剛好是捏點時
+                    // 第一次經過就會誤判成走完了——同一個形狀會因為從哪條邊起步而
+                    // 描出不同的環，而且不報錯（P2-5 撞到的那個 bug）。
+                    // 邊只會被經過一次，所以用邊問才是對的
+                    if (nextEdgeIndex == startEdgeIndex) break;
+
+                    // 配對是進邊與出邊的一對一排列，所以正確的下一條不可能已經走過
+                    // （每條邊只有一個前一步）。真的撞到代表配對壞了，例如同一個頂點
+                    // 冒出兩條同方向的出邊。與其無限繞圈，不如當場炸掉
+                    if (isUsed[nextEdgeIndex])
+                        throw new InvalidOperationException(
+                            $"追環出錯：{arrivalVertex} 的下一條邊已經走過了。" +
+                            "頂點的進出邊配對不是一對一，邊的切分可能有重複");
 
                     currentEdgeIndex = nextEdgeIndex;
                 }
@@ -132,20 +150,31 @@ namespace Tangram.Data
 
         /// <summary>
         /// 頂點分岔規則（點接觸靠這條）：以某個方向抵達頂點，取其反向為起點，
-        /// 順時針掃描該頂點的出邊，取第一個找到的 —— 等價於「取可行的最大左轉」。
+        /// 順時針掃描該頂點的出邊，取第一個找到的 —— 等價於「取最大左轉」。
+        ///
+        /// ⚠️ <b>只看角度，不看走過沒有。</b>這樣「從這條進來、往哪條出去」
+        /// 就是頂點上進邊與出邊的一個<b>固定的一對一配對</b>，
+        /// 而配對的循環就是環——從循環上哪一條邊起步都會得到同一個循環。
+        ///
+        /// 原本這裡多一個「還沒走過」的條件（註解寫「可行的最大左轉」）。
+        /// 在一般頂點沒差（只有一條出邊），但捏點度數是 4、有三條候選出邊，
+        /// <b>先追的那一圈會先吃掉一條，後追的只能挑剩下的</b>——
+        /// 於是同一個形狀會因為片的枚舉順序不同而描出不同數量的環，而且不報錯。
+        ///
+        /// 💡 <b>「最大左轉」本身是對的，不要改成右轉。</b>它給出的正是拓樸上正確的答案：
+        /// 材料內部分成幾塊連通區域就描出幾條環。兩個正方形只靠一角相碰時內部是兩塊 → 兩條環；
+        /// 挖掉的三角形尖端頂到外框時內部仍是一塊（可以從三角形上面繞過去）→ 一條自我接觸的環。
         /// </summary>
         /// <param name="boundaryEdges">全部的邊界半邊。</param>
         /// <param name="outgoingEdgesByVertex">頂點 → 從它出發的半邊索引清單。</param>
-        /// <param name="isUsed">與 boundaryEdges 同索引，標記哪些已經被走過。</param>
         /// <param name="vertex">目前站在哪個頂點。</param>
         /// <param name="arrivalDirection">是以哪個方向走到這個頂點的。</param>
         /// <returns>
-        /// 下一條要走的半邊索引。這個頂點沒有可用的出邊時回 −1
+        /// 下一條要走的半邊索引。這個頂點沒有出邊時回 −1
         /// （代表邊界不封閉，呼叫端會丟例外）。
         /// </returns>
         private static int NextBoundaryEdge(List<HalfEdge> boundaryEdges,
                                             Dictionary<ExactVector2, List<int>> outgoingEdgesByVertex,
-                                            bool[] isUsed,
                                             ExactVector2 vertex,
                                             int arrivalDirection)
         {
@@ -156,7 +185,7 @@ namespace Tangram.Data
             {
                 int wantedDirection = Symmetry.Modulo8(reverseDirection - clockwiseTurn);
                 foreach (int candidateIndex in candidates)
-                    if (!isUsed[candidateIndex] && boundaryEdges[candidateIndex].Direction == wantedDirection)
+                    if (boundaryEdges[candidateIndex].Direction == wantedDirection)
                         return candidateIndex;
             }
             return -1;

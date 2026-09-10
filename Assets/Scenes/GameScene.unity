@@ -1197,11 +1197,16 @@ MonoBehaviour:
   boardView: {fileID: 1403617021}
   boxView: {fileID: 595082540}
   dragController: {fileID: 1965392179}
-  trayView: {fileID: 0}
+  trayView: {fileID: 1609142068}
   loadClassicSquareOnStart: 1
   useGeneratedPuzzles: 1
   generatorSeed: 20260910
   generatedPuzzleCount: 10
+  inspectRejectedShapes: 1
+  relaxedMaximumHoleCount: 0
+  relaxedMaximumConcaveAngleCount: 3
+  inspectMinimumHoleCount: 0
+  inspectMinimumConcaveAngleCount: 3
 --- !u!4 &709453391
 Transform:
   m_ObjectHideFlags: 0

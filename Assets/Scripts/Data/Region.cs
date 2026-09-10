@@ -76,15 +76,35 @@ namespace Tangram.Data
     /// 有洞的封閉二維區域，全程精確算術。盒子是一個 Region，片是一個 Region，
     /// P1-11 的剩餘連通塊也會是 Region。
     ///
-    /// 建構時就把後面每一幀要用的東西算完並凍結：攤平的環頂點、×2 座標的副本、
+    /// 建構時就把後面每一幀要用的東西算完並凍結：攤平的環頂點、放大座標的副本、
     /// 包圍盒、每個洞的一個內部點。之後唯讀。
     ///
-    /// 為什麼要 ×2 座標的副本：判斷「片有沒有整段跑到區域外」要取線段中點，
-    /// 中點要除以 2，而 Scalar 沒有除法。把整個世界乘 2 之後中點就是兩端點相加，
+    /// 為什麼要放大座標的副本：有些要判定的點是分數座標，而 Scalar 沒有除法。
+    /// 把整個世界乘上一個倍數之後那些點就變成整數組合，
     /// 而「點在不在區域內」對等比例縮放不變，所以放大不影響答案。
+    ///
+    /// ⚠️ <b>倍數是 <see cref="ScaledCoordinateMultiplier"/>，不要在別處寫死數字。</b>
+    /// 混用兩種尺度不會報錯，只會安靜地差一個倍數（§6 陷阱）。
     /// </summary>
     public sealed class Region
     {
+        /// <summary>
+        /// 放大座標的倍數。
+        ///
+        /// <b>為什麼是 4 不是 2</b>：這個副本要服務兩種點，取兩者的最小公倍數。
+        ///
+        /// <list type="bullet">
+        /// <item><b>線段中點</b>（<see cref="EdgeStaysInside"/>）是 (a + b) / 2 → 需要 ×2</item>
+        /// <item><b>洞的內部點</b>（<see cref="FindScaledInteriorPoint"/>）是
+        ///   (a + 2b + c) / 4 → 需要 ×4</item>
+        /// </list>
+        ///
+        /// ⚠️ 原本是 2，而洞的內部點那條規則當時是「兩個頂點的中點」，
+        /// <b>三角形的洞永遠找不到內部點</b>——三角形沒有對角線，任兩個頂點都是一條邊，
+        /// 中點必然落在邊界上。改成 4 是為了讓中位線的中點表示得出來。
+        /// </summary>
+        public const int ScaledCoordinateMultiplier = 4;
+
         /// <summary>每條環的頂點，CCW = 外環、CW = 洞。起點不重複出現在結尾。</summary>
         public readonly ExactVector2[][] Rings;
 
@@ -96,10 +116,14 @@ namespace Tangram.Data
 
         public readonly BoundingBox Bounds;
 
-        private readonly ExactVector2[][] doubledRings;
+        /// <summary>每條環的 <see cref="ScaledCoordinateMultiplier"/> 倍座標副本。</summary>
+        private readonly ExactVector2[][] scaledRings;
 
-        /// <summary>每個洞一個內部點，存 ×2 座標。沒有洞時是空陣列。</summary>
-        private readonly ExactVector2[] doubledHoleInteriorPoints;
+        /// <summary>
+        /// 每個洞一個內部點，存 <see cref="ScaledCoordinateMultiplier"/> 倍座標。
+        /// 沒有洞時是空陣列。
+        /// </summary>
+        private readonly ExactVector2[] scaledHoleInteriorPoints;
 
         /// <summary>邊界節點，第一次存取時算好並凍結。見 BoundaryNodes。</summary>
         private ExactVector2[] boundaryNodes;
@@ -112,7 +136,7 @@ namespace Tangram.Data
         {
             Rings = rings;
             RingIsOuter = new bool[rings.Length];
-            doubledRings = new ExactVector2[rings.Length][];
+            scaledRings = new ExactVector2[rings.Length][];
 
             var flattenedVertices = new List<ExactVector2>();
             var holeInteriorPoints = new List<ExactVector2>();
@@ -126,17 +150,17 @@ namespace Tangram.Data
                 RingIsOuter[ringIndex] = Geometry.SignedDoubleArea(ring).Sign > 0;
                 flattenedVertices.AddRange(ring);
 
-                var doubledRing = new ExactVector2[ring.Length];
+                var scaledRing = new ExactVector2[ring.Length];
                 for (int vertexIndex = 0; vertexIndex < ring.Length; vertexIndex++)
-                    doubledRing[vertexIndex] = ring[vertexIndex] * 2;
-                doubledRings[ringIndex] = doubledRing;
+                    scaledRing[vertexIndex] = ring[vertexIndex] * ScaledCoordinateMultiplier;
+                scaledRings[ringIndex] = scaledRing;
 
                 if (!RingIsOuter[ringIndex])
-                    holeInteriorPoints.Add(FindDoubledInteriorPoint(ring, doubledRing, ringIndex));
+                    holeInteriorPoints.Add(FindScaledInteriorPoint(ring, scaledRing, ringIndex));
             }
 
             Vertices = flattenedVertices.ToArray();
-            doubledHoleInteriorPoints = holeInteriorPoints.ToArray();
+            scaledHoleInteriorPoints = holeInteriorPoints.ToArray();
             Bounds = BoundingBox.FromPoints(Vertices);
         }
 
@@ -276,11 +300,28 @@ namespace Tangram.Data
         /// <returns>三選一。邊界自成一類，不併進內或外。</returns>
         public RegionPosition Classify(ExactVector2 point) => Classify(Rings, point);
 
-        /// <summary>×2 座標系下的分類。給中點測試用（中點在原座標系可能不是 ℤ[√2] 的點）。</summary>
-        /// <param name="doubledPoint">要分類的點，<b>已經是 ×2 座標系</b>的值。</param>
+        /// <summary>
+        /// 放大座標系下的分類。給分數座標的點用（它們在原座標系不是 ℤ[√2] 的點）。
+        /// </summary>
+        /// <param name="scaledPoint">
+        /// 要分類的點，<b>已經乘過 <see cref="ScaledCoordinateMultiplier"/></b>。
+        /// </param>
         /// <returns>三選一。傳錯座標系不會報錯，只會安靜地給錯答案。</returns>
-        public RegionPosition ClassifyDoubled(ExactVector2 doubledPoint)
-            => Classify(doubledRings, doubledPoint);
+        public RegionPosition ClassifyScaled(ExactVector2 scaledPoint)
+            => Classify(scaledRings, scaledPoint);
+
+        /// <summary>
+        /// 兩點的中點落在哪。
+        ///
+        /// <b>存在的理由是把倍數關進來</b>：呼叫端只給兩個原座標的端點，
+        /// 不必自己記得「中點在放大座標裡要乘幾」。
+        /// 手動組放大座標是這個類別最容易安靜出錯的地方（§6 陷阱）。
+        /// </summary>
+        /// <param name="first">線段的一端，原座標。</param>
+        /// <param name="second">線段的另一端，原座標。</param>
+        /// <returns>中點在內部、邊界上、還是外部。</returns>
+        private RegionPosition ClassifyMidpointOf(ExactVector2 first, ExactVector2 second)
+            => ClassifyScaled((first + second) * (ScaledCoordinateMultiplier / 2));
 
         /// <summary>含邊界。</summary>
         /// <param name="point">要測試的點。</param>
@@ -405,10 +446,11 @@ namespace Tangram.Data
                 if (Geometry.StrictlyInsideConvexPolygon(convexPolygon, Vertices[vertexIndex]))
                     return false;
 
-            // 4：洞的內部點存的是 ×2 座標，把多邊形就地放大 2 倍去比，不另外配置陣列
-            for (int holeIndex = 0; holeIndex < doubledHoleInteriorPoints.Length; holeIndex++)
+            // 4：洞的內部點存的是放大座標，把多邊形就地放大同樣的倍數去比，不另外配置陣列
+            for (int holeIndex = 0; holeIndex < scaledHoleInteriorPoints.Length; holeIndex++)
                 if (Geometry.StrictlyInsideConvexPolygon(
-                        convexPolygon, doubledHoleInteriorPoints[holeIndex], 2))
+                        convexPolygon, scaledHoleInteriorPoints[holeIndex],
+                        ScaledCoordinateMultiplier))
                     return false;
 
             // 5
@@ -430,7 +472,7 @@ namespace Tangram.Data
         /// 所以每一小段要嘛整段在內、要嘛整段在外，取中點就能代表它。
         ///
         /// 走到這裡已經確定沒有真交叉（規則 2），接觸點只會是「輪廓頂點落在這條邊上」，
-        /// 全是現成的精確座標。中點在 ×2 座標系裡就是兩端點相加。
+        /// 全是現成的精確座標。中點的縮放交給 <see cref="ClassifyMidpointOf"/>。
         /// </summary>
         /// <param name="edgeStart">片邊的起點。</param>
         /// <param name="edgeEnd">片邊的終點。</param>
@@ -451,7 +493,7 @@ namespace Tangram.Data
 
             // 絕大多數情況：邊的中途沒碰到輪廓，只要驗一個中點
             if (splitPoints == null)
-                return ClassifyDoubled(edgeStart + edgeEnd) != RegionPosition.Outside;
+                return ClassifyMidpointOf(edgeStart, edgeEnd) != RegionPosition.Outside;
 
             ExactVector2 edgeDirection = edgeEnd - edgeStart;
             splitPoints.Sort((left, right) =>
@@ -463,52 +505,62 @@ namespace Tangram.Data
             {
                 ExactVector2 splitPoint = splitPoints[splitIndex];
                 if (splitPoint == previousPoint) continue;      // 捏點會重複出現
-                if (ClassifyDoubled(previousPoint + splitPoint) == RegionPosition.Outside) return false;
+                if (ClassifyMidpointOf(previousPoint, splitPoint) == RegionPosition.Outside) return false;
                 previousPoint = splitPoint;
             }
-            return ClassifyDoubled(previousPoint + edgeEnd) != RegionPosition.Outside;
+            return ClassifyMidpointOf(previousPoint, edgeEnd) != RegionPosition.Outside;
         }
 
         // ---- 洞的內部點 ----------------------------------------------------
 
         /// <summary>
-        /// 找一個嚴格落在這條洞環內部的點，回傳 ×2 座標。
+        /// 找一個嚴格落在這條洞環內部的點，回傳放大座標。
         ///
-        /// 做法是試頂點對的中點，然後直接驗證它在不在環內 —— 不去推理「這是不是耳朵」，
-        /// 直接問答案，不中就換下一個。先試相鄰頂點的對角線（耳朵定理保證至少有兩個會中），
-        /// 沒中再試所有頂點對。這一段只在建構時跑一次。
+        /// <b>候選是「兩條相鄰邊的中點，再取中點」</b>：連續三個頂點 a、b、c，
+        /// 取 (a+b)/2 與 (b+c)/2 的中點，也就是 <b>(a + 2b + c) / 4</b>。
+        /// 掃過環上每一個 b，直接驗證候選在不在環內——不去推理「這是不是耳朵」，
+        /// 直接問答案，不中就換下一個。這一段只在建構時跑一次。
         ///
-        /// 注意兩個座標系：中點是用原座標的頂點相加算出來的（a + b 就是中點的 ×2 座標），
-        /// 但驗證要拿去跟 ×2 的環比。混用會差一個 2 倍。
+        /// <b>為什麼一定找得到</b>：耳朵定理保證任何簡單多邊形都有耳朵
+        /// （n = 3 時整個三角形自己就是，n ≥ 4 時至少有兩個）。
+        /// 在耳朵尖 b 上，三角形 abc 整個落在多邊形裡，而上面那個點是三角形
+        /// <b>中位線的中點</b>，只要 a、b、c 不共線就嚴格落在三角形內部。
+        ///
+        /// ⚠️ <b>共線的三元組會產生落在邊界上的退化候選</b>，所以每個候選都要驗。
+        /// 這不是理論上的顧慮——<c>BoundaryTracer</c> 的共線邊只在邊界度數 = 2 時合併，
+        /// 捏點附近真的會留下共線的中繼頂點。
+        ///
+        /// ⚠️ <b>舊版用的是「任兩個頂點的中點」，三角形的洞永遠會失敗</b>：
+        /// 三角形沒有對角線，任兩個頂點就是一條邊，中點必然落在邊界上。
+        /// 它引的耳朵定理需要 n ≥ 4 才有對角線可用。實測 85 條真實洞環，
+        /// 舊規則只過 39 條（三角形那 46 條全掛），新規則 85 條全過。
         /// </summary>
         /// <param name="ring">洞的頂點環，原座標。</param>
-        /// <param name="doubledRing">同一條環的 ×2 座標副本。</param>
+        /// <param name="scaledRing">同一條環的放大座標副本。</param>
         /// <param name="ringIndex">環的索引，只用在錯誤訊息裡。</param>
-        /// <returns>該洞內部的某一個點，<b>回傳的是 ×2 座標</b>。</returns>
-        private static ExactVector2 FindDoubledInteriorPoint(ExactVector2[] ring,
-                                                             ExactVector2[] doubledRing,
-                                                             int ringIndex)
+        /// <returns>
+        /// 該洞內部的某一個點，<b>回傳的是乘過 <see cref="ScaledCoordinateMultiplier"/> 的座標</b>。
+        /// </returns>
+        /// <exception cref="InvalidOperationException">環是退化的（例如所有頂點共線）。</exception>
+        private static ExactVector2 FindScaledInteriorPoint(ExactVector2[] ring,
+                                                            ExactVector2[] scaledRing,
+                                                            int ringIndex)
         {
-            var singleDoubledRing = new[] { doubledRing };
+            var singleScaledRing = new[] { scaledRing };
             int vertexCount = ring.Length;
 
             for (int vertexIndex = 0; vertexIndex < vertexCount; vertexIndex++)
             {
                 ExactVector2 previous = ring[(vertexIndex + vertexCount - 1) % vertexCount];
+                ExactVector2 current = ring[vertexIndex];
                 ExactVector2 next = ring[(vertexIndex + 1) % vertexCount];
-                ExactVector2 doubledMidpoint = previous + next;
-                if (Classify(singleDoubledRing, doubledMidpoint) == RegionPosition.Inside)
-                    return doubledMidpoint;
-            }
 
-            for (int firstIndex = 0; firstIndex < vertexCount; firstIndex++)
-            {
-                for (int secondIndex = firstIndex + 1; secondIndex < vertexCount; secondIndex++)
-                {
-                    ExactVector2 doubledMidpoint = ring[firstIndex] + ring[secondIndex];
-                    if (Classify(singleDoubledRing, doubledMidpoint) == RegionPosition.Inside)
-                        return doubledMidpoint;
-                }
+                // (a + 2b + c) 就是 (a + 2b + c)/4 的 ×4 座標。
+                // ⚠️ 這裡寫死的 ×4 與 ScaledCoordinateMultiplier 是同一件事——
+                // 改倍數的話這一行的算式要跟著重推，不是乘一個係數就好
+                ExactVector2 scaledCandidate = previous + current + current + next;
+                if (Classify(singleScaledRing, scaledCandidate) == RegionPosition.Inside)
+                    return scaledCandidate;
             }
 
             throw new InvalidOperationException(

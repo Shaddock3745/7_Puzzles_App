@@ -44,11 +44,40 @@ public class LevelController : MonoBehaviour
     [Tooltip("⚠️ P2-4 暫時的。生成的題目玩幾關，之後回到經典大正方形當對照。")]
     [SerializeField] private int generatedPuzzleCount = 10;
 
+    // ───────── 以下五個是 P2-5 的審視鷹架，審美門檻定案就整段拿掉 ─────────
+    //
+    // 用途：把「現在會被審美門檻篩掉」的那些形狀放進來，用肉眼看它們能不能當題目。
+    // 批次統計量得出範圍與比例，量不出「好不好看」，那條只能看。
+
+    [Tooltip("⚠️ P2-5 暫時的。勾起來時改用放寬的門檻，而且只挑符合下面兩條下限的形狀出題。")]
+    [SerializeField] private bool inspectRejectedShapes = false;
+
+    [Tooltip("⚠️ P2-5 暫時的。放寬後的洞上限。1 = 讓有洞的形狀進得來（實測 1000 題裡的上界就是 1）。")]
+    [SerializeField] private int relaxedMaximumHoleCount = 1;
+
+    [Tooltip("⚠️ P2-5 暫時的。放寬後的凹角上限。11 涵蓋實測的 99.9%（上界是 13）。")]
+    [SerializeField] private int relaxedMaximumConcaveAngleCount = 11;
+
+    [Tooltip("⚠️ P2-5 暫時的。只看洞數至少這麼多的形狀。1 = 只看有洞的，0 = 不篩。")]
+    [SerializeField] private int inspectMinimumHoleCount = 1;
+
+    [Tooltip("⚠️ P2-5 暫時的。只看凹角至少這麼多的形狀。9 = 只看現在會被篩掉的，0 = 不篩。")]
+    [SerializeField] private int inspectMinimumConcaveAngleCount = 0;
+
     /// <summary>這一場。<b>別人請走 <c>LevelSession.Current</c>，不要跟這支要。</b></summary>
     private LevelSession session;
 
     /// <summary>⚠️ P2-4 暫時的：生成器叫幾次還生不出來就放棄這一關。</summary>
     private const int MaximumGenerationAttempts = 50;
+
+    /// <summary>
+    /// ⚠️ P2-5 暫時的：審視模式下的呼叫上限，比平常大兩個數量級。
+    ///
+    /// 因為審視是<b>刻意在撈稀有的東西</b>——有洞的形狀實測只佔 1.1%，
+    /// 平均要叫一百次上下才中一個。沿用平常那個 50 會幾乎每一關都退回經典大正方形，
+    /// 而症狀看起來像「生成器壞了」。
+    /// </summary>
+    private const int MaximumInspectionAttempts = 3000;
 
     /// <summary>⚠️ P2-4 暫時的：整場共用一個生成器，這樣「不重複」才跨關成立。</summary>
     private PuzzleGenerator generator;
@@ -152,16 +181,21 @@ public class LevelController : MonoBehaviour
     /// <returns>有沒有成功進到一關生成的題目。false 時呼叫端會退回經典大正方形。</returns>
     private bool TryEnterGeneratedLevel(int levelNumber)
     {
-        if (generator == null) generator = new PuzzleGenerator(generatorSeed);
+        if (generator == null) generator = new PuzzleGenerator(generatorSeed, LimitsForThisRun());
 
-        for (int attempt = 0; attempt < MaximumGenerationAttempts; attempt++)
+        int maximumAttempts = inspectRejectedShapes
+            ? MaximumInspectionAttempts
+            : MaximumGenerationAttempts;
+
+        for (int attempt = 0; attempt < maximumAttempts; attempt++)
         {
             GenerationResult result = generator.TryGenerate();
             if (result.Outcome != GenerationOutcome.Generated) continue;
+            if (!MatchesInspectionFilter(result.Features)) continue;
 
             // 特徵印出來，判斷「十題的難度有沒有落差」時要看。⚠️ 實機看不到 Console，
             // 所以形狀與難度在 Editor 裡看，手感才需要上實機
-            Debug.Log($"第 {levelNumber} 關（生成）：{result.Features}", this);
+            Debug.Log($"第 {levelNumber} 關（生成，叫了 {attempt + 1} 次）：{result.Features}", this);
 
             // ⚠️ allowRoll 傳 false：要評估的是「存進去的那個角度好不好看」，
             // 讓相機轉會看不到真實情況
@@ -169,9 +203,53 @@ public class LevelController : MonoBehaviour
             return true;
         }
 
-        Debug.LogWarning($"叫了 {MaximumGenerationAttempts} 次都沒生出題目，這一關退回經典大正方形。" +
-                         "審美門檻可能收太緊了。", this);
+        Debug.LogWarning($"叫了 {maximumAttempts} 次都沒生出題目，這一關退回經典大正方形。" +
+                         (inspectRejectedShapes
+                             ? "審視的條件可能太罕見了，把下限調低一點。"
+                             : "審美門檻可能收太緊了。"), this);
         return false;
+    }
+
+    /// <summary>
+    /// ⚠️ <b>P2-5 的審視鷹架，門檻定案就整段拿掉。</b>
+    ///
+    /// 這一場要用的審美門檻。
+    ///
+    /// ⚠️ <b>審視模式一定要用放寬的門檻建生成器</b>，不能只在外面過濾——
+    /// <c>TryGenerate</c> 對被審美篩掉的形狀<b>只帶回特徵，不帶回題目與參考解</b>
+    /// （那兩樣要先付正規化那 16 次輪廓追蹤才有）。用預設門檻的話，
+    /// 要看的形狀全部是 <c>RejectedByAesthetics</c>，永遠載不進來。
+    /// </summary>
+    /// <returns>這一場要用的審美門檻。沒開審視時就是預設的那組。</returns>
+    private AestheticLimits LimitsForThisRun()
+    {
+        if (!inspectRejectedShapes) return AestheticLimits.Default;
+
+        // 捏點與周長維持預設：這次要看的是洞與凹角，一次只動要看的那兩條，
+        // 不然看到怪東西分不出是哪一條放寬造成的
+        AestheticLimits standard = AestheticLimits.Default;
+        return new AestheticLimits(
+            maximumHoleCount: relaxedMaximumHoleCount,
+            maximumPinchPointCount: standard.MaximumPinchPointCount,
+            maximumConcaveAngleCount: relaxedMaximumConcaveAngleCount,
+            maximumPerimeter: standard.MaximumPerimeter);
+    }
+
+    /// <summary>
+    /// ⚠️ <b>P2-5 的審視鷹架，門檻定案就整段拿掉。</b>
+    ///
+    /// 這個形狀是不是這次要看的那一種。門檻放寬之後，符合條件的仍然只佔少數
+    /// （有洞的實測 1.1%），所以還要在這裡再篩一次，
+    /// 否則十關裡會有九關是「本來就通得過」的普通形狀，等於什麼都沒看到。
+    /// </summary>
+    /// <param name="features">這個形狀的特徵。</param>
+    /// <returns>要不要拿它當這一關的題目。沒開審視時一律要。</returns>
+    private bool MatchesInspectionFilter(DifficultyFeatures features)
+    {
+        if (!inspectRejectedShapes) return true;
+        if (features.HoleCount < inspectMinimumHoleCount) return false;
+        if (features.ConcaveAngleCount < inspectMinimumConcaveAngleCount) return false;
+        return true;
     }
 
     /// <summary>

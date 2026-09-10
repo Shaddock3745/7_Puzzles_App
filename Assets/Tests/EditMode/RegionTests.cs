@@ -126,6 +126,51 @@ namespace Tangram.Data.Tests
             Assert.AreEqual(1, CountHoles(box));
         }
 
+        /// <summary>
+        /// ⭐ <b>三角形的洞建得起來。</b>
+        ///
+        /// 舊版找內部點的規則是「任兩個頂點的中點」，而三角形沒有對角線——
+        /// 任兩個頂點就是一條邊，中點必然落在邊界上，於是<b>每一個三角形的洞都會丟例外</b>。
+        /// P2-5 放寬審美門檻去看有洞的形狀時撞到，實測 46 條三角形洞環全掛。
+        ///
+        /// 現在的規則是「兩條相鄰邊的中點再取中點」，見
+        /// <c>Region.FindScaledInteriorPoint</c>。
+        /// </summary>
+        [Test]
+        public void 三角形的洞建得起來()
+        {
+            Region box = Region.FromRings(new List<ExactVector2[]>
+            {
+                Ring(0, 0, 8, 0, 8, 8, 0, 8),      // 外環 CCW
+                Ring(2, 2, 2, 6, 6, 2)             // 三角形的洞 CW
+            });
+
+            Assert.AreEqual(1, CountHoles(box));
+            Assert.AreEqual(RegionPosition.Outside, box.Classify(Point(3, 3)), "洞裡應該算外面");
+            Assert.AreEqual(RegionPosition.Inside, box.Classify(Point(7, 7)), "洞外的材料應該算裡面");
+        }
+
+        /// <summary>
+        /// ⭐ <b>洞環有共線的中繼頂點時仍然建得起來。</b>
+        ///
+        /// 這不是理論上的顧慮：<c>BoundaryTracer</c> 的共線邊只在邊界度數 = 2 時合併，
+        /// 捏點附近真的會留下共線的中繼頂點。而找內部點的候選是連續三頂點算出來的，
+        /// <b>共線的那一組會產生落在邊界上的退化候選</b>——所以每個候選都必須驗過，
+        /// 不能挑第一個就回傳。
+        /// </summary>
+        [Test]
+        public void 洞環有共線中繼頂點時仍然建得起來()
+        {
+            Region box = Region.FromRings(new List<ExactVector2[]>
+            {
+                Ring(0, 0, 8, 0, 8, 8, 0, 8),          // 外環 CCW
+                Ring(2, 2, 2, 4, 2, 6, 6, 6, 6, 2)     // 洞 CW，左邊那條被 (2,4) 切成兩段
+            });
+
+            Assert.AreEqual(1, CountHoles(box));
+            Assert.AreEqual(RegionPosition.Outside, box.Classify(Point(4, 4)), "洞裡應該算外面");
+        }
+
         [Test]
         public void 射線正好通過頂點時不會誤判()
         {
@@ -170,14 +215,23 @@ namespace Tangram.Data.Tests
             Assert.AreEqual(RegionPosition.Inside, box.Classify(new ExactVector2(Scalar.Two, Scalar.Root2)));
         }
 
+        /// <summary>
+        /// 放大座標系不改變判定。
+        ///
+        /// ⚠️ 倍數走 <see cref="Region.ScaledCoordinateMultiplier"/>，不要寫死數字——
+        /// 這條測試的用途就是釘住「兩套座標系會給同一個答案」，
+        /// 自己抄一份倍數的話改倍數時它會安靜地變成驗別的東西。
+        /// </summary>
         [Test]
-        public void 乘二座標系不改變判定()
+        public void 放大座標系不改變判定()
         {
             Region box = PinchedBox();
             ExactVector2[] samples = Ring(0, 0, -1, -1, 1, 1, 1, -1, -1, 1, 2, 2, 3, 3);
 
             foreach (ExactVector2 sample in samples)
-                Assert.AreEqual(box.Classify(sample), box.ClassifyDoubled(sample * 2), sample.ToString());
+                Assert.AreEqual(box.Classify(sample),
+                                box.ClassifyScaled(sample * Region.ScaledCoordinateMultiplier),
+                                sample.ToString());
         }
 
         // ---- 多邊形包含 ----------------------------------------------------
