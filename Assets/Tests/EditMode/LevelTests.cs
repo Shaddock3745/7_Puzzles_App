@@ -686,5 +686,94 @@ namespace Tangram.Core.Tests
             ui.UpdateTrayCorner(isDragging: false, isLevelComplete: false);
             Assert.AreEqual(TrayCornerRole.Arrow, ui.TrayCorner, "不必有人記得重置它");
         }
+
+        // ─────────────────────────────────────────────────────────────
+        // 開發用的自動填入（P2-4）
+        // ─────────────────────────────────────────────────────────────
+
+        /// <returns>載入經典大正方形的一場。</returns>
+        private static LevelSession LoadedClassicSession()
+        {
+            var session = new LevelSession();
+            var (puzzle, solution) = ClassicLevel();
+            session.Load(puzzle, solution, allowRoll: true);
+            return session;
+        }
+
+        /// <summary>填完之後：留的那一槽在待用區，其餘六片在盤上而且擺放就是參考解。</summary>
+        [Test]
+        public void 自動填入_六片上盤且留下的那一槽回到待用區()
+        {
+            LevelData level = LoadedClassicSession().Data;
+
+            Assert.IsTrue(level.TryFillFromReferenceSolution(0, out _));
+
+            Assert.AreEqual(6, level.Board.OnBoardCount);
+            Assert.IsFalse(level.Board[0].OnBoard, "留的那一槽不該在盤上");
+            Assert.IsTrue(level.IsInTray(0), "留的那一槽該在待用區");
+
+            for (int slotIndex = 1; slotIndex < BoardState.PieceCount; slotIndex++)
+            {
+                Assert.IsTrue(level.Board[slotIndex].OnBoard, $"第 {slotIndex} 槽該在盤上");
+                Assert.IsFalse(level.IsInTray(slotIndex), $"第 {slotIndex} 槽不該還在待用區");
+                Assert.AreEqual(level.ReferenceSolution[slotIndex], level.Board[slotIndex].Placement);
+            }
+        }
+
+        /// <summary>
+        /// ⚠️ 填六片<b>不會過關</b>——判定要七片。
+        /// 這條在守「開發捷徑不會意外把關卡推到完成狀態」。
+        /// </summary>
+        [Test]
+        public void 自動填入_六片不會觸發過關()
+        {
+            LevelData level = LoadedClassicSession().Data;
+            level.TryFillFromReferenceSolution(0, out _);
+
+            Assert.IsFalse(level.MarkSolvedIfAllOnBoard());
+            Assert.IsFalse(level.IsSolved);
+        }
+
+        /// <summary>整組算 undo 的一步，按一次就整個還原成填之前的樣子。</summary>
+        [Test]
+        public void 自動填入_按一次undo就整組還原()
+        {
+            LevelData level = LoadedClassicSession().Data;
+
+            // 先自己放一片進去，這樣「還原」才有東西可還原，不是還原成空盤
+            level.SetInTray(3, false);
+            level.PushUndoStep(level.Board[3]);
+            level.Board.Place(3, level.ReferenceSolution[3]);
+
+            level.TryFillFromReferenceSolution(0, out _);
+            Assert.AreEqual(6, level.Board.OnBoardCount);
+
+            Assert.IsTrue(level.TryUndo(out _));
+
+            Assert.AreEqual(1, level.Board.OnBoardCount, "應該退回只有第 3 槽在盤上");
+            Assert.IsTrue(level.Board[3].OnBoard);
+            Assert.IsTrue(level.CanUndo, "自己放的那一步還在，沒被吃掉");
+        }
+
+        /// <summary>已經過關就不給填——那時候彈窗蓋著，填下去只會讓狀態變得難解釋。</summary>
+        [Test]
+        public void 自動填入_已經過關時不作用()
+        {
+            LevelData level = LoadedClassicSession().Data;
+            level.MarkSolved();
+
+            Assert.IsFalse(level.TryFillFromReferenceSolution(0, out _));
+            Assert.AreEqual(0, level.Board.OnBoardCount);
+        }
+
+        /// <summary>槽索引超出範圍要丟例外，不要默默填成別的樣子。</summary>
+        [Test]
+        public void 自動填入_槽索引超出範圍丟例外()
+        {
+            LevelData level = LoadedClassicSession().Data;
+
+            Assert.Throws<System.ArgumentOutOfRangeException>(
+                () => level.TryFillFromReferenceSolution(BoardState.PieceCount, out _));
+        }
     }
 }

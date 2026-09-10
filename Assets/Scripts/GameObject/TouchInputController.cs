@@ -1026,6 +1026,57 @@ public class TouchInputController : MonoBehaviour
     }
 
     /// <summary>
+    /// ⚠️ <b>開發用的捷徑（P2-4）</b>：照參考解填六片，留大三角自己拼。
+    ///
+    /// <b>為什麼留大三角</b>：它面積最大、資訊量最大，留下來還驗得到吸附與旋轉的手感；
+    /// 留小三角的話幾乎是「按一下就過關」，什麼都測不到。
+    ///
+    /// ⚠️ <b>正式版不會有這支的呼叫者</b>——按鍵在 <c>DebugTools</c> 裡，
+    /// 那支跟 <c>DebugOverlay</c> 用同一個編譯符號自動關掉。
+    ///
+    /// 模型那半在 <see cref="LevelData.TryFillFromReferenceSolution"/>，
+    /// 這裡只做畫面同步，跟 undo／清空走同一條路。
+    /// </summary>
+    public void FillFromReferenceSolutionForDebug()
+    {
+        LevelData level = LevelSession.Current?.Data;
+        if (level == null || IsDragging) return;
+
+        // 大三角是 TangramSet 的第 0 槽
+        if (!level.TryFillFromReferenceSolution(0, out _)) return;
+
+        // ⚠️ 照**現在**的盤面重畫全部七槽，不是照回傳的那幾筆——
+        // 那幾筆是「動之前」的樣子，拿來當「現在該長什麼樣」會整組畫錯
+        for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+        {
+            PieceObservation current = level.Board[slotIndex];
+            if (current.OnBoard) ShowPieceOnBoard(slotIndex, current.Placement);
+            else HidePieceToTray(slotIndex);
+        }
+
+        // 跟換關、undo、清空同一條路：一律清選取
+        SetSelection(null);
+    }
+
+    /// <summary>
+    /// 把一槽「現在在盤上的樣子」寫到它的 <c>PieceView</c> 上。
+    /// 姿態<b>全部</b>以擺放為準——少寫的話畫面與模型會不一致而且不報錯
+    /// （同 <see cref="ApplyRestoredPiece"/> 的第一條分支）。
+    /// </summary>
+    /// <param name="slotIndex">槽索引。</param>
+    /// <param name="placement">這一槽現在的擺放。</param>
+    private void ShowPieceOnBoard(int slotIndex, Placement placement)
+    {
+        PieceView piece = trayView != null ? trayView.PieceAt(slotIndex) : null;
+        if (piece == null) return;
+
+        piece.IsVisible = true;
+        piece.Rotation = placement.Rotation;
+        piece.IsFlipped = placement.IsFlipped;
+        piece.SnapTo(placement.Translation);   // 位置 ＋ IsSnapped 一起
+    }
+
+    /// <summary>
     /// 這一下有沒有落在「不給抓片」的矩形上（也就是按鈕）。
     ///
     /// <b>為什麼不用 <c>EventSystem.IsPointerOverGameObject()</c></b>：

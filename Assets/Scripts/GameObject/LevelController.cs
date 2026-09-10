@@ -30,11 +30,31 @@ public class LevelController : MonoBehaviour
     [Tooltip("待用區抽屜。換關時要叫它把七片的姿態重設。沒有也能跑。")]
     [SerializeField] private TrayView trayView;
 
-    [Tooltip("勾起來的話 Start 會自動載入經典大正方形。P1 沒有題庫，先這樣。")]
+    [Tooltip("勾起來的話 Start 會自動載入第一關。")]
     [SerializeField] private bool loadClassicSquareOnStart = true;
+
+    // ───────── 以下三個是 P2-4 的暫時鷹架，驗完手感就整段拿掉 ─────────
+
+    [Tooltip("⚠️ P2-4 暫時的。勾起來時，第 2 關開始改用出題器現生的題目。")]
+    [SerializeField] private bool useGeneratedPuzzles = true;
+
+    [Tooltip("⚠️ P2-4 暫時的。固定種子，同一個值每次都生出同一串題目——看到怪東西才重現得出來。")]
+    [SerializeField] private int generatorSeed = 20260910;
+
+    [Tooltip("⚠️ P2-4 暫時的。生成的題目玩幾關，之後回到經典大正方形當對照。")]
+    [SerializeField] private int generatedPuzzleCount = 10;
 
     /// <summary>這一場。<b>別人請走 <c>LevelSession.Current</c>，不要跟這支要。</b></summary>
     private LevelSession session;
+
+    /// <summary>⚠️ P2-4 暫時的：生成器叫幾次還生不出來就放棄這一關。</summary>
+    private const int MaximumGenerationAttempts = 50;
+
+    /// <summary>⚠️ P2-4 暫時的：整場共用一個生成器，這樣「不重複」才跨關成立。</summary>
+    private PuzzleGenerator generator;
+
+    /// <summary>⚠️ P2-4 暫時的：這一場玩到第幾關（從 0 開始）。</summary>
+    private int levelIndex;
 
     private void Awake()
     {
@@ -97,6 +117,15 @@ public class LevelController : MonoBehaviour
     /// </summary>
     public void EnterNextLevel()
     {
+        int currentIndex = levelIndex;
+        levelIndex++;
+
+        // ⚠️ P2-4 的暫時鷹架。第 1 關與第 12 關是經典大正方形，中間十關是現生的
+        // ——**前後都要有對照組**，因為「手感有沒有變」是比較級的問題：
+        // 不在同一次遊玩、同一台裝置上摸過舊的那題，就只是在跟記憶比
+        if (useGeneratedPuzzles && currentIndex >= 1 && currentIndex <= generatedPuzzleCount
+            && TryEnterGeneratedLevel(currentIndex)) return;
+
         Placement[] solution = PickNextPuzzleSolution();
         EnterLevel(Puzzle.FromPlacements(solution), solution, allowRoll: true);
     }
@@ -105,8 +134,45 @@ public class LevelController : MonoBehaviour
     /// 挑下一題。<b>「挑哪一題」的規則只住在這裡</b>——P2 接上題庫、
     /// P3 接上難度回饋時，要改的就是這一支。
     /// </summary>
-    /// <returns>那一題的參考解（P1 恆為經典大正方形）。</returns>
+    /// <returns>那一題的參考解（目前恆為經典大正方形）。</returns>
     private static Placement[] PickNextPuzzleSolution() => Fixtures.ClassicSquare();
+
+    /// <summary>
+    /// ⚠️ <b>P2-4 的暫時鷹架，驗完手感就整段拿掉。</b>
+    ///
+    /// 用出題器現生一題進來。<b>刻意不讀檔</b>——讀檔得先做序列化、先決定存檔字串、
+    /// 先開 <c>StreamingAssets</c>，那三件事全是 P2-8 的工作，為了玩十題把它們拖到現在做不划算。
+    /// 生成器在 <c>Data</c> 層，這支透過 <c>Core</c> 就叫得到。
+    ///
+    /// ⚠️ <b>迴圈在這裡而不在生成器裡。</b>生成器刻意「失敗就直接回報，不自己重試」，
+    /// 那樣「試幾次中一題」才量得出來（P2-5 要用）。所以重試是呼叫端的事。
+    /// 命中率實測約 48%，這個迴圈幾乎不會跑幾次。
+    /// </summary>
+    /// <param name="levelNumber">這是第幾關，只用來寫 log。</param>
+    /// <returns>有沒有成功進到一關生成的題目。false 時呼叫端會退回經典大正方形。</returns>
+    private bool TryEnterGeneratedLevel(int levelNumber)
+    {
+        if (generator == null) generator = new PuzzleGenerator(generatorSeed);
+
+        for (int attempt = 0; attempt < MaximumGenerationAttempts; attempt++)
+        {
+            GenerationResult result = generator.TryGenerate();
+            if (result.Outcome != GenerationOutcome.Generated) continue;
+
+            // 特徵印出來，判斷「十題的難度有沒有落差」時要看。⚠️ 實機看不到 Console，
+            // 所以形狀與難度在 Editor 裡看，手感才需要上實機
+            Debug.Log($"第 {levelNumber} 關（生成）：{result.Features}", this);
+
+            // ⚠️ allowRoll 傳 false：要評估的是「存進去的那個角度好不好看」，
+            // 讓相機轉會看不到真實情況
+            EnterLevel(result.Puzzle, result.ReferenceSolution, allowRoll: false);
+            return true;
+        }
+
+        Debug.LogWarning($"叫了 {MaximumGenerationAttempts} 次都沒生出題目，這一關退回經典大正方形。" +
+                         "審美門檻可能收太緊了。", this);
+        return false;
+    }
 
     /// <summary>
     /// 進來一關。<b>這五步的順序不能動</b>（互動設計 §14.3）。

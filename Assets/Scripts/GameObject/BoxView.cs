@@ -148,35 +148,99 @@ public class BoxView : MonoBehaviour
     /// 「外」的方向可以統一算：<see cref="Region"/> 的外環是 CCW、洞環是 CW，
     /// <b>所以區域內部永遠在有向邊的左側</b>——右側就是外，兩種環都適用。
     /// 洞的框線因此畫在洞裡面，一樣不吃可用空間。
+    ///
+    /// ⚠️ <b>轉角靠 miter，不靠把邊延長，也不另外補角</b>（2026-09-10 修了兩次）。
+    ///
+    /// <b>第一版錯在哪</b>：每條邊兩端各多伸「一個線寬」讓相鄰兩條重疊。
+    /// 那個長度<b>只在 90° 轉角剛好正確</b>——兩條垂直的帶子各伸一個線寬，
+    /// 剛好補滿角落那個 w×w 的正方形。💡 所以經典大正方形永遠不會露餡（四個角全是 90°），
+    /// 這個 bug 要到 P2-4 第一次看到生成的題目才出現。
+    ///
+    /// <b>第二版也錯</b>：改成「邊不延長，只在凸角補三角形」。
+    /// ⚠️ 那個版本假設<b>凹角不用處理，因為兩條帶子本來就重疊</b>——
+    /// <b>那只在鈍的凹角成立。</b>凹角很銳（notch 很窄）時，帶子的角落是從頂點
+    /// <b>垂直</b>推出去的，而那個垂直方向會<b>跨過另一條邊戳進材料裡</b>——
+    /// 看起來就是一根往盒子<b>內部</b>戳的刺。
+    ///
+    /// <b>現在的做法</b>：相鄰兩條帶子<b>共用同一個 miter 點</b>
+    /// （兩條偏移線的交點）。同一條式子兩種情況都對：
+    /// <list type="bullet">
+    /// <item><b>凸角</b>——交點落在外面，自動把楔形缺口補滿</item>
+    /// <item><b>凹角</b>——交點落在<b>比垂直推出去更靠內</b>的地方，自動把帶子<b>裁短</b>，不會戳出去</item>
+    /// </list>
+    /// 所以連「哪些角要補」都不必判斷，一條邊一個四邊形就結束。
     /// </summary>
     /// <param name="boxRegion">盒子區域。</param>
     private void AppendOutline(Region boxRegion)
     {
         foreach (ExactVector2[] ring in boxRegion.Rings)
         {
-            for (int i = 0; i < ring.Length; i++)
+            int cornerCount = ring.Length;
+            if (cornerCount < 3) continue;
+
+            // 一、每個頂點算一次 miter 位移（相鄰兩條邊共用它，接縫才不會有洞或重疊）
+            var miterOffsets = new Vector2[cornerCount];
+            for (int i = 0; i < cornerCount; i++)
+                miterOffsets[i] = MiterOffset(ring, i, cornerCount);
+
+            // 二、一條邊一個四邊形，兩端都用共用的 miter 點
+            for (int i = 0; i < cornerCount; i++)
             {
+                int next = (i + 1) % cornerCount;
                 Vector2 start = ring[i].ToVector2();
-                Vector2 end = ring[(i + 1) % ring.Length].ToVector2();
+                Vector2 end = ring[next].ToVector2();
 
-                Vector2 along = end - start;
-                if (along.sqrMagnitude < 1e-12f) continue;
-                along.Normalize();
-
-                // 右法線 = 離開區域的方向
-                var outward = new Vector2(along.y, -along.x) * outlineWidth;
-
-                // 兩端各多伸一個線寬，讓相鄰兩條邊在轉角處重疊。
-                // 多伸出去的部分全在區域外面，所以不會吃到可用空間；
-                // 很銳的外角還是可能露出小缺口，但那也在外面，不影響擺放
-                Vector2 extendedStart = start - along * outlineWidth;
-                Vector2 extendedEnd = end + along * outlineWidth;
-
-                AppendQuad(extendedStart, extendedStart + outward,
-                           extendedEnd + outward, extendedEnd, outlineColor);
+                AppendQuad(start, start + miterOffsets[i],
+                           end + miterOffsets[next], end, outlineColor);
             }
         }
     }
+
+    /// <summary>
+    /// 一個頂點的 miter 位移：相鄰兩條邊各自往外偏移一個線寬之後，那兩條線的交點。
+    ///
+    /// 公式是 <c>(n₁ + n₂) · w / (1 + n₁·n₂)</c>。長度等於 <c>w / cos(半夾角)</c>，
+    /// 45° 網格上最壞是 135° 轉角的約 <b>2.6 w</b>，有界。
+    ///
+    /// ⚠️ 兩條邊接近<b>原地折返</b>時分母會趨近 0、交點飛到無限遠。
+    /// 那種頂點在合法的輪廓上不存在（每個線段只被一片擁有），
+    /// 但真的碰到就退回單邊法線，寧可畫得難看也不要生出一根射到畫面外的刺。
+    ///
+    /// ⚠️ 另一個理論上的限制：邊長如果比 miter 位移還短，偏移出來的環會自我相交。
+    /// 這裡不會發生——線寬預設 0.08，而模型的邊最短是 2，差了 25 倍。
+    /// </summary>
+    /// <param name="ring">頂點環。</param>
+    /// <param name="cornerIndex">要算哪一個頂點。</param>
+    /// <param name="cornerCount">環的頂點數。</param>
+    /// <returns>從頂點往外的位移量。</returns>
+    private Vector2 MiterOffset(ExactVector2[] ring, int cornerIndex, int cornerCount)
+    {
+        Vector2 previous = ring[(cornerIndex - 1 + cornerCount) % cornerCount].ToVector2();
+        Vector2 corner = ring[cornerIndex].ToVector2();
+        Vector2 next = ring[(cornerIndex + 1) % cornerCount].ToVector2();
+
+        Vector2 incoming = corner - previous;
+        Vector2 outgoing = next - corner;
+        if (incoming.sqrMagnitude < 1e-12f || outgoing.sqrMagnitude < 1e-12f) return Vector2.zero;
+        incoming.Normalize();
+        outgoing.Normalize();
+
+        // 右法線 = 離開區域的方向（外環 CCW、洞環 CW，內部永遠在左）
+        Vector2 normalIncoming = RightNormal(incoming);
+        Vector2 normalOutgoing = RightNormal(outgoing);
+
+        float denominator = 1f + Vector2.Dot(normalIncoming, normalOutgoing);
+        if (denominator <= MinimumMiterDenominator) return normalIncoming * outlineWidth;
+
+        return (normalIncoming + normalOutgoing) * (outlineWidth / denominator);
+    }
+
+    /// <summary>miter 的分母小於這個值就退回單邊法線，避免長度爆掉。</summary>
+    private const float MinimumMiterDenominator = 0.05f;
+
+    /// <param name="direction">單位方向。</param>
+    /// <returns>它的右法線。內部在左，所以右邊就是「外」。</returns>
+    private static Vector2 RightNormal(Vector2 direction) => new Vector2(direction.y, -direction.x);
 
     /// <summary>把一個四邊形加進 mesh（拆成兩個三角形）。</summary>
     /// <param name="first">第一個角。</param>

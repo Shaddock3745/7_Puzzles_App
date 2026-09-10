@@ -262,6 +262,57 @@ namespace Tangram.Core
         /// 盤面本來就是空的時候是 null。
         /// </param>
         /// <returns>有沒有真的清掉東西。盤面空的時候回 false，而且<b>不會壓進一個空步驟</b>。</returns>
+        /// <summary>
+        /// ⚠️ <b>開發用的捷徑（P2-4）</b>：照參考解把片填上去，只留一槽自己拼。
+        ///
+        /// <b>為什麼在模型層而不是在除錯工具裡</b>：它會**寫盤面**。
+        /// <c>DebugOverlay</c> 的契約是「絕對不碰任何狀態，只讀」，
+        /// 除錯工具一旦會改東西，它自己就變成 bug 來源。
+        /// 而寫盤面這件事的規則（順序、不變式、undo）只能有一份，所以放這裡，
+        /// 跟 <see cref="TryClearBoardToTray"/> 並排——畫面那半一樣歸控制器。
+        ///
+        /// <b>整組算 undo 的一步</b>，按一次 undo 就整個還原。
+        ///
+        /// ⚠️ <b>快照存的是七槽全部</b>，不是只有被動到的那幾槽。填之前要先清空，
+        /// 所以哪幾槽會變其實取決於當下的盤面；全部存下來就不必推理，
+        /// 而 <see cref="TryUndo"/> 對「動之前不在盤上」的槽本來就會處理成送回待用區。
+        /// </summary>
+        /// <param name="slotToLeaveEmpty">留哪一槽不填。</param>
+        /// <param name="affected">
+        /// 動之前七槽的樣子。<b>呼叫端要照現在的盤面重畫全部七槽</b>，不是只重畫這幾筆。
+        /// </param>
+        /// <returns>有沒有真的填。已經過關時回 false。</returns>
+        /// <exception cref="System.ArgumentOutOfRangeException">槽索引超出範圍。</exception>
+        public bool TryFillFromReferenceSolution(int slotToLeaveEmpty,
+                                                 out IReadOnlyList<PieceObservation> affected)
+        {
+            affected = null;
+            if (slotToLeaveEmpty < 0 || slotToLeaveEmpty >= BoardState.PieceCount)
+                throw new System.ArgumentOutOfRangeException(nameof(slotToLeaveEmpty));
+            if (IsSolved) return false;
+
+            var before = new PieceObservation[BoardState.PieceCount];
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                before[slotIndex] = Board[slotIndex];
+            PushUndoStep(before);
+
+            // ⚠️ 順序跟清空同一組陷阱：先讓盤面放手，再設待用區。
+            // 反過來的話 SetInTray 會對著還在盤上的片丟例外
+            Board.Clear();
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                SetInTray(slotIndex, true);
+
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+            {
+                if (slotIndex == slotToLeaveEmpty) continue;
+                SetInTray(slotIndex, false);
+                Board.Place(slotIndex, ReferenceSolution[slotIndex]);
+            }
+
+            affected = before;
+            return true;
+        }
+
         public bool TryClearBoardToTray(out IReadOnlyList<PieceObservation> cleared)
         {
             cleared = null;
