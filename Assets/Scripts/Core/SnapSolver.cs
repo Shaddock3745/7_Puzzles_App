@@ -127,26 +127,24 @@ namespace Tangram.Core
         /// <returns>對應的角度（0、45、…、315）。</returns>
         public static float RotationToDegrees(int rotation) => Symmetry.Modulo8(rotation) * 45f;
 
-        /// <summary>翻面只對平行四邊形開放（其餘片翻面等同旋轉）。</summary>
+        /// <summary>
+        /// 翻面只對平行四邊形開放（其餘片翻面等同旋轉）。
+        /// ⚠️ 規則本身住在 <see cref="PiecePrototype.CanFlip"/>——那是幾何事實不是 UI 規則，
+        /// 而且出題器也要用同一份。這裡只是互動層的門面。
+        /// </summary>
         /// <param name="kind">片種。</param>
         /// <returns>這一片的翻面鈕該不該亮。</returns>
-        public static bool CanFlip(PieceKind kind) => kind == PieceKind.Parallelogram;
+        public static bool CanFlip(PieceKind kind) => PiecePrototype.CanFlip(kind);
 
         /// <summary>
-        /// 一片實際有幾個不同的旋轉姿態。片本身有對稱性，八個角度不是每個都不同，
-        /// 旋轉鈕要照這個數字循環，不然玩家會看到「按了沒反應」（互動設計 §5）。
+        /// 一片實際有幾個不同的旋轉姿態。旋轉鈕要照這個數字循環，
+        /// 不然玩家會看到「按了沒反應」（互動設計 §5）。
+        /// ⚠️ 規則本身住在 <see cref="PiecePrototype.RotationCycleLength"/>，這裡只是門面。
         /// </summary>
         /// <param name="kind">片種。</param>
         /// <returns>三角形 8、正方形 2、平行四邊形 4。</returns>
         public static int RotationCycleLength(PieceKind kind)
-        {
-            switch (kind)
-            {
-                case PieceKind.Square: return 2;          // 轉 90° 回到自己
-                case PieceKind.Parallelogram: return 4;   // 轉 180° 回到自己
-                default: return 8;
-            }
-        }
+            => PiecePrototype.RotationCycleLength(kind);
 
         /// <summary>
         /// 步驟 1+2：列出所有「錨點 − 拖曳片節點」的候選落點，依螢幕像素距離篩掉太遠的，

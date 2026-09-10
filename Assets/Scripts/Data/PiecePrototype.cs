@@ -139,6 +139,39 @@ namespace Tangram.Data
         /// <returns>該片種的原型單例。</returns>
         public static PiecePrototype Get(PieceKind kind) => Prototypes[(int)kind];
 
+        /// <summary>
+        /// 一片實際有幾個**幾何上不同**的旋轉姿態。
+        ///
+        /// 片自己有對稱性，八個角度不是每個都不同：正方形轉 90° 回到自己、
+        /// 平行四邊形轉 180° 回到自己。
+        ///
+        /// ⚠️ <b>這是幾何事實，不是 UI 規則</b>，所以住在原型這裡。兩個用途：
+        /// 旋轉鈕照它循環（不然玩家會看到「按了沒反應」，互動設計 §5），
+        /// 出題器照它枚舉（不然正方形與平行四邊形會產生佔位完全相同的重複候選，
+        /// 隨機挑的時候等於給了它們額外的權重）。
+        /// </summary>
+        /// <param name="kind">片種。</param>
+        /// <returns>三角形 8、正方形 2、平行四邊形 4。</returns>
+        public static int RotationCycleLength(PieceKind kind)
+        {
+            switch (kind)
+            {
+                case PieceKind.Square: return 2;          // 轉 90° 回到自己
+                case PieceKind.Parallelogram: return 4;   // 轉 180° 回到自己
+                default: return 8;
+            }
+        }
+
+        /// <summary>
+        /// 翻面對這一片有沒有意義。
+        ///
+        /// ⚠️ 同樣是**幾何事實**：三角形與正方形鏡射之後等同於某個旋轉，
+        /// 只有平行四邊形的鏡像是轉不出來的。所以翻面只對它開放。
+        /// </summary>
+        /// <param name="kind">片種。</param>
+        /// <returns>只有平行四邊形回 true。</returns>
+        public static bool CanFlip(PieceKind kind) => kind == PieceKind.Parallelogram;
+
         /// <returns>五種原型，索引就是 <see cref="PieceKind"/> 的整數值。</returns>
         private static PiecePrototype[] BuildAllPrototypes()
         {

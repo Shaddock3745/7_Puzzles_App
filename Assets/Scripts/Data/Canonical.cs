@@ -6,6 +6,68 @@ using System.Text;
 namespace Tangram.Data
 {
     /// <summary>
+    /// 一組擺放正規化之後的樣子（P2-3）：轉到 16 種整體變換裡字典序最小的那一版、
+    /// 並平移到字典序最小的頂點當原點。由 <see cref="Canonical.NormalizePuzzle"/> 產生。
+    ///
+    /// <b>存題庫時 <see cref="Walks"/> 與 <see cref="Pieces"/> 要一起存</b>，
+    /// 它們保證在同一個座標系——這正是這個型別存在的理由。
+    /// </summary>
+    public readonly struct CanonicalPuzzle
+    {
+        /// <summary>
+        /// 正規化之後的擺放，順序與傳進去的一致。存題庫時這就是**參考解**。
+        ///
+        /// ⚠️ 對稱的形狀，從不同擺法正規化可能得到**不同但同樣正確**的一組
+        /// （見 <see cref="Canonical.NormalizePuzzle"/> 的說明）。
+        /// </summary>
+        public readonly Placement[] Pieces;
+
+        /// <summary>
+        /// 正規化之後的外框，**依環的 key 排序**，與 <see cref="Form"/> 的組成一一對應。
+        /// 存題庫時這就是**題目**。
+        /// </summary>
+        public readonly Walk[] Walks;
+
+        /// <summary>雜湊前的完整字串。除錯時看這個比看 key 有用得多。</summary>
+        public readonly string Form;
+
+        /// <summary>32 個 hex 字元的題目 key。</summary>
+        public readonly string Key;
+
+        /// <summary>贏的那個整體旋轉 0~7。</summary>
+        public readonly int GlobalRotation;
+
+        /// <summary>贏的那一版有沒有鏡射。</summary>
+        public readonly bool IsGloballyFlipped;
+
+        /// <summary>
+        /// 變換之後再套的平移量。
+        /// 重現方式是 <c>原本的片.ApplyGlobal(GlobalRotation, IsGloballyFlipped).Translated(Translation)</c>
+        /// ——順序不能反過來。
+        /// </summary>
+        public readonly ExactVector2 Translation;
+
+        /// <param name="pieces">正規化之後的擺放。</param>
+        /// <param name="walks">正規化之後的外框，已依 key 排序。</param>
+        /// <param name="form">雜湊前的完整字串。</param>
+        /// <param name="key">題目 key。</param>
+        /// <param name="globalRotation">贏的整體旋轉。</param>
+        /// <param name="isGloballyFlipped">贏的那一版有沒有鏡射。</param>
+        /// <param name="translation">變換之後再套的平移量。</param>
+        public CanonicalPuzzle(Placement[] pieces, Walk[] walks, string form, string key,
+                               int globalRotation, bool isGloballyFlipped, ExactVector2 translation)
+        {
+            Pieces = pieces;
+            Walks = walks;
+            Form = form;
+            Key = key;
+            GlobalRotation = globalRotation;
+            IsGloballyFlipped = isGloballyFlipped;
+            Translation = translation;
+        }
+    }
+
+    /// <summary>
     /// canonical key。全程整數，雜湊穩定。
     /// 相對編碼不是 canonical form（同一排列有多種生成樹），
     /// 所以去重一律先還原成絕對座標（§1.3、§6 陷阱）。
@@ -75,16 +137,52 @@ namespace Tangram.Data
             => Hash(ArrangementForm(pieces));
 
         /// <summary>
-        /// 題目的 canonical form（§2.4）。不要對每條環各自正規化再拼回去（anchor 的變換會出錯），
-        /// 直接對 16 種整體變換各重跑一次 walk 追蹤 —— 順便解決鏡射翻轉定向的問題。
-        /// 邊數 10～30，重跑 16 次成本可忽略。
+        /// 題目的 canonical form（§2.4）。
+        ///
+        /// ⚠️ <b>這支只是 <see cref="NormalizePuzzle"/> 的門面</b>——正規化的規則只有那一份。
+        /// 只要 form 的話用這支，要連正規化之後的擺放與外框一起拿的話用那支。
         /// </summary>
         /// <param name="pieces">要算的絕對擺放。</param>
         /// <returns>雜湊前的完整字串。</returns>
         /// <remarks><b>會跑 16 次輪廓追蹤，不要放在每幀的程式碼裡。</b></remarks>
         public static string PuzzleForm(IReadOnlyList<Placement> pieces)
+            => NormalizePuzzle(pieces).Form;
+
+        /// <summary>
+        /// 把一組擺放**正規化**：轉到 16 種整體變換裡字典序最小的那一版，並平移到
+        /// 字典序最小的頂點當原點。回傳正規化之後的擺放、外框、form 與 key。
+        ///
+        /// <b>為什麼要有這支</b>（P2-3）：出題器要把題目**存成正規化的樣子**，
+        /// 這樣同一個形狀不管從哪一種擺法生出來，存進去都一模一樣，去重才乾淨。
+        /// 但參考解<b>必須套一模一樣的變換</b>，否則題目在一個角度、答案在另一個角度——
+        /// 症狀是提示的覆蓋框整組偏移或轉 45°，而且不報錯。
+        ///
+        /// ⚠️ 原本只有「算 key」那條路，它算得出變換卻不回報，出題器只能自己再跑一次 16 種。
+        /// <b>那會讓正規化的規則有兩份</b>，哪天分家的症狀是「存進去的 key 跟存進去的外框對不起來」。
+        /// 所以規則留在這裡，門面在上面那支。
+        ///
+        /// <b>平手時取第一個</b>：對稱的形狀會有好幾種變換算出同樣的 form，
+        /// 底下用的是嚴格比較（<c>&lt; 0</c> 才換掉），所以 <see cref="Symmetry.GlobalTransforms"/>
+        /// 裡先出現的那個會贏。這個行為是確定的，動它會讓已經存好的題庫對不上。
+        ///
+        /// ⚠️ <b>一個必須知道的不對稱</b>：對同一個形狀的 16 種擺法各叫一次，
+        /// <see cref="CanonicalPuzzle.Key"/> 與 <see cref="CanonicalPuzzle.Walks"/> <b>一定相同</b>
+        /// （變換群是封閉的，取遍 16 種得到的集合一樣），
+        /// 但 <see cref="CanonicalPuzzle.Pieces"/> <b>可能不同</b>——
+        /// 對稱的外框可以被不同的擺法填出來，平手時贏的變換不一樣，填法就不一樣。
+        /// 兩組都是那個外框的正確解，所以不是 bug；
+        /// <b>但不要寫「同一形狀正規化後擺放必然相同」這種假設</b>。
+        /// </summary>
+        /// <param name="pieces">要正規化的絕對擺放。</param>
+        /// <returns>正規化的結果。</returns>
+        /// <remarks><b>會跑 16 次輪廓追蹤</b>，跟原本算 key 是同一趟，不會更貴。</remarks>
+        public static CanonicalPuzzle NormalizePuzzle(IReadOnlyList<Placement> pieces)
         {
             string smallestForm = null;
+            int winningRotation = 0;
+            bool winningFlipped = false;
+            ExactVector2 winningTranslation = default;
+            Walk[] winningWalks = null;
 
             foreach (var (globalRotation, globalFlipped) in Symmetry.GlobalTransforms)
             {
@@ -110,16 +208,51 @@ namespace Tangram.Data
 
                 // 先平移再選起點：CanonicalStart 會把 anchor 換成新起點的座標，
                 // 平移沒先做的話 anchor 會停在舊座標系
+                var normalizedWalks = new List<Walk>(walks.Count);
                 var walkKeys = new List<string>(walks.Count);
                 foreach (Walk walk in walks)
-                    walkKeys.Add(CanonicalStart(walk.Translated(-smallestVertex)).ToKey());
-                walkKeys.Sort(StringComparer.Ordinal);
+                {
+                    Walk normalized = CanonicalStart(walk.Translated(-smallestVertex));
+                    normalizedWalks.Add(normalized);
+                    walkKeys.Add(normalized.ToKey());
+                }
 
-                string form = string.Join(";", walkKeys);
+                // 環的順序跟著 key 一起排，回傳的 Walks 才會與 form 的組成一一對應。
+                // 不排的話順序取決於 BoundaryTracer 從哪條半邊起步，那是實作細節不該外洩
+                var order = new int[walkKeys.Count];
+                for (int i = 0; i < order.Length; i++) order[i] = i;
+                Array.Sort(order, (left, right)
+                    => string.CompareOrdinal(walkKeys[left], walkKeys[right]));
+
+                var sortedKeys = new string[order.Length];
+                var sortedWalks = new Walk[order.Length];
+                for (int i = 0; i < order.Length; i++)
+                {
+                    sortedKeys[i] = walkKeys[order[i]];
+                    sortedWalks[i] = normalizedWalks[order[i]];
+                }
+
+                string form = string.Join(";", sortedKeys);
                 if (smallestForm == null || string.CompareOrdinal(form, smallestForm) < 0)
+                {
                     smallestForm = form;
+                    winningRotation = globalRotation;
+                    winningFlipped = globalFlipped;
+                    winningTranslation = -smallestVertex;
+                    winningWalks = sortedWalks;
+                }
             }
-            return smallestForm;
+
+            // 贏的那一版重新套到原本的七片上。7 次變換，相對 16 次追蹤可忽略
+            var normalizedPieces = new Placement[pieces.Count];
+            for (int pieceIndex = 0; pieceIndex < pieces.Count; pieceIndex++)
+                normalizedPieces[pieceIndex] = pieces[pieceIndex]
+                    .ApplyGlobal(winningRotation, winningFlipped)
+                    .Translated(winningTranslation);
+
+            return new CanonicalPuzzle(normalizedPieces, winningWalks ?? new Walk[0],
+                                       smallestForm, Hash(smallestForm),
+                                       winningRotation, winningFlipped, winningTranslation);
         }
 
         /// <param name="pieces">要算的絕對擺放。</param>
