@@ -391,23 +391,28 @@ namespace Tangram.Data
         /// <summary>
         /// 凸多邊形是否完全落在區域內（含邊界）。這就是吸附的盒內硬限制。
         ///
-        /// 五條規則由便宜到貴，任何一條失敗就拒絕：
+        /// 規則由便宜到貴，任何一條失敗就拒絕：
         ///   0. 包圍盒
-        ///   1. 每個頂點都在區域內（含邊界）   —— 擋整片跑到外面
-        ///   2. 沒有片邊與輪廓邊真交叉         —— 擋頂點都在內、但邊從凹口穿出去
-        ///   3. 沒有輪廓頂點嚴格落在片內部     —— 擋輪廓的尖角戳進片裡
-        ///   4. 沒有洞的內部點落在片內部       —— 擋片整個蓋住一個洞
-        ///   5. 每條片邊的區間中點都在區域內   —— 擋跨過捏點
+        ///   1. 每個頂點都在區域內（含邊界）           —— 擋整片跑到外面
+        ///   2. 沒有片邊與輪廓邊真交叉                 —— 擋頂點都在內、但邊從凹口穿出去
+        ///   3. 沒有輪廓頂點嚴格落在片內部             —— 擋輪廓的尖角戳進片裡
+        ///   4. 沒有任何一段輪廓把區域外側朝向片內部   —— 擋片蓋住被捏點圍住的空地（2026-09-11 加）
+        ///   5. 每條片邊的區間中點都在區域內           —— 擋跨過捏點
+        ///   6. 沒有洞的內部點落在片內部               —— 擋片整個蓋住一個洞（2026-09-11 前是規則 4）
         ///
-        /// 規則 5 不能省。只有 1～4 的話，一片可以三個頂點都停在輪廓的角上、每條邊都只在
+        /// 規則 4 的判準與「為什麼這樣就完整」寫在 <see cref="AnyBoundaryFacesOutsideInto"/>。
+        /// 照那裡的論證規則 6 已經多餘，但只加不刪——拿掉它要另外證明、另外測。
+        ///
+        /// 規則 5 不能省。一片可以三個頂點都停在輪廓的角上、每條邊都只在
         /// 端點碰到輪廓（不算真交叉），卻有一整塊內部戳在捏點的另一側。測試裡有這個反例。
         ///
-        /// 規則 2 必須排在規則 5 前面：沒有真交叉時，所有接觸點才保證是現成的頂點，
-        /// 區間切割才不需要分數運算。
+        /// 規則 2 必須排在規則 4、5 前面：沒有真交叉時，所有接觸點才保證是現成的頂點，
+        /// 區間切割才不需要分數運算。規則 3 必須排在規則 4 前面：沒有輪廓頂點在片內，
+        /// 輪廓的每一小段才不會半段在片內、半段在片外。
         /// </summary>
         /// <param name="convexPolygon">要測試的凸多邊形，繞向不拘。</param>
         /// <returns>
-        /// 是否完全落在區域內（含邊界）。五條規則任何一條失敗就回 false。
+        /// 是否完全落在區域內（含邊界）。任何一條規則失敗就回 false。
         /// 全程精確算術，沒有容差。
         /// </returns>
         public bool ContainsPolygon(IReadOnlyList<ExactVector2> convexPolygon)
@@ -446,12 +451,8 @@ namespace Tangram.Data
                 if (Geometry.StrictlyInsideConvexPolygon(convexPolygon, Vertices[vertexIndex]))
                     return false;
 
-            // 4：洞的內部點存的是放大座標，把多邊形就地放大同樣的倍數去比，不另外配置陣列
-            for (int holeIndex = 0; holeIndex < scaledHoleInteriorPoints.Length; holeIndex++)
-                if (Geometry.StrictlyInsideConvexPolygon(
-                        convexPolygon, scaledHoleInteriorPoints[holeIndex],
-                        ScaledCoordinateMultiplier))
-                    return false;
+            // 4：必須在 2、3 之後（前提見 AnyBoundaryFacesOutsideInto）
+            if (AnyBoundaryFacesOutsideInto(convexPolygon)) return false;
 
             // 5
             for (int vertexIndex = 0; vertexIndex < polygonVertexCount; vertexIndex++)
@@ -460,6 +461,14 @@ namespace Tangram.Data
                                      convexPolygon[(vertexIndex + 1) % polygonVertexCount]))
                     return false;
             }
+
+            // 6（原本的規則 4）：洞的內部點存的是放大座標，把多邊形就地放大同樣的倍數去比，
+            // 不另外配置陣列。照規則 4 的論證這條已經多餘，留著當第二道
+            for (int holeIndex = 0; holeIndex < scaledHoleInteriorPoints.Length; holeIndex++)
+                if (Geometry.StrictlyInsideConvexPolygon(
+                        convexPolygon, scaledHoleInteriorPoints[holeIndex],
+                        ScaledCoordinateMultiplier))
+                    return false;
 
             return true;
         }
@@ -509,6 +518,164 @@ namespace Tangram.Data
                 previousPoint = splitPoint;
             }
             return ClassifyMidpointOf(previousPoint, edgeEnd) != RegionPosition.Outside;
+        }
+
+        // ---- 規則 4：輪廓的外側不准朝向片的內部 -----------------------------
+
+        /// <summary>
+        /// 規則 4：有沒有任何一段輪廓，把<b>區域外面</b>那一側朝向片的內部。
+        ///
+        /// <b>判準的來源</b>：每條輪廓邊都是「內部在左」（外環 CCW、洞環 CW），
+        /// 所以它的<b>右側就是區域外面</b>。一片合法擺放時，片的內部整塊都在區域裡，
+        /// 不可能有任何一段輪廓的右側對著片的內部；反過來，只要有一段是這樣，片就有一塊在外面。
+        ///
+        /// <b>做法</b>：每條輪廓邊在「片的頂點落在它中段的地方」切開，每一小段取中點：
+        /// <list type="bullet">
+        /// <item>中點<b>嚴格在片內</b> → 這段輪廓橫過片的內部，它的右側一定也在片內 → 違反</item>
+        /// <item>中點<b>落在片的某條邊上</b> → 這段貼著片的邊走，看片的內部在它的哪一側</item>
+        /// <item>中點在片外 → 跟這片無關</item>
+        /// </list>
+        ///
+        /// ⚠️ <b>必須排在規則 2、3 之後</b>，兩個前提缺一不可：
+        /// <list type="bullet">
+        /// <item>沒有真交叉（規則 2）：輪廓碰到片的邊界時，只可能在片的頂點上、或整段貼著片的邊。
+        ///   所以切點只要取片的頂點，而「中點落在片邊上」就等於「這段貼著那條邊」</item>
+        /// <item>沒有輪廓頂點在片內（規則 3）：每一小段不會半段在片內、半段在片外，
+        ///   取一個中點就能代表整段</item>
+        /// </list>
+        ///
+        /// <b>為什麼這樣就完整</b>：假設片的內部有一個點在區域外。
+        /// 若有輪廓碰到片的內部，那一段的中點嚴格在片內，第一種情況抓到；
+        /// 若沒有，片的內部是完整的一塊、中間沒有邊界，所以<b>整塊都在外面</b>。
+        /// 這時片的每條邊，不是有一段沒貼著輪廓（那段的中點在區域外，規則 5 抓到），
+        /// 就是整條貼著輪廓、而那些輪廓的外側朝著片內（第二種情況抓到）。
+        ///
+        /// <b>為什麼不會誤擋</b>：合法的片內部全在區域裡，所以不會有輪廓橫過它（否則那段的外側在片內），
+        /// 貼著它的輪廓也一定是材料那側朝內。
+        ///
+        /// ⚠️ <b>不能簡化成「問片的一個內部點在不在區域內」。</b>
+        /// 反例：洞的形狀是大三角三邊中點連成的小三角，上面蓋一片大三角——
+        /// 洞的三條邊兩端都停在片的邊上（不算真交叉），卻把片的內部切成裡外兩部分，
+        /// 而用 (a+2b+c)/4 取的三個候選點全落在洞的邊上。測試 <c>中點三角形的洞被大三角蓋住_不合法</c>。
+        ///
+        /// 💡 補的漏洞是<b>被捏點圍住的空地</b>（2026-09-11，除錯記錄 009）：它是外環的一部分，
+        /// 規則 6 的洞內部點管不到，而片的邊如果全部貼著輪廓，規則 1、2、3、5 問到的點全落在邊界上。
+        /// </summary>
+        /// <param name="convexPolygon">要測試的凸多邊形，繞向不拘。</param>
+        /// <returns>有沒有任何一段輪廓把外側朝向片的內部。有就代表這片不合法。</returns>
+        private bool AnyBoundaryFacesOutsideInto(IReadOnlyList<ExactVector2> convexPolygon)
+        {
+            // 片的繞向決定「片的內部在片邊的哪一側」。面積 0 的片不可能是合法擺放，直接判違反
+            int polygonOrientation = Geometry.SignedDoubleArea(convexPolygon).Sign;
+            if (polygonOrientation == 0) return true;
+
+            for (int ringIndex = 0; ringIndex < Rings.Length; ringIndex++)
+            {
+                ExactVector2[] ring = Rings[ringIndex];
+                for (int vertexIndex = 0; vertexIndex < ring.Length; vertexIndex++)
+                {
+                    if (BoundaryEdgeFacesOutsideInto(ring[vertexIndex], ring[(vertexIndex + 1) % ring.Length],
+                                                     convexPolygon, polygonOrientation))
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 一條輪廓邊：在片的頂點處切段，逐段交給 <see cref="SegmentFacesOutsideInto"/>。
+        /// 切法跟 <see cref="EdgeStaysInside"/> 是同一套，只是角色對調（那邊切片的邊，這邊切輪廓的邊）。
+        /// </summary>
+        /// <param name="edgeStart">輪廓邊的起點（內部在左）。</param>
+        /// <param name="edgeEnd">輪廓邊的終點。</param>
+        /// <param name="convexPolygon">片。</param>
+        /// <param name="polygonOrientation">片的繞向：正 = 逆時針、負 = 順時針。</param>
+        /// <returns>這條輪廓邊有沒有任何一段把外側朝向片的內部。</returns>
+        private static bool BoundaryEdgeFacesOutsideInto(ExactVector2 edgeStart, ExactVector2 edgeEnd,
+                                                         IReadOnlyList<ExactVector2> convexPolygon,
+                                                         int polygonOrientation)
+        {
+            List<ExactVector2> splitPoints = null;
+            for (int polygonIndex = 0; polygonIndex < convexPolygon.Count; polygonIndex++)
+            {
+                ExactVector2 polygonVertex = convexPolygon[polygonIndex];
+
+                // IsOnSegment 含兩端點，所以兩端要自己排掉——切點只要落在中段的
+                if (polygonVertex == edgeStart || polygonVertex == edgeEnd) continue;
+                if (!Geometry.IsOnSegment(edgeStart, edgeEnd, polygonVertex)) continue;
+
+                if (splitPoints == null) splitPoints = new List<ExactVector2>();
+                splitPoints.Add(polygonVertex);
+            }
+
+            // 絕大多數情況：片的頂點都不在這條輪廓邊的中段，整條當一段
+            if (splitPoints == null)
+                return SegmentFacesOutsideInto(edgeStart, edgeEnd, convexPolygon, polygonOrientation);
+
+            ExactVector2 edgeDirection = edgeEnd - edgeStart;
+            splitPoints.Sort((left, right) =>
+                ExactVector2.Dot(left - edgeStart, edgeDirection)
+                    .CompareTo(ExactVector2.Dot(right - edgeStart, edgeDirection)));
+
+            ExactVector2 previousPoint = edgeStart;
+            for (int splitIndex = 0; splitIndex < splitPoints.Count; splitIndex++)
+            {
+                ExactVector2 splitPoint = splitPoints[splitIndex];
+                if (splitPoint == previousPoint) continue;
+                if (SegmentFacesOutsideInto(previousPoint, splitPoint, convexPolygon, polygonOrientation))
+                    return true;
+                previousPoint = splitPoint;
+            }
+            return SegmentFacesOutsideInto(previousPoint, edgeEnd, convexPolygon, polygonOrientation);
+        }
+
+        /// <summary>
+        /// 一小段輪廓：看它的中點相對於片落在哪，決定外側有沒有朝向片的內部。
+        /// </summary>
+        /// <param name="segmentStart">這一小段的起點（沿輪廓方向，內部在左）。</param>
+        /// <param name="segmentEnd">這一小段的終點。</param>
+        /// <param name="convexPolygon">片。</param>
+        /// <param name="polygonOrientation">片的繞向：正 = 逆時針、負 = 順時針。</param>
+        /// <returns>這一段的外側有沒有朝向片的內部。</returns>
+        private static bool SegmentFacesOutsideInto(ExactVector2 segmentStart, ExactVector2 segmentEnd,
+                                                    IReadOnlyList<ExactVector2> convexPolygon,
+                                                    int polygonOrientation)
+        {
+            // 中點用放大座標表示，片也就地放大同樣的倍數去比（跟 ClassifyMidpointOf 同一個尺度）
+            ExactVector2 scaledMidpoint = (segmentStart + segmentEnd) * (ScaledCoordinateMultiplier / 2);
+
+            // 一、橫過片的內部：外側一定也在片內
+            if (Geometry.StrictlyInsideConvexPolygon(convexPolygon, scaledMidpoint, ScaledCoordinateMultiplier))
+                return true;
+
+            // 二、貼著片的某條邊
+            ExactVector2 segmentDirection = segmentEnd - segmentStart;
+            int polygonVertexCount = convexPolygon.Count;
+            for (int polygonIndex = 0; polygonIndex < polygonVertexCount; polygonIndex++)
+            {
+                ExactVector2 polygonEdgeStart = convexPolygon[polygonIndex];
+                ExactVector2 polygonEdgeEnd = convexPolygon[(polygonIndex + 1) % polygonVertexCount];
+
+                if (!Geometry.IsOnSegment(polygonEdgeStart * ScaledCoordinateMultiplier,
+                                          polygonEdgeEnd * ScaledCoordinateMultiplier,
+                                          scaledMidpoint))
+                    continue;
+
+                int alignment = ExactVector2.Dot(segmentDirection, polygonEdgeEnd - polygonEdgeStart).Sign;
+
+                // 不可能是 0：中點不會是片的頂點（片的頂點都是切點），
+                // 所以不共線的話就是兩條線段在彼此的中段相交——規則 2 早就擋掉了。
+                // 萬一真的發生，寧可擋下也不要放行
+                if (alignment == 0) return true;
+
+                // 片的內部在片邊的左側 ⇔ 片是逆時針。
+                // 輪廓段跟片邊同向時兩者的左側是同一側，反向時相反
+                bool interiorOnLeftOfSegment = (alignment > 0) == (polygonOrientation > 0);
+                return !interiorOnLeftOfSegment;
+            }
+
+            // 三、在片外：跟這片無關
+            return false;
         }
 
         // ---- 洞的內部點 ----------------------------------------------------

@@ -90,7 +90,7 @@ Unity 6000.3.7f1 的**七巧板拼圖遊戲**，參加 2026 大專校院資訊�
 | P1-1 | 座標與版面層三個角色：`ViewportMath` / `BoardLayout` / `BoardView` | `互動設計` §2（§2.8 四個待決全部定案） | `程式說明書` §18 |
 | P1-2 | 片的顯示：`PieceVertexCache` / `PieceSorting` / `PieceSpriteLibrary` / `PieceView`。**圖是執行時生成的，不是匯入的美術資源** | `互動設計` §13 | `程式說明書` §16.5、§16.6 |
 | P1-3 | 盒子與「這一關」的擁有者：`LevelSession` / `LevelController` / `BoxView`。場景已接線 | `互動設計` §14 | `程式說明書` §16.7 |
-| P1-4 | 區域判定：`Region` 加 `Geometry` 的四個判斷式，`ContainsPolygon` 五條規則 | — | `程式說明書` §13 |
+| P1-4 | 區域判定：`Region` 加 `Geometry` 的四個判斷式，`ContainsPolygon` 的規則 0～6（2026-09-11 加了一條，除錯記錄 009） | — | `程式說明書` §13 |
 | P1-5 | 待用區**抽屜** `TrayView`，外加一次**輸入層重構**（分層命中測試、touch id、滑鼠觸控統一）。⚠️ `PiecePreview` 已刪除 | `互動設計` §15 | `程式說明書` §16.9、§16.8、§16.7 |
 | P1-6 | 拖曳控制 `TouchInputController`。**不實作 `IInputSource`** | `互動設計` §4 | `程式說明書` §16.8 |
 | P1-7 | 盒子接進吸附層：`Region.BoundaryNodes` 當錨點、`isAllowed` 當盒內硬限制 | `互動設計` §3 | `程式說明書` §13、§16 |

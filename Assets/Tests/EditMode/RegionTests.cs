@@ -270,7 +270,10 @@ namespace Tangram.Data.Tests
         [Test]
         public void 跨過捏點的片_不合法()
         {
-            // 這是規則 5（區間中點掃描）唯一擋得住的案例，拿掉它這個測試就會紅。
+            // 原本這是規則 5（區間中點掃描）唯一擋得住的案例。2026-09-11 加了規則 4 之後，
+            // 捏點伸進片裡的那兩段輪廓會先被規則 4 抓到，規則 5 變成第二道——
+            // 拿掉規則 5 這條不會紅了。規則 5 自己不可取代的案例改由
+            // 只在頂點碰到邊框_整片在凹口裡_不合法 釘住。
             //
             // 片是真的中三角：股 2√2、斜邊 4、面積 4。三個頂點分別是
             // 左上塊的左上角、左上塊的右下角、右上塊的右下角 —— 全部在區域邊界上。
@@ -318,8 +321,10 @@ namespace Tangram.Data.Tests
         [Test]
         public void 片整個蓋住一個洞_不合法()
         {
-            // 規則 4。片剛好等於洞：所有洞頂點都是片的頂點（規則 3 過不了關），
+            // 片剛好等於洞：所有洞頂點都是片的頂點（規則 3 抓不到），
             // 邊全部共線（規則 2 過），區間中點全落在邊界上（規則 5 過）。
+            // 2026-09-11 起先被規則 4 擋下（洞環貼著片的邊、外側朝內）；
+            // 規則 6（原本的規則 4，洞的內部點）是第二道。
             Region box = BoxWithHole();
             ExactVector2[] exactlyTheHole = Ring(2, 2, 4, 2, 4, 4, 2, 4);
 
@@ -339,6 +344,133 @@ namespace Tangram.Data.Tests
             // 這是「用洞的頂點去測」會誤殺的案例：兩個洞頂點就在片的右邊上。
             Region box = BoxWithHole();
             Assert.IsTrue(box.ContainsPolygon(Ring(0, 2, 2, 2, 2, 4, 0, 4)));
+        }
+
+        // ---- 規則 4：輪廓的外側不准朝向片內部（2026-09-11）--------------------
+
+        /// <summary>
+        /// 3×3 的 2×2 格子挖掉<b>正中央</b>與<b>右上角</b>，手寫成<b>一條自我接觸的環</b>。
+        ///
+        /// 中央那格是空的，四周都有材料，但它跟右上角那格（空的、對外開放）在 (4,4) 這一點相碰——
+        /// 所以它不是洞，是被捏點圍住的空地。環在 (4,4) 經過兩次：
+        /// 一次從外框轉進去繞中央空格，一次繞回來繼續走外框。
+        ///
+        /// ⚠️ 刻意手寫而不是用 <c>BoundaryTracer</c> 追出來：這裡驗的是
+        /// <b>「一條環、中間圍著空地」這種輸入</b>，不管將來追邊改成怎麼描它。
+        /// </summary>
+        /// <returns>面積 28 的區域，一條環，沒有洞環。</returns>
+        private static Region PinchEnclosedBox() => Region.FromPolygon(Ring(
+            0, 0, 6, 0, 6, 4,
+            4, 4, 4, 2, 2, 2, 2, 4,    // 從捏點轉進去，順時針繞中央空格
+            4, 4, 4, 6, 0, 6));        // 回到捏點，繼續走外框
+
+        /// <summary>
+        /// ⭐ <b>被捏點圍住的空地，放進剛好一樣大的片，不合法。</b>
+        ///
+        /// 2026-09-11 以前這裡會回 true：片的四個角都在邊框上（規則 1 過）、
+        /// 四條邊全貼著輪廓（規則 2、3、5 問到的點都落在邊框上）、
+        /// 而規則 6 只認得洞環，這塊空地是外環的一部分。
+        /// 使用者在實機上看到的就是這種形狀（空地剛好是小三角的大小）。
+        ///
+        /// 兩種繞向都要擋：規則 4 用片的繞向判斷「片的內部在片邊的哪一側」，寫反的話只會擋一種。
+        /// </summary>
+        [Test]
+        public void 被捏點圍住的空地_放進剛好一樣大的片_不合法()
+        {
+            Region box = PinchEnclosedBox();
+            Assert.AreEqual(1, box.Rings.Length, "前提：一條環");
+            Assert.AreEqual(0, CountHoles(box), "前提：沒有洞環，規則 6 管不到");
+            Assert.AreEqual(RegionPosition.Outside, box.Classify(Point(3, 3)), "前提：區域自己知道中央是外面");
+
+            Assert.IsFalse(box.ContainsPolygon(Ring(2, 2, 4, 2, 4, 4, 2, 4)), "逆時針的片");
+            Assert.IsFalse(box.ContainsPolygon(Ring(2, 2, 2, 4, 4, 4, 4, 2)), "順時針的片");
+            Assert.IsFalse(box.Contains(new Placement(PieceKind.Square, 0, false, Point(2, 2))));
+        }
+
+        /// <summary>
+        /// 同一個盒子上，<b>貼著捏點</b>但確實在材料裡的片仍然合法。
+        /// 規則 4 不能因為片碰到捏點、或邊貼著輪廓就誤殺。
+        /// </summary>
+        [Test]
+        public void 被捏點圍住的空地旁邊_貼著捏點的片_合法()
+        {
+            Region box = PinchEnclosedBox();
+
+            Assert.IsTrue(box.ContainsPolygon(Ring(2, 4, 4, 4, 4, 6, 2, 6)), "中央正上方那格，右下角就是捏點");
+            Assert.IsTrue(box.ContainsPolygon(Ring(4, 2, 6, 2, 6, 4, 4, 4)), "中央正右方那格，左上角就是捏點");
+            Assert.IsTrue(box.ContainsPolygon(Ring(0, 0, 2, 0, 2, 2, 0, 2)), "左下角那格，兩條邊貼外框");
+        }
+
+        /// <summary>
+        /// 片的邊貼著外框放，<b>兩種繞向都合法</b>。
+        ///
+        /// 規則 4 在「輪廓段貼著片的邊」時要判斷方向：同向或反向，再配上片的繞向。
+        /// 這條釘住判斷沒有寫反——寫反的話，每一片貼著外框放的片都會被擋掉。
+        /// </summary>
+        [Test]
+        public void 片的邊貼著外框_兩種繞向都合法()
+        {
+            Region box = Box();
+            Assert.IsTrue(box.ContainsPolygon(Ring(0, 0, 2, 0, 2, 2, 0, 2)), "逆時針的片");
+            Assert.IsTrue(box.ContainsPolygon(Ring(0, 0, 0, 2, 2, 2, 2, 0)), "順時針的片");
+            Assert.IsTrue(box.ContainsPolygon(Ring(0, 0, 4, 0, 4, 4, 0, 4)), "片跟盒子一模一樣大");
+        }
+
+        /// <summary>
+        /// ⭐ <b>中點三角形形狀的洞，上面蓋一片大三角，不合法。</b>
+        ///
+        /// 這條存在的目的是<b>擋住一個看起來很合理的簡化</b>：
+        /// 「規則 1、2、3、5 都過了之後，片的內部不是整塊在裡面就是整塊在外面，問一個內部點就好」。
+        /// 那句話是錯的——洞的三條邊，兩端都剛好停在大三角的三條邊上（不算真交叉），
+        /// 卻橫過片的內部，把它切成裡外兩部分。用 (a+2b+c)/4 取的三個內部點，
+        /// 全部落在洞的邊上（下面的前提斷言）。
+        ///
+        /// 現在規則 4（有輪廓段橫過片的內部）與規則 6（洞的內部點在片內）都擋得住它。
+        /// </summary>
+        [Test]
+        public void 中點三角形的洞被大三角蓋住_不合法()
+        {
+            Region box = Region.FromRings(new List<ExactVector2[]>
+            {
+                Ring(-2, -2, 8, -2, 8, 8, -2, 8),    // 外環 CCW
+                Ring(2, 0, 0, 2, 2, 2)               // 洞：大三角三邊的中點，CW
+            });
+            ExactVector2[] largeTriangle = Ring(0, 0, 4, 0, 0, 4);
+
+            // 前提：「問一個內部點」會拿到的三個候選，全落在洞的邊上
+            Assert.AreEqual(RegionPosition.OnBoundary, box.Classify(Point(1, 1)));
+            Assert.AreEqual(RegionPosition.OnBoundary, box.Classify(Point(2, 1)));
+            Assert.AreEqual(RegionPosition.OnBoundary, box.Classify(Point(1, 2)));
+
+            Assert.IsFalse(box.ContainsPolygon(largeTriangle));
+        }
+
+        /// <summary>
+        /// ⭐ <b>片整個在凹口裡、只有頂點碰到邊框，不合法——規則 5 唯一擋得住的案例。</b>
+        ///
+        /// 三個頂點分別碰在ㄈ字凹口的內壁 (2,3)、下臂 (3,2)、上臂 (3,4)，三條邊全從凹口的空地穿過：
+        /// <list type="bullet">
+        /// <item>規則 1 過：頂點都在邊框上</item>
+        /// <item>規則 2 過：片邊只在端點碰到輪廓，不算真交叉</item>
+        /// <item>規則 3 過：沒有輪廓頂點在片裡</item>
+        /// <item>規則 4 過：沒有輪廓段在片裡、也沒有貼著片的邊（輪廓在片的頂點處切開後，每段的中點都在片外）</item>
+        /// </list>
+        /// 只有規則 5 會發現片邊的中點在凹口裡。
+        ///
+        /// ⚠️ 2026-09-11 加規則 4 之後，原本守規則 5 的 <c>跨過捏點的片_不合法</c> 也會被規則 4 擋下，
+        /// 變異測試（拿掉規則 5）發現<b>整個測試集沒有任何一條會紅</b>。這條就是補那個洞的。
+        /// </summary>
+        [Test]
+        public void 只在頂點碰到邊框_整片在凹口裡_不合法()
+        {
+            Region box = CShapedBox();
+            ExactVector2[] piece = Ring(2, 3, 3, 2, 3, 4);
+
+            foreach (ExactVector2 vertex in piece)
+                Assert.AreEqual(RegionPosition.OnBoundary, box.Classify(vertex), "前提：頂點都在邊框上");
+            Assert.AreEqual(RegionPosition.Outside, box.Classify(Point(3, 3)), "前提：片的邊的中點在凹口裡");
+
+            Assert.IsFalse(box.ContainsPolygon(piece));
         }
 
         // ---- 接上真的題目 --------------------------------------------------

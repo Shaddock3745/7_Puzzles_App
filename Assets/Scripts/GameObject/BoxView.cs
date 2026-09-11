@@ -101,8 +101,19 @@ public class BoxView : MonoBehaviour
         colors.Clear();
         triangles.Clear();
 
-        if (referenceSolution != null) AppendFill(referenceSolution);
+        // ⚠️ 順序是刻意的：先描邊、後填色，讓填色蓋住「越界畫進材料裡」的描邊（除錯記錄 010）。
+        // 同一個 mesh、同一個材質，三角形照送進去的順序畫，後面的蓋前面的。
+        //
+        // 描邊照設計只該畫在材料外面（除錯記錄 002），但有兩種地方它會畫進材料：
+        //   · 捏點：空楔形的兩條邊在環上不相鄰，帶子沒被接起來、也沒互相裁掉，衝過尖端進到對面的材料
+        //   · 45° 的材料尖角：miter 伸到 2.6 倍線寬，附近有別段材料就伸過去
+        // 填色 = 七片的聯集 = 材料本身，所以蓋掉的只有越界的部分，該留的描邊一點都不會少。
+        //
+        // ⚠️ 這是「遮起來」不是「畫對」。那些越界的幾何還在，只是被蓋住了：
+        // 填色改成半透明、或 referenceSolution 傳 null（沒有填色）時，刺會跑回來。
+        // 根治的做法（接角改用幾何上相鄰的邊）記在待辦清單
         if (boxRegion != null) AppendOutline(boxRegion);
+        if (referenceSolution != null) AppendFill(referenceSolution);
 
         mesh.Clear();
         mesh.SetVertices(vertices);
@@ -206,8 +217,11 @@ public class BoxView : MonoBehaviour
     /// 那種頂點在合法的輪廓上不存在（每個線段只被一片擁有），
     /// 但真的碰到就退回單邊法線，寧可畫得難看也不要生出一根射到畫面外的刺。
     ///
-    /// ⚠️ 另一個理論上的限制：邊長如果比 miter 位移還短，偏移出來的環會自我相交。
-    /// 這裡不會發生——線寬預設 0.08，而模型的邊最短是 2，差了 25 倍。
+    /// ⚠️ 另一個限制：邊長如果比兩端 miter 往內吃掉的長度還短，那條邊的四邊形會自己打結。
+    /// <b>原本這裡寫「模型的邊最短是 2，差了 25 倍」，那是錯的</b>——2 是片的原型邊長，
+    /// 但輪廓在每個交點都被切斷、共線段只在度數 2 才合併，實測最短的輪廓邊只有 <b>0.343</b>（6 − 4√2）。
+    /// 線寬 0.08 時最糟的一條被兩端吃掉 66%，還沒打結；線寬調到 0.16 就會打結（800 題中 1 題）。
+    /// <b>想把線調粗之前，先給 miter 加長度上限</b>（除錯記錄 010）。
     /// </summary>
     /// <param name="ring">頂點環。</param>
     /// <param name="cornerIndex">要算哪一個頂點。</param>
