@@ -186,6 +186,10 @@ dotnet test Tools/DotnetTests
 - **Git Bash 裡沒有 `python`，也沒有 `node`** → 要寫腳本只能用 PowerShell；改檔案優先用 Edit/Write 工具（CJK 內容用 heredoc 有編碼風險）
 - **PowerShell 是 5.1** → 沒有 `&&`、`??`、三元運算子；`ConvertFrom-Json` 回 PSCustomObject
 - **CJK 檔名在 Git Bash 的 `ls` / `find` 可能查不到** → 用 PowerShell 的 `Get-ChildItem` 確認才準（這個 session 誤判過一次）
+- ⚠️ **這台機器的 PowerShell 執行原則不允許跑 `.ps1` 檔**（2026-09-11 撞到，錯誤是「系統上已停用指令碼執行」）。
+  指令直接下沒問題，但**不要把步驟寫成腳本檔讓使用者跑**；也**不要自己加 `-ExecutionPolicy Bypass` 繞過**——那是他的安全設定，
+  要不要放寬由他決定。需要自動化的步驟改寫進 `[Explicit]` 測試（縮圖牆的組裝就是這樣處理的）。
+  連帶上一條「要寫腳本只能用 PowerShell」要讀成：**只能直接下 PowerShell 指令**
 
 ---
 
@@ -268,6 +272,11 @@ XML doc（`<param>` / `<returns>`）與「為什麼這樣寫」的註解一樣�
 | 程式說明書 | <https://claude.ai/code/artifact/04d7059d-d155-40a5-ac22-dafb3b166f00> |
 | 開發進度 | <https://claude.ai/code/artifact/94f5f82c-868a-4149-af9b-35701eab6eac> |
 | 互動設計 | <https://claude.ai/code/artifact/e32f7dae-886a-4ad2-bc95-33761bc180ce> |
+| 七巧板特徵對照牆（縮圖牆的第一個畫面，2026-09-11） | <https://claude.ai/code/artifact/76ef3b7f-d0ec-4294-9516-4315d556b7ba> |
+
+⚠️ **對照牆不是文件，是工具**：內容是出題器生出來的資料，不能手改。要更新就重跑
+`ThumbnailWallExportTests`（會同時產出資料與已經塞好資料的網頁 `%TEMP%\tangram_feature_wall.html`），
+再用 `url` 參數把那個檔發布到上面的網址。範本在 `Tools/ThumbnailWall/`。
 
 ---
 

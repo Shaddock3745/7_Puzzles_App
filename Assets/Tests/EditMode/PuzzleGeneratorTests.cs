@@ -268,5 +268,88 @@ namespace Tangram.Data.Tests
 
             Assert.IsTrue(sawRejection, "門檻極緊卻沒有任何一次是被審美篩掉的");
         }
+
+        // ─────────────────────────────────────────────────────────────
+        // 三、門檻的判斷（2026-09-11 從生成器搬進 AestheticLimits）
+        // ─────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// 周長剛好 44 的特徵。周長 = 七片周長總和（40 + 20√2）− 藏起來的長度 ×2，
+        /// 所以藏起來的長度 ×2 要是 −4 + 20√2。
+        /// </summary>
+        private static readonly Scalar DoubledHiddenForPerimeterFortyFour = new Scalar(-4, 20);
+
+        /// <summary>上限是「最多幾個」：<b>剛好等於上限算過</b>，四條都一樣。</summary>
+        [Test]
+        public void 門檻_剛好等於上限算過()
+        {
+            var limits = new AestheticLimits(1, 1, 10, Scalar.FromInteger(44));
+            var features = new DifficultyFeatures(10, 8, DoubledHiddenForPerimeterFortyFour, 1, 1);
+
+            Assert.AreEqual(AestheticRules.None, limits.Violations(features));
+            Assert.IsTrue(limits.Accepts(features));
+        }
+
+        /// <summary>
+        /// 每一條各自超過一點點，就只回報那一條。
+        /// 縮圖牆要標「被哪一條擋」，所以不能只回答過或不過。
+        /// </summary>
+        [Test]
+        public void 門檻_只超過一條就只回報那一條()
+        {
+            var limits = new AestheticLimits(1, 1, 10, Scalar.FromInteger(44));
+            Scalar hidden = DoubledHiddenForPerimeterFortyFour;
+            Scalar oneLonger = hidden - Scalar.One;     // 藏起來的少一點 → 周長多 1
+
+            Assert.AreEqual(AestheticRules.HoleCount,
+                limits.Violations(new DifficultyFeatures(10, 8, hidden, 1, 2)));
+            Assert.AreEqual(AestheticRules.PinchPointCount,
+                limits.Violations(new DifficultyFeatures(10, 8, hidden, 2, 1)));
+            Assert.AreEqual(AestheticRules.ConcaveAngleCount,
+                limits.Violations(new DifficultyFeatures(11, 8, hidden, 1, 1)));
+            Assert.AreEqual(AestheticRules.Perimeter,
+                limits.Violations(new DifficultyFeatures(10, 8, oneLonger, 1, 1)));
+        }
+
+        /// <summary>同時超過好幾條，每一條都要回報，不能只回報第一條就停。</summary>
+        [Test]
+        public void 門檻_同時超過好幾條全部回報()
+        {
+            var limits = new AestheticLimits(0, 0, 3, Scalar.FromInteger(30));
+            var features = new DifficultyFeatures(4, 8, DoubledHiddenForPerimeterFortyFour, 1, 1);
+
+            Assert.AreEqual(
+                AestheticRules.HoleCount | AestheticRules.PinchPointCount
+                    | AestheticRules.ConcaveAngleCount | AestheticRules.Perimeter,
+                limits.Violations(features));
+            Assert.IsFalse(limits.Accepts(features));
+        }
+
+        /// <summary>
+        /// ⭐ <b>生成器的判定跟 <see cref="AestheticLimits.Violations"/> 永遠一致。</b>
+        ///
+        /// 縮圖牆用全開的門檻生形狀、再拿預設門檻問一次「收不收」——那個答案必須跟
+        /// 「用預設門檻直接生」時生成器的判定一模一樣，否則牆上標的「被擋掉」跟遊戲裡實際發生的對不上。
+        /// 判斷只住在 AestheticLimits 就是為了這件事；這條把它釘住。
+        /// </summary>
+        [Test]
+        public void 門檻_生成器的判定跟AestheticLimits一致()
+        {
+            AestheticLimits limits = AestheticLimits.Default;
+            var generator = new PuzzleGenerator(seed: 11, limits);
+            int checkedCount = 0;
+
+            for (int attempt = 0; attempt < 300; attempt++)
+            {
+                GenerationResult result = generator.TryGenerate();
+                if (result.Outcome == GenerationOutcome.PackingFailed) continue;
+
+                checkedCount++;
+                bool rejected = result.Outcome == GenerationOutcome.RejectedByAesthetics;
+                Assert.AreEqual(rejected, !limits.Accepts(result.Features), $"第 {attempt} 次：{result.Features}");
+            }
+
+            Assert.Greater(checkedCount, 0);
+        }
     }
 }

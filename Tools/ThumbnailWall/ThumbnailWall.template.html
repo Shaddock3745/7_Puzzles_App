@@ -1,0 +1,737 @@
+<title>七巧板特徵對照牆</title>
+<!--
+  縮圖牆範本（2026-09-11）。
+  這個檔本身不能直接發布：資料要先塞進下面 WALL_DATA 那一行。流程只有兩步：
+    1. dotnet test Tools/DotnetTests --filter "FullyQualifiedName~ThumbnailWallExportTests"
+       → 產生 %TEMP%\tangram_thumbnail_wall.json（資料）與 %TEMP%\tangram_feature_wall.html（已塞好資料的網頁）
+    2. 把那個 html 發布成 artifact
+  （原本第 1、2 步之間還有一支 PowerShell 組裝腳本，但使用者電腦的執行原則不允許跑 .ps1，
+    所以組裝併進了匯出測試。）
+  資料格式由 Assets/Tests/EditMode/ThumbnailWallExportTests.cs 決定，改那邊的欄位要一起改這裡。
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+  /* ── 色票 ────────────────────────────────────────────────
+     頁面本身跟著亮暗主題走；縮圖（--tile-*）刻意兩個主題都一樣——
+     它是遊戲畫面的迷你版：深藍底、灰色形狀、淺色外框，跟 BoxView 在實機上畫的一致。 */
+  :root {
+    --ground: #EDF1F5;
+    --surface: #FFFFFF;
+    --surface-sunken: #E3E8EE;
+    --ink: #16202B;
+    --ink-muted: #586576;
+    --line: #CDD5DE;
+    --accent: #2C6A9E;
+    --accent-soft: #D6E4F0;
+    --accent-ink: #FFFFFF;
+    --warning: #A8620F;
+    --warning-soft: #F6E6CF;
+    --tile-ground: #1B2637;
+    --tile-fill: #6F7683;
+    --tile-outline: #D9DEE6;
+    --tile-warning: #E3A33A;
+    --tile-selected: #8FC1EA;
+    --font-label: "Barlow Semi Condensed", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    --font-body: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", sans-serif;
+    --font-data: "IBM Plex Mono", "Consolas", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0E141C;
+      --surface: #161F2A;
+      --surface-sunken: #111922;
+      --ink: #DCE3EB;
+      --ink-muted: #93A0B0;
+      --line: #283341;
+      --accent: #7DB0DC;
+      --accent-soft: #1E3347;
+      --accent-ink: #0E141C;
+      --warning: #E3A33A;
+      --warning-soft: #3A2A12;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0E141C;
+    --surface: #161F2A;
+    --surface-sunken: #111922;
+    --ink: #DCE3EB;
+    --ink-muted: #93A0B0;
+    --line: #283341;
+    --accent: #7DB0DC;
+    --accent-soft: #1E3347;
+    --accent-ink: #0E141C;
+    --warning: #E3A33A;
+    --warning-soft: #3A2A12;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .page { max-width: 1480px; margin: 0 auto; padding: 20px 24px 48px; display: grid; gap: 16px; }
+
+  /* ── 抬頭：名字與資料來源，不做大 hero ── */
+  .masthead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; }
+  .masthead h1 {
+    margin: 0;
+    font-family: var(--font-label);
+    font-weight: 600;
+    font-size: 26px;
+    letter-spacing: 0.01em;
+    text-wrap: balance;
+  }
+  .provenance { color: var(--ink-muted); font-size: 13px; }
+  .provenance b { font-family: var(--font-data); font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  /* ── 控制列 ── */
+  .controls {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+    display: grid;
+    gap: 12px;
+  }
+  .control-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
+  .field { display: flex; align-items: center; gap: 8px; }
+  .field-label {
+    font-family: var(--font-label);
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    color: var(--ink-muted);
+    white-space: nowrap;
+  }
+  .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .segmented button {
+    border: 0;
+    background: transparent;
+    padding: 5px 11px;
+    cursor: pointer;
+    border-left: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  .segmented button:first-child { border-left: 0; }
+  .segmented button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+  .segmented button:not([aria-pressed="true"]):hover { background: var(--accent-soft); }
+  input[type="number"] {
+    width: 74px;
+    padding: 4px 6px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--surface-sunken);
+    font-family: var(--font-data);
+    font-variant-numeric: tabular-nums;
+  }
+  .plain-button {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 6px;
+    padding: 4px 11px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .plain-button:hover { border-color: var(--accent); color: var(--accent); }
+  .text-button { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font-size: 12px; }
+  .text-button:hover { text-decoration: underline; }
+
+  .locks { display: flex; flex-wrap: wrap; gap: 8px; }
+  .lock {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 9px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface-sunken);
+  }
+  .lock.is-active { border-color: var(--accent); background: var(--accent-soft); }
+  .lock.is-row { opacity: 0.5; }
+  .lock .range-hint { color: var(--ink-muted); font-family: var(--font-data); font-size: 11px; }
+  .lock-error { color: var(--warning); font-size: 12px; }
+
+  .summary { font-size: 13px; color: var(--ink-muted); }
+  .summary b { color: var(--ink); font-family: var(--font-data); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+  /* ── 主體：牆 + 檢視窗 ── */
+  .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+  @media (max-width: 1100px) { .workspace { grid-template-columns: minmax(0, 1fr); } .inspector { order: -1; } }
+
+  .wall { display: grid; gap: 2px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .wall-row { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 14px; padding: 12px 14px; background: var(--surface); }
+  .row-heading { display: grid; align-content: start; gap: 4px; }
+  .row-feature { font-family: var(--font-label); font-weight: 600; font-size: 11px; letter-spacing: 0.08em; color: var(--ink-muted); }
+  .row-value { font-family: var(--font-data); font-weight: 500; font-size: 26px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .row-count { font-size: 12px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  .row-mean { font-size: 12px; color: var(--ink-muted); font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+  .small-sample {
+    justify-self: start;
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--warning-soft);
+    color: var(--warning);
+  }
+  .row-empty { color: var(--ink-muted); font-size: 13px; align-self: center; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+  .tile {
+    position: relative;
+    display: grid;
+    gap: 3px;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    text-align: left;
+  }
+  .tile svg { display: block; width: 100%; aspect-ratio: 1; border-radius: 5px; background: var(--tile-ground); }
+  .tile .tile-caption { font-family: var(--font-data); font-size: 11px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  .tile[aria-pressed="true"] svg { outline: 2px solid var(--tile-selected); outline-offset: 2px; }
+  .tile:hover svg { filter: brightness(1.15); }
+  .tile-flag {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    padding: 0 5px;
+    border-radius: 3px;
+    background: var(--tile-warning);
+    color: #1B2637;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 16px;
+  }
+
+  /* ── 檢視窗 ── */
+  .inspector {
+    position: sticky;
+    top: 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+    display: grid;
+    gap: 12px;
+  }
+  .inspector h2 { margin: 0; font-family: var(--font-label); font-weight: 600; font-size: 15px; letter-spacing: 0.02em; }
+  .inspector svg { display: block; width: 100%; aspect-ratio: 1; border-radius: 6px; background: var(--tile-ground); }
+  .inspector dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
+  .inspector dt { color: var(--ink-muted); }
+  .inspector dd { margin: 0; font-family: var(--font-data); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .verdict { font-size: 13px; padding: 6px 9px; border-radius: 6px; background: var(--accent-soft); }
+  .verdict.is-rejected { background: var(--warning-soft); color: var(--warning); }
+  .hint { color: var(--ink-muted); font-size: 13px; margin: 0; }
+
+  .missing-data {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 18px 20px;
+    max-width: 68ch;
+  }
+  .missing-data code { font-family: var(--font-data); font-size: 12px; background: var(--surface-sunken); padding: 1px 5px; border-radius: 4px; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="page">
+  <header class="masthead">
+    <h1>七巧板特徵對照牆</h1>
+    <div class="provenance" id="provenance"></div>
+  </header>
+
+  <section class="controls" aria-label="對照條件">
+    <div class="control-row">
+      <div class="field">
+        <span class="field-label">分列依據</span>
+        <div class="segmented" id="row-feature-buttons" role="group" aria-label="分列依據"></div>
+      </div>
+      <div class="field" id="bucket-field">
+        <span class="field-label">周長分段寬度</span>
+        <input type="number" id="bucket-width" min="0.5" step="0.5">
+      </div>
+      <div class="field">
+        <span class="field-label">池子</span>
+        <div class="segmented" id="pool-buttons" role="group" aria-label="池子">
+          <button type="button" data-pool="accepted">預設門檻收的</button>
+          <button type="button" data-pool="all">全部（含被擋掉的）</button>
+        </div>
+      </div>
+      <div class="field">
+        <span class="field-label">每列張數</span>
+        <input type="number" id="tiles-per-row" min="1" max="30" step="1">
+      </div>
+      <div class="field">
+        <span class="field-label">抽樣種子</span>
+        <input type="number" id="sample-seed" min="1" step="1">
+        <button type="button" class="plain-button" id="next-batch">換一批</button>
+      </div>
+    </div>
+    <div class="control-row">
+      <span class="field-label">鎖住其他特徵</span>
+      <div class="locks" id="locks"></div>
+      <button type="button" class="text-button" id="clear-locks">全部解除</button>
+    </div>
+    <div class="summary" id="summary"></div>
+  </section>
+
+  <div class="workspace">
+    <main class="wall" id="wall" aria-label="對照牆"></main>
+    <aside class="inspector" id="inspector" aria-label="選取的形狀"></aside>
+  </div>
+</div>
+
+<script>
+  // 建置時由 Build-ThumbnailWall.ps1 把這個佔位字串換成 JSON。直接開範本的話它是 null
+  const wallData = /*__WALL_DATA__*/null;
+
+  // ── 特徵定義：key 必須跟匯出程式的欄位名稱一致 ──
+  const features = [
+    { key: 'concaveAngleCount', label: '凹角數', short: '凹角', integer: true },
+    { key: 'directionVarietyCount', label: '邊方向種類', short: '方向', integer: true },
+    { key: 'perimeter', label: '周長', short: '周長', integer: false },
+    { key: 'pinchPointCount', label: '捏點數', short: '捏點', integer: true },
+    { key: 'holeCount', label: '洞數', short: '洞', integer: true },
+  ];
+  const violationLabels = { HoleCount: '洞', PinchPointCount: '捏點', ConcaveAngleCount: '凹角', Perimeter: '周長' };
+
+  // 開場就是一個「控制變因」的對照：依凹角分列，周長鎖在 38～42
+  // （P2-5 的篩選後池子裡，凹角 × 周長的相關係數是 0.44，不鎖的話看到的差別一半是周長）
+  const defaultSettings = {
+    rowFeature: 'concaveAngleCount',
+    bucketWidth: 2,
+    pool: 'accepted',
+    tilesPerRow: 8,
+    sampleSeed: 1,
+    locks: { perimeter: { minimum: 38, maximum: 42 } },
+  };
+  const storageKey = 'tangram-feature-wall-settings';
+  let settings = loadSettings();
+  let selectedIndex = null;
+
+  function loadSettings() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(storageKey) || 'null');
+      if (stored && typeof stored === 'object') return Object.assign(structuredClone(defaultSettings), stored);
+    } catch (error) { /* 讀不到就用預設值 */ }
+    return structuredClone(defaultSettings);
+  }
+  function saveSettings() {
+    try { localStorage.setItem(storageKey, JSON.stringify(settings)); } catch (error) { /* 存不了就算了 */ }
+  }
+
+  // ── 固定種子的亂數：同一組設定每次抽到同一批 ──
+  function seededRandom(seed) {
+    let state = seed >>> 0;
+    return function () {
+      state = (state + 0x6D2B79F5) >>> 0;
+      let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
+      mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+      return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function sample(list, count, seed) {
+    const random = seededRandom(seed);
+    const copy = list.slice();
+    for (let index = copy.length - 1; index > 0; index--) {
+      const swapWith = Math.floor(random() * (index + 1));
+      [copy[index], copy[swapWith]] = [copy[swapWith], copy[index]];
+    }
+    return copy.slice(0, count);
+  }
+
+  function formatExact(pair) {
+    const [rational, rootCoefficient] = pair;
+    if (rootCoefficient === 0) return String(rational);
+    const rootPart = (Math.abs(rootCoefficient) === 1 ? '' : Math.abs(rootCoefficient)) + '√2';
+    if (rational === 0) return (rootCoefficient < 0 ? '−' : '') + rootPart;
+    return rational + (rootCoefficient < 0 ? ' − ' : ' + ') + rootPart;
+  }
+  function formatValue(feature, value) {
+    return feature.integer ? String(value) : value.toFixed(1);
+  }
+  const featureByKey = Object.fromEntries(features.map(feature => [feature.key, feature]));
+
+  // ── 幾何：所有縮圖用同一個比例尺（面積都是 32，同尺才看得出細長與緊湊） ──
+  let commonScale = 1;
+  function prepareGeometry(shapes) {
+    let largestExtent = 0;
+    for (const shape of shapes) {
+      let minimumX = Infinity, minimumY = Infinity, maximumX = -Infinity, maximumY = -Infinity;
+      for (const ring of shape.rings) for (const [x, y] of ring) {
+        minimumX = Math.min(minimumX, x); maximumX = Math.max(maximumX, x);
+        minimumY = Math.min(minimumY, y); maximumY = Math.max(maximumY, y);
+      }
+      shape.centerX = (minimumX + maximumX) / 2;
+      shape.centerY = (minimumY + maximumY) / 2;
+      largestExtent = Math.max(largestExtent, maximumX - minimumX, maximumY - minimumY);
+    }
+    commonScale = 88 / largestExtent;   // viewBox 是 100，留一點邊
+  }
+  function shapePath(shape) {
+    let path = '';
+    for (const ring of shape.rings) {
+      ring.forEach(([x, y], index) => {
+        const screenX = 50 + (x - shape.centerX) * commonScale;
+        const screenY = 50 - (y - shape.centerY) * commonScale;   // 模型的 y 往上，SVG 的 y 往下
+        path += (index === 0 ? 'M' : 'L') + screenX.toFixed(2) + ' ' + screenY.toFixed(2);
+      });
+      path += 'Z';
+    }
+    return path;
+  }
+  function shapeSvg(shape, withScaleBar) {
+    const namespace = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(namespace, 'svg');
+    svg.setAttribute('viewBox', '0 0 100 100');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS(namespace, 'path');
+    path.setAttribute('d', shapePath(shape));
+    path.setAttribute('fill', 'var(--tile-fill)');
+    path.setAttribute('fill-rule', 'evenodd');
+    path.setAttribute('stroke', 'var(--tile-outline)');
+    path.setAttribute('stroke-width', withScaleBar ? '1.2' : '2');
+    path.setAttribute('vector-effect', 'non-scaling-stroke');
+    path.setAttribute('stroke-linejoin', 'miter');
+    svg.appendChild(path);
+    if (withScaleBar) {
+      // 比例尺：小三角的股長 = 2 個模型單位
+      const barLength = 2 * commonScale;
+      const bar = document.createElementNS(namespace, 'path');
+      bar.setAttribute('d', `M6 94H${(6 + barLength).toFixed(2)}M6 92.5V95.5M${(6 + barLength).toFixed(2)} 92.5V95.5`);
+      bar.setAttribute('stroke', 'var(--tile-outline)');
+      bar.setAttribute('stroke-width', '0.6');
+      bar.setAttribute('fill', 'none');
+      svg.appendChild(bar);
+      const label = document.createElementNS(namespace, 'text');
+      label.setAttribute('x', (8 + barLength).toFixed(2));
+      label.setAttribute('y', '95.2');
+      label.setAttribute('fill', 'var(--tile-outline)');
+      label.setAttribute('font-size', '3.4');
+      label.setAttribute('font-family', 'IBM Plex Mono, monospace');
+      label.textContent = '2（小三角的股）';
+      svg.appendChild(label);
+    }
+    return svg;
+  }
+
+  // ── 列的切法 ──
+  function rowKeyOf(shape) {
+    const value = shape[settings.rowFeature];
+    if (featureByKey[settings.rowFeature].integer) return value;
+    const width = settings.bucketWidth;
+    return Math.floor(value / width + 1e-9) * width;
+  }
+  function allRowKeys(shapes) {
+    const feature = featureByKey[settings.rowFeature];
+    const values = shapes.map(shape => shape[feature.key]);
+    const minimum = Math.min(...values), maximum = Math.max(...values);
+    const keys = [];
+    if (feature.integer) {
+      for (let value = minimum; value <= maximum; value++) keys.push(value);
+    } else {
+      const width = settings.bucketWidth;
+      for (let start = Math.floor(minimum / width + 1e-9) * width; start <= maximum + 1e-9; start += width) keys.push(start);
+    }
+    return keys;
+  }
+  function rowLabel(key) {
+    const feature = featureByKey[settings.rowFeature];
+    if (feature.integer) return String(key);
+    return `${key.toFixed(1)}–${(key + settings.bucketWidth).toFixed(1)}`;
+  }
+
+  function passesLocks(shape) {
+    for (const [key, range] of Object.entries(settings.locks)) {
+      if (key === settings.rowFeature) continue;
+      const value = shape[key];
+      if (value < range.minimum - 1e-9 || value > range.maximum + 1e-9) return false;
+    }
+    return true;
+  }
+
+  // ── 畫面 ──
+  function render() {
+    renderControls();
+    const shapes = wallData.shapes;
+    const pool = settings.pool === 'accepted' ? shapes.filter(shape => shape.acceptedByDefault) : shapes;
+    const matching = pool.filter(passesLocks);
+
+    document.getElementById('summary').innerHTML =
+      `池子 <b>${pool.length}</b> 個，鎖定之後符合條件 <b>${matching.length}</b> 個。` +
+      `每一列從符合的形狀裡用種子 <b>${settings.sampleSeed}</b> 抽 <b>${settings.tilesPerRow}</b> 張，同一組設定每次都是同一批。`;
+
+    const byRow = new Map();
+    for (const shape of matching) {
+      const key = rowKeyOf(shape);
+      if (!byRow.has(key)) byRow.set(key, []);
+      byRow.get(key).push(shape);
+    }
+
+    const rowFeature = featureByKey[settings.rowFeature];
+    const meanFeature = settings.rowFeature === 'perimeter' ? featureByKey.concaveAngleCount : featureByKey.perimeter;
+    const wall = document.getElementById('wall');
+    wall.replaceChildren();
+    const shownIndexes = [];
+
+    allRowKeys(shapes).forEach((key, rowIndex) => {
+      const members = byRow.get(key) || [];
+      const row = document.createElement('section');
+      row.className = 'wall-row';
+
+      const heading = document.createElement('div');
+      heading.className = 'row-heading';
+      heading.innerHTML = `<span class="row-feature">${rowFeature.label}</span><span class="row-value">${rowLabel(key)}</span>`;
+      const count = document.createElement('span');
+      count.className = 'row-count';
+      count.textContent = members.length === 0 ? '沒有符合的' : `${members.length} 個符合，抽 ${Math.min(members.length, settings.tilesPerRow)}`;
+      heading.appendChild(count);
+      if (members.length > 0) {
+        const mean = members.reduce((total, shape) => total + shape[meanFeature.key], 0) / members.length;
+        const meanLine = document.createElement('span');
+        meanLine.className = 'row-mean';
+        meanLine.textContent = `平均${meanFeature.short} ${mean.toFixed(1)}`;
+        heading.appendChild(meanLine);
+      }
+      if (members.length > 0 && members.length < settings.tilesPerRow) {
+        const warning = document.createElement('span');
+        warning.className = 'small-sample';
+        warning.textContent = '樣本少';
+        heading.appendChild(warning);
+      }
+      row.appendChild(heading);
+
+      if (members.length === 0) {
+        const empty = document.createElement('p');
+        empty.className = 'row-empty';
+        empty.textContent = '這一列在目前的池子與鎖定條件下沒有形狀。';
+        row.appendChild(empty);
+      } else {
+        const tiles = document.createElement('div');
+        tiles.className = 'tiles';
+        for (const shape of sample(members, settings.tilesPerRow, settings.sampleSeed * 1000003 + rowIndex * 7919)) {
+          tiles.appendChild(tileFor(shape));
+          shownIndexes.push(shape.index);
+        }
+        row.appendChild(tiles);
+      }
+      wall.appendChild(row);
+    });
+
+    if (selectedIndex === null || !shownIndexes.includes(selectedIndex)) selectedIndex = shownIndexes.length ? shownIndexes[0] : null;
+    markSelection();
+    renderInspector();
+  }
+
+  function tileFor(shape) {
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'tile';
+    tile.dataset.index = shape.index;
+    tile.setAttribute('aria-label',
+      `第 ${shape.index} 個形狀：凹角 ${shape.concaveAngleCount}、方向 ${shape.directionVarietyCount}、周長 ${shape.perimeter.toFixed(1)}` +
+      (shape.acceptedByDefault ? '' : `，被預設門檻擋掉（${shape.violations.map(rule => violationLabels[rule]).join('、')}）`));
+    tile.appendChild(shapeSvg(shape, false));
+    if (!shape.acceptedByDefault) {
+      const flag = document.createElement('span');
+      flag.className = 'tile-flag';
+      flag.textContent = shape.violations.map(rule => violationLabels[rule]).join('·');
+      tile.appendChild(flag);
+    }
+    const caption = document.createElement('span');
+    caption.className = 'tile-caption';
+    caption.textContent = `#${shape.index}`;
+    tile.appendChild(caption);
+    tile.addEventListener('click', () => { selectedIndex = shape.index; markSelection(); renderInspector(); });
+    return tile;
+  }
+
+  function markSelection() {
+    for (const tile of document.querySelectorAll('.tile')) {
+      tile.setAttribute('aria-pressed', Number(tile.dataset.index) === selectedIndex ? 'true' : 'false');
+    }
+  }
+
+  function renderInspector() {
+    const inspector = document.getElementById('inspector');
+    inspector.replaceChildren();
+    const heading = document.createElement('h2');
+    inspector.appendChild(heading);
+    if (selectedIndex === null) {
+      heading.textContent = '選取的形狀';
+      const hint = document.createElement('p');
+      hint.className = 'hint';
+      hint.textContent = '點牆上任一張縮圖，這裡會顯示它的完整數字。';
+      inspector.appendChild(hint);
+      return;
+    }
+    const shape = wallData.shapes[selectedIndex];
+    heading.textContent = `第 ${shape.index} 個形狀`;
+    inspector.appendChild(shapeSvg(shape, true));
+
+    const verdict = document.createElement('div');
+    verdict.className = 'verdict' + (shape.acceptedByDefault ? '' : ' is-rejected');
+    verdict.textContent = shape.acceptedByDefault
+      ? '預設門檻會收：玩家會碰到這種形狀。'
+      : `預設門檻會擋掉，沒過的是：${shape.violations.map(rule => violationLabels[rule]).join('、')}。`;
+    inspector.appendChild(verdict);
+
+    const list = document.createElement('dl');
+    const rows = [
+      ['凹角數', shape.concaveAngleCount],
+      ['邊方向種類', shape.directionVarietyCount],
+      ['周長', shape.perimeter.toFixed(4)],
+      ['藏起來的邊長 ×2', formatExact(shape.doubledHiddenEdgeLength)],
+      ['捏點數', shape.pinchPointCount],
+      ['洞數', shape.holeCount],
+      ['輪廓環數', shape.rings.length],
+      ['PuzzleKey', shape.key],
+    ];
+    for (const [label, value] of rows) {
+      const term = document.createElement('dt'); term.textContent = label;
+      const detail = document.createElement('dd'); detail.textContent = value;
+      list.append(term, detail);
+    }
+    inspector.appendChild(list);
+  }
+
+  // ── 控制列 ──
+  function renderControls() {
+    const buttons = document.getElementById('row-feature-buttons');
+    buttons.replaceChildren();
+    for (const feature of features) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = feature.label;
+      button.setAttribute('aria-pressed', feature.key === settings.rowFeature ? 'true' : 'false');
+      button.addEventListener('click', () => { settings.rowFeature = feature.key; changed(); });
+      buttons.appendChild(button);
+    }
+    for (const button of document.querySelectorAll('#pool-buttons button')) {
+      button.setAttribute('aria-pressed', button.dataset.pool === settings.pool ? 'true' : 'false');
+    }
+    document.getElementById('bucket-field').hidden = settings.rowFeature !== 'perimeter';
+    document.getElementById('bucket-width').value = settings.bucketWidth;
+    document.getElementById('tiles-per-row').value = settings.tilesPerRow;
+    document.getElementById('sample-seed').value = settings.sampleSeed;
+    renderLocks();
+  }
+
+  function renderLocks() {
+    const container = document.getElementById('locks');
+    container.replaceChildren();
+    for (const feature of features) {
+      const values = wallData.shapes.map(shape => shape[feature.key]);
+      const fullMinimum = Math.min(...values), fullMaximum = Math.max(...values);
+      const range = settings.locks[feature.key];
+      const isRow = feature.key === settings.rowFeature;
+
+      const lock = document.createElement('div');
+      lock.className = 'lock' + (range && !isRow ? ' is-active' : '') + (isRow ? ' is-row' : '');
+      const label = document.createElement('span');
+      label.className = 'field-label';
+      label.textContent = feature.short;
+      lock.appendChild(label);
+
+      const step = feature.integer ? 1 : 0.5;
+      const minimumInput = numberInput(range ? range.minimum : fullMinimum, step, isRow, `${feature.label}最小值`);
+      const maximumInput = numberInput(range ? range.maximum : fullMaximum, step, isRow, `${feature.label}最大值`);
+      const dash = document.createElement('span'); dash.textContent = '～';
+      lock.append(minimumInput, dash, maximumInput);
+
+      const hint = document.createElement('span');
+      hint.className = 'range-hint';
+      hint.textContent = isRow ? '（正在分列）' : `全範圍 ${formatValue(feature, fullMinimum)}–${formatValue(feature, fullMaximum)}`;
+      lock.appendChild(hint);
+
+      const apply = () => {
+        const minimum = Number(minimumInput.value), maximum = Number(maximumInput.value);
+        if (!Number.isFinite(minimum) || !Number.isFinite(maximum)) return;
+        if (minimum > maximum) {
+          showLockError(`${feature.label}的最小值比最大值大，這個鎖定沒有套用。`);
+          return;
+        }
+        showLockError('');
+        if (minimum <= fullMinimum + 1e-9 && maximum >= fullMaximum - 1e-9) delete settings.locks[feature.key];
+        else settings.locks[feature.key] = { minimum, maximum };
+        changed();
+      };
+      minimumInput.addEventListener('change', apply);
+      maximumInput.addEventListener('change', apply);
+      container.appendChild(lock);
+    }
+  }
+  function numberInput(value, step, disabled, label) {
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.step = String(step);
+    input.value = String(value);
+    input.disabled = disabled;
+    input.setAttribute('aria-label', label);
+    return input;
+  }
+  function showLockError(message) {
+    let error = document.getElementById('lock-error');
+    if (!error) {
+      error = document.createElement('span');
+      error.id = 'lock-error';
+      error.className = 'lock-error';
+      error.setAttribute('role', 'status');
+      document.getElementById('locks').after(error);
+    }
+    error.textContent = message;
+  }
+
+  function changed() { saveSettings(); render(); }
+
+  function wireControls() {
+    for (const button of document.querySelectorAll('#pool-buttons button')) {
+      button.addEventListener('click', () => { settings.pool = button.dataset.pool; changed(); });
+    }
+    document.getElementById('bucket-width').addEventListener('change', event => {
+      const width = Number(event.target.value);
+      if (Number.isFinite(width) && width >= 0.5) { settings.bucketWidth = width; changed(); }
+    });
+    document.getElementById('tiles-per-row').addEventListener('change', event => {
+      const count = Math.round(Number(event.target.value));
+      if (count >= 1 && count <= 30) { settings.tilesPerRow = count; changed(); }
+    });
+    document.getElementById('sample-seed').addEventListener('change', event => {
+      const seed = Math.round(Number(event.target.value));
+      if (seed >= 1) { settings.sampleSeed = seed; changed(); }
+    });
+    document.getElementById('next-batch').addEventListener('click', () => { settings.sampleSeed += 1; changed(); });
+    document.getElementById('clear-locks').addEventListener('click', () => { settings.locks = {}; showLockError(''); changed(); });
+  }
+
+  function renderProvenance() {
+    const accepted = wallData.shapes.filter(shape => shape.acceptedByDefault).length;
+    const limits = wallData.defaultLimits;
+    document.getElementById('provenance').innerHTML =
+      `出題器種子 <b>${wallData.seed}</b> · <b>${wallData.shapeCount}</b> 個拼得起來的形狀 · ` +
+      `預設門檻（洞 ≤ ${limits.maximumHoleCount}、捏點 ≤ ${limits.maximumPinchPointCount}、凹角 ≤ ${limits.maximumConcaveAngleCount}、周長 ≤ ${limits.maximumPerimeter}）收 <b>${accepted}</b> 個`;
+  }
+
+  if (!wallData) {
+    document.querySelector('.controls').hidden = true;
+    document.querySelector('.workspace').innerHTML =
+      '<div class="missing-data"><p><b>資料還沒嵌進來。</b>這是範本本身，要先產生資料再組裝：</p>' +
+      '<p>1. <code>dotnet test Tools/DotnetTests --filter "FullyQualifiedName~ThumbnailWallExportTests"</code></p>' +
+      '<p>2. <code>powershell -File Tools/ThumbnailWall/Build-ThumbnailWall.ps1 -OutputPath wall.html</code></p></div>';
+  } else {
+    prepareGeometry(wallData.shapes);
+    renderProvenance();
+    wireControls();
+    render();
+  }
+</script>

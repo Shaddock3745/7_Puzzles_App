@@ -3,7 +3,35 @@ using System.Collections.Generic;
 
 namespace Tangram.Data
 {
-    /// <summary>審美篩選的四個門檻（P2-3）。全部**暫定**，等 P2-5 看過分布再調。</summary>
+    /// <summary>
+    /// 審美門檻的四條規則，可以組合——一個形狀可能同時沒過好幾條。全過就是 <see cref="None"/>。
+    /// </summary>
+    [Flags]
+    public enum AestheticRules
+    {
+        /// <summary>全過。</summary>
+        None = 0,
+
+        /// <summary>洞太多。</summary>
+        HoleCount = 1,
+
+        /// <summary>捏點太多。</summary>
+        PinchPointCount = 2,
+
+        /// <summary>凹角太多。</summary>
+        ConcaveAngleCount = 4,
+
+        /// <summary>周長太長（太細長）。</summary>
+        Perimeter = 8,
+    }
+
+    /// <summary>
+    /// 審美篩選的四個門檻（P2-3，2026-09-10 依 P2-5 的分布重訂）。
+    ///
+    /// <b>「過不過」也只在這裡判斷</b>（<see cref="Violations"/>）。生成器與縮圖牆問的是同一個判斷——
+    /// 2026-09-11 以前判斷寫在生成器的私有方法裡，縮圖牆要標「被哪一條擋」就得另外抄一份四條比較，
+    /// 而兩份各自認定真相的話，門檻一改其中一邊就會安靜地錯。
+    /// </summary>
     public readonly struct AestheticLimits
     {
         /// <summary>洞最多幾個。有洞的形狀難看也難拼。</summary>
@@ -35,6 +63,29 @@ namespace Tangram.Data
             MaximumConcaveAngleCount = maximumConcaveAngleCount;
             MaximumPerimeter = maximumPerimeter;
         }
+
+        /// <summary>
+        /// 這組特徵沒過哪幾條門檻。上限是「最多幾個」，<b>剛好等於上限算過</b>。
+        /// </summary>
+        /// <param name="features">一個形狀的特徵。</param>
+        /// <returns>沒過的規則，可以同時有好幾條；全過回 <see cref="AestheticRules.None"/>。</returns>
+        public AestheticRules Violations(DifficultyFeatures features)
+        {
+            AestheticRules violated = AestheticRules.None;
+            if (features.HoleCount > MaximumHoleCount) violated |= AestheticRules.HoleCount;
+            if (features.PinchPointCount > MaximumPinchPointCount) violated |= AestheticRules.PinchPointCount;
+            if (features.ConcaveAngleCount > MaximumConcaveAngleCount) violated |= AestheticRules.ConcaveAngleCount;
+
+            // 周長 = 七片周長總和 − 藏起來的長度 ×2（DifficultyFeatures 的那條恆等式反解）
+            Scalar perimeter = DifficultyFeatures.TotalPiecePerimeter - features.DoubledHiddenEdgeLength;
+            if (perimeter > MaximumPerimeter) violated |= AestheticRules.Perimeter;
+
+            return violated;
+        }
+
+        /// <param name="features">一個形狀的特徵。</param>
+        /// <returns>四條門檻是否全部通過。</returns>
+        public bool Accepts(DifficultyFeatures features) => Violations(features) == AestheticRules.None;
 
         /// <summary>
         /// 門檻，<b>2026-09-10 依 P2-5 的一千題分布重訂</b>（未篩選池 1733 筆）：
@@ -183,7 +234,7 @@ namespace Tangram.Data
             List<Walk> walks = BoundaryTracer.Trace(piecesBySlot);
             DifficultyFeatures features = DifficultyFeatures.Measure(walks);
 
-            if (!PassesAesthetics(features))
+            if (!limits.Accepts(features))
                 return new GenerationResult(GenerationOutcome.RejectedByAesthetics, null, null, features);
 
             // 存正規化的樣子：同一個形狀不管從哪一種擺法生出來，存進去都一模一樣。
@@ -196,19 +247,6 @@ namespace Tangram.Data
 
             var puzzle = new Puzzle(normalized.Key, normalized.Walks, PuzzleSource.Generated);
             return new GenerationResult(GenerationOutcome.Generated, puzzle, normalized.Pieces, features);
-        }
-
-        /// <param name="features">這個形狀的特徵。</param>
-        /// <returns>四個門檻是否全部通過。</returns>
-        private bool PassesAesthetics(DifficultyFeatures features)
-        {
-            if (features.HoleCount > limits.MaximumHoleCount) return false;
-            if (features.PinchPointCount > limits.MaximumPinchPointCount) return false;
-            if (features.ConcaveAngleCount > limits.MaximumConcaveAngleCount) return false;
-
-            // 周長 = 七片周長總和 − 藏起來的長度 ×2（DifficultyFeatures 的那條恆等式反解）
-            Scalar perimeter = DifficultyFeatures.TotalPiecePerimeter - features.DoubledHiddenEdgeLength;
-            return perimeter <= limits.MaximumPerimeter;
         }
 
         /// <summary>
