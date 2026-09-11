@@ -337,6 +337,8 @@
     { key: 'convexHullFillRatio', label: '凸包填滿率', short: '填滿', integer: false, bucket: 0.05, step: 0.01, decimals: 2 },
     // 最長的邊只會出現幾個固定值（2√2、4、4 + √2、4√2、6……），分段會把不同的值混在一起，所以一個值一列
     { key: 'longestEdgeLength', label: '最長的邊', short: '最長邊', integer: false, distinct: true, step: 0.5, decimals: 2 },
+    // 使用者提議（2026-09-11）：從參考解算、探索用。錯開的接觸會在輪廓上留下台階（露出交界）
+    { key: 'staggeredEdgeContactCount', label: '錯開的接觸', short: '錯開', integer: true },
   ];
   const exactLabelByLongestEdge = new Map();     // 最長邊的列標題用精確值，例如「4 + 2√2」
 
@@ -678,6 +680,7 @@
       ['4√2 的邊', `${shape.longHypotenuseEdgeCount} 條`],
       ['等價交換', swapLabels[shape.equivalentSwap] || shape.equivalentSwap],
       ['凸包填滿率', shape.convexHullFillRatio.toFixed(2)],
+      ['邊接觸（參考解）', `完全 ${shape.fullEdgeContactCount} 處、錯開 ${shape.staggeredEdgeContactCount} 處`],
       ['最長的邊', `${formatExact(shape.longestEdgeExact)}（${shape.longestEdgeLength.toFixed(2)}）` +
         (isLongerThanLongHypotenuse(shape) ? '，比 4√2 長：一定是兩片以上接起來的' : '')],
       ['輪廓環數', shape.rings.length],

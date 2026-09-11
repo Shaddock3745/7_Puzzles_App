@@ -215,6 +215,9 @@ namespace Tangram.Data.Tests
             text.Append(",\"equivalentSwap\":\"").Append(swap).Append('"')
                 .Append(",\"hasEquivalentSwap\":").Append(swap == NoSwap ? 0 : 1)
                 .Append(",\"convexHullFillRatio\":").Append(Number(ConvexHullFillRatioOf(shape.Puzzle.Walks)));
+            (int fullContacts, int staggeredContacts) = EdgeContactCountsOf(shape.ReferenceSolution);
+            text.Append(",\"fullEdgeContactCount\":").Append(fullContacts)
+                .Append(",\"staggeredEdgeContactCount\":").Append(staggeredContacts);
             Scalar longestEdge = LongestEdgeOf(shape.Puzzle.Walks);
             text.Append(",\"longestEdgeLength\":").Append(Number(longestEdge.ToDouble()))
                 .Append(",\"longestEdgeExact\":");
@@ -390,6 +393,87 @@ namespace Tangram.Data.Tests
                 }
             }
             return longest;
+        }
+
+        /// <summary>兩條邊的接觸方式。</summary>
+        private enum EdgeContact
+        {
+            /// <summary>不共線、沒重疊，或只碰到一個點。</summary>
+            None,
+
+            /// <summary>重疊一段，但誰也沒把誰整條包住——會在輪廓上留下一個台階。</summary>
+            Staggered,
+
+            /// <summary>短的那條整條落在長的那條裡面（端點可以重合）。</summary>
+            Full,
+        }
+
+        /// <summary>
+        /// 參考解裡兩片的邊重疊一段以上的地方，分成「完全接觸」與「錯開的」。<b>探索用</b>（2026-09-11 使用者提議）。
+        ///
+        /// 錯開的接觸會在輪廓上留下一個台階，等於露出「這裡是兩片的交界」，是提示；
+        /// 全部完全接觸時接縫藏得乾淨，比較難、也比較好看。
+        /// 預設門檻一千題：平均完全 4.8 處、錯開 1.7 處；全部完全接觸的 10.8%。
+        /// ⚠️ 錯開的處數跟轉角數相關 0.34——有重疊但沒到可以互相取代。
+        /// 這是<b>從解算的</b>，依賴「一題 = 形狀 + 參考解」（`開發進度.md` G2 旁的說明）。
+        /// </summary>
+        /// <param name="pieces">參考解。</param>
+        /// <returns>完全接觸與錯開接觸各有幾處。</returns>
+        private static (int full, int staggered) EdgeContactCountsOf(Placement[] pieces)
+        {
+            int full = 0, staggered = 0;
+            for (int first = 0; first < pieces.Length; first++)
+            {
+                ExactVector2[] firstVertices = pieces[first].Vertices();
+                for (int second = first + 1; second < pieces.Length; second++)
+                {
+                    ExactVector2[] secondVertices = pieces[second].Vertices();
+                    for (int i = 0; i < firstVertices.Length; i++)
+                    {
+                        for (int j = 0; j < secondVertices.Length; j++)
+                        {
+                            EdgeContact contact = ClassifyEdgeContact(
+                                firstVertices[i], firstVertices[(i + 1) % firstVertices.Length],
+                                secondVertices[j], secondVertices[(j + 1) % secondVertices.Length]);
+                            if (contact == EdgeContact.Full) full++;
+                            else if (contact == EdgeContact.Staggered) staggered++;
+                        }
+                    }
+                }
+            }
+            return (full, staggered);
+        }
+
+        /// <summary>
+        /// 兩條邊怎麼接觸。把第二條投影到第一條的方向上比區間——用內積、不做除法，全程精確。
+        /// </summary>
+        /// <param name="firstStart">第一條邊的起點。</param>
+        /// <param name="firstEnd">第一條邊的終點。</param>
+        /// <param name="secondStart">第二條邊的起點。</param>
+        /// <param name="secondEnd">第二條邊的終點。</param>
+        /// <returns>接觸方式。</returns>
+        private static EdgeContact ClassifyEdgeContact(ExactVector2 firstStart, ExactVector2 firstEnd,
+                                                       ExactVector2 secondStart, ExactVector2 secondEnd)
+        {
+            if (!Geometry.Cross(firstStart, firstEnd, secondStart).IsZero
+                || !Geometry.Cross(firstStart, firstEnd, secondEnd).IsZero)
+                return EdgeContact.None;   // 不共線
+
+            ExactVector2 direction = firstEnd - firstStart;
+            Scalar firstLow = Scalar.Zero;
+            Scalar firstHigh = ExactVector2.Dot(direction, direction);
+            Scalar projectedSecondStart = ExactVector2.Dot(secondStart - firstStart, direction);
+            Scalar projectedSecondEnd = ExactVector2.Dot(secondEnd - firstStart, direction);
+            Scalar secondLow = projectedSecondStart < projectedSecondEnd ? projectedSecondStart : projectedSecondEnd;
+            Scalar secondHigh = projectedSecondStart < projectedSecondEnd ? projectedSecondEnd : projectedSecondStart;
+
+            Scalar overlapLow = firstLow > secondLow ? firstLow : secondLow;
+            Scalar overlapHigh = firstHigh < secondHigh ? firstHigh : secondHigh;
+            if (!(overlapLow < overlapHigh)) return EdgeContact.None;   // 沒重疊，或只碰到一個點
+
+            bool secondInsideFirst = secondLow >= firstLow && secondHigh <= firstHigh;
+            bool firstInsideSecond = firstLow >= secondLow && firstHigh <= secondHigh;
+            return secondInsideFirst || firstInsideSecond ? EdgeContact.Full : EdgeContact.Staggered;
         }
 
         /// <summary>參考解裡沒有看得出來的等價交換。</summary>
