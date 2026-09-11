@@ -282,7 +282,7 @@
       <div class="field">
         <span class="field-label">池子</span>
         <div class="segmented" id="pool-buttons" role="group" aria-label="池子">
-          <button type="button" data-pool="accepted">預設門檻收的</button>
+          <button type="button" data-pool="accepted">會出的題（門檻都過）</button>
           <button type="button" data-pool="all">全部（含被擋掉的）</button>
         </div>
       </div>
@@ -301,6 +301,12 @@
         <span class="range-hint" id="solution-legend" hidden>大三角淺灰、平行四邊形藍色</span>
       </div>
     </div>
+    <div class="control-row">
+      <span class="field-label">暫定難度的權重</span>
+      <div class="locks" id="difficulty-weights"></div>
+      <button type="button" class="text-button" id="reset-weights">還原預設</button>
+    </div>
+    <div class="summary" id="difficulty-formula"></div>
     <div class="control-row">
       <span class="field-label">鎖住其他特徵</span>
       <div class="locks" id="locks"></div>
@@ -321,6 +327,8 @@
 
   // ── 特徵定義：key 必須跟匯出程式的欄位名稱一致 ──
   const features = [
+    // 暫定難度不在資料檔裡，由頁面用下面的公式算（computeDifficulty），權重可以在控制列調
+    { key: 'provisionalDifficulty', label: '暫定難度', short: '難度', integer: false, bucket: 100, step: 50, decimals: 0 },
     { key: 'concaveAngleCount', label: '凹角數', short: '凹角', integer: true },
     { key: 'directionVarietyCount', label: '邊方向種類', short: '方向', integer: true },
     // 小數的特徵各有自己的分段寬度（bucket）、鎖定的間距（step）與顯示位數（decimals）——
@@ -339,8 +347,148 @@
     { key: 'longestEdgeLength', label: '最長的邊', short: '最長邊', integer: false, distinct: true, step: 0.5, decimals: 2 },
     // 使用者提議（2026-09-11）：從參考解算、探索用。錯開的接觸會在輪廓上留下台階（露出交界）
     { key: 'staggeredEdgeContactCount', label: '錯開的接觸', short: '錯開', integer: true },
+    // 使用者提議（2026-09-11，取代「藏起的頂點總數」）：大三角 ×2 與平行四邊形這三片裡，有幾片只露出一個頂點（或完全沒露）
+    { key: 'keyPiecesExposingOneVertex', label: '只露一個頂點的片數', short: '只露一點', integer: true },
+    // 使用者提議（2026-09-11）：外框的某個凸角只放得進一種擺法 → 那片一定在那裡。只看形狀，不看參考解
+    { key: 'forcedPieceCount', label: '被外框逼出來的片數', short: '逼出', integer: true },
+    // 使用者在 #219 發現（2026-09-11）：參考解裡兩片大三角共用整條邊、拼成一大塊，意外地好拼
+    { key: 'largeTrianglesJoined', label: '兩片大三角拼成一塊', short: '大三角合體', integer: true },
   ];
   const exactLabelByLongestEdge = new Map();     // 最長邊的列標題用精確值，例如「4 + 2√2」
+
+  // ── 暫定難度（探索用，2026-09-11）──
+  // 使用者看完對照牆後覺得有幫助的五個特徵，方向全部是「越緊湊、接縫藏得越乾淨越難」。
+  // 算法：每個特徵換成「離平均幾個標準差」（平均與標準差只拿預設門檻收的形狀算），
+  //       方向統一成越大越難，照權重加總，再換算到 1200 為中心、標準差 200 的尺度。
+  // 除以加總後的標準差：權重只改變排序，不改變尺度——調權重時難度的範圍不會跟著暴漲暴跌。
+  // ⚠️ 這不是 P2-6 的正式公式。正式版會寫成 C#，權重放在 DifficultyWeights.json
+  // 2026-09-11 第二版（使用者看過第一版之後）：
+  // · 凸包填滿率本身的影響不明顯，但拿「≥ 0.65」當門檻，其他因素會更有感 → 改成門檻，權重預設 0（還留著可以調回來）
+  // · 「藏起的頂點總數」改成「三片裡有幾片只露出一個頂點」
+  const difficultyTerms = [
+    // 預設值是使用者 2026-09-11 在牆上掃過、覺得有鑑別度的那一組（每項亂抖 ±0.05 排序幾乎不變，小數不用再調）
+    { key: 'keyPiecesExposingOneVertex', label: '只露一個頂點的片數', direction: 1, defaultWeight: 0.15 },
+    { key: 'perimeter', label: '周長', direction: -1, defaultWeight: 0.35 },
+    { key: 'cornerCount', label: '轉角數', direction: -1, defaultWeight: 0.25 },
+    { key: 'staggeredEdgeContactCount', label: '錯開的接觸', direction: -1, defaultWeight: 0.10 },
+    { key: 'convexHullFillRatio', label: '凸包填滿率', direction: 1, defaultWeight: 0 },
+    // 越多越簡單：外框上有塊只放得進小三角的凸出，那片一眼就知道
+    { key: 'forcedPieceCount', label: '被外框逼出來的片數', direction: -1, defaultWeight: 0.15 },
+    // 拼成一塊 → 簡單。0.15 是 2026-09-12 使用者定的：合體題的平均回到整池平均附近（0 時高估約 170 分）
+    { key: 'largeTrianglesJoined', label: '兩片大三角拼成一塊', direction: -1, defaultWeight: 0.15 },
+  ];
+
+  // 凸包填滿率門檻：跟預設的四個審美門檻同一個角色——低於它的不出題。
+  // ⚠️ 它同時決定「難度的母體」：各特徵的平均與標準差只拿過了所有門檻的形狀算，
+  //    這樣門檻內那些題目之間的差別，才會完整反映在分數上
+  function fillGateOf() {
+    return Number.isFinite(settings.fillGate) && settings.fillGate > 0 ? settings.fillGate : null;
+  }
+  function passesFillGate(shape) {
+    const gate = fillGateOf();
+    return gate === null || shape.convexHullFillRatio >= gate - 1e-9;
+  }
+  function isPlayable(shape) { return shape.acceptedByDefault && passesFillGate(shape); }
+  function blockedRulesOf(shape) {
+    const rules = shape.violations.map(rule => violationLabels[rule]);
+    if (!passesFillGate(shape)) rules.push('填滿');
+    return rules;
+  }
+  const difficultyCenter = 1200, difficultySpread = 200;
+  const difficultyStatistics = { terms: {}, weightedMean: 0, weightedDeviation: 1 };
+
+  function weightOf(term) {
+    const stored = settings.difficultyWeights ? settings.difficultyWeights[term.key] : undefined;
+    return Number.isFinite(stored) ? stored : term.defaultWeight;
+  }
+  function standardizedTerm(shape, term) {
+    const statistics = difficultyStatistics.terms[term.key];
+    return term.direction * (shape[term.key] - statistics.mean) / statistics.deviation;
+  }
+  function weightedSum(shape) {
+    return difficultyTerms.reduce((total, term) => total + weightOf(term) * standardizedTerm(shape, term), 0);
+  }
+  function meanAndDeviation(values) {
+    const mean = values.reduce((total, value) => total + value, 0) / values.length;
+    const variance = values.reduce((total, value) => total + (value - mean) ** 2, 0) / values.length;
+    return { mean, deviation: Math.sqrt(variance) || 1 };
+  }
+  function computeDifficulty(shapes) {
+    const reference = shapes.filter(isPlayable);
+    for (const term of difficultyTerms) {
+      difficultyStatistics.terms[term.key] = meanAndDeviation(reference.map(shape => shape[term.key]));
+    }
+    const weighted = meanAndDeviation(reference.map(weightedSum));
+    difficultyStatistics.weightedMean = weighted.mean;
+    difficultyStatistics.weightedDeviation = weighted.deviation;
+    for (const shape of shapes) {
+      shape.provisionalDifficulty = difficultyCenter + difficultySpread * (weightedSum(shape) - weighted.mean) / weighted.deviation;
+    }
+  }
+  // 檢視窗用：每個特徵貢獻了幾分。加起來就是「難度 − 1200」（差一個取平均的常數，實務上是 0）
+  function difficultyRows(shape) {
+    const rows = [['暫定難度', `${Math.round(shape.provisionalDifficulty)}（1200 是平均）`]];
+    for (const term of difficultyTerms) {
+      const standardized = standardizedTerm(shape, term);
+      const points = difficultySpread * weightOf(term) * standardized / difficultyStatistics.weightedDeviation;
+      const feature = featureByKey[term.key];
+      rows.push([`　${term.label}`,
+        `${formatValue(feature, shape[term.key])}（${standardized >= 0 ? '+' : ''}${standardized.toFixed(1)}σ）→ ${points >= 0 ? '+' : ''}${Math.round(points)}`]);
+    }
+    return rows;
+  }
+  function renderDifficultyWeights() {
+    const container = document.getElementById('difficulty-weights');
+    container.replaceChildren();
+    for (const term of difficultyTerms) {
+      const box = document.createElement('div');
+      box.className = 'lock' + (weightOf(term) !== term.defaultWeight ? ' is-active' : '');
+      const label = document.createElement('span');
+      label.className = 'field-label';
+      label.textContent = `${term.label}${term.direction > 0 ? '（越大越難）' : '（越小越難）'}`;
+      const input = numberInput(weightOf(term), 0.05, false, `${term.label}的權重`);
+      input.min = '0';
+      input.max = '1';
+      input.addEventListener('change', () => {
+        const weight = Number(input.value);
+        if (!Number.isFinite(weight) || weight < 0) return;
+        settings.difficultyWeights = Object.assign({}, settings.difficultyWeights, { [term.key]: weight });
+        computeDifficulty(wallData.shapes);
+        changed();
+      });
+      box.append(label, input);
+      container.appendChild(box);
+    }
+
+    // 凸包填滿率門檻：跟權重放在一起，因為它也決定難度的母體
+    const gateBox = document.createElement('div');
+    gateBox.className = 'lock' + (fillGateOf() !== null ? ' is-active' : '');
+    const gateLabel = document.createElement('span');
+    gateLabel.className = 'field-label';
+    gateLabel.textContent = '凸包填滿率門檻（低於它的不出題，0＝不設）';
+    const gateInput = numberInput(fillGateOf() === null ? 0 : fillGateOf(), 0.01, false, '凸包填滿率門檻');
+    gateInput.min = '0';
+    gateInput.max = '1';
+    gateInput.addEventListener('change', () => {
+      const gate = Number(gateInput.value);
+      if (!Number.isFinite(gate) || gate < 0 || gate > 1) return;
+      settings.fillGate = gate;
+      computeDifficulty(wallData.shapes);
+      changed();
+    });
+    gateBox.append(gateLabel, gateInput);
+    container.appendChild(gateBox);
+    document.getElementById('difficulty-formula').textContent =
+      // 正負號照方向寫出來：只寫「＋ 0.15 × 周長」會讓人以為周長越長越難，實際上是反過來
+      // 權重 0 的不寫進去（填滿率現在是門檻，列在公式裡反而像它還在算分）
+      `難度 = 1200 + 200 × 標準化的（${difficultyTerms.filter(term => weightOf(term) > 0).map((term, index) => {
+        const sign = term.direction > 0 ? (index === 0 ? '' : ' ＋ ') : (index === 0 ? '−' : ' − ');
+        return `${sign}${weightOf(term).toFixed(2)} × ${term.label}`;
+      }).join('')}）。` +
+      '每個特徵先換成「離平均幾個標準差」；帶負號的那幾個是越小越難。' +
+      (fillGateOf() === null ? '' : `平均與標準差只拿凸包填滿率 ≥ ${fillGateOf()} 的題目算。`) +
+      '要檢驗準不準：分列選「暫定難度」，看從上到下是不是越來越難。';
+  }
 
   // 最長邊有沒有比 4√2（單片最長的邊，大三角斜邊）還長。
   // ⚠️ 一定要用精確值 [n, m] 比：n + m√2 > 4√2 ⇔ n + (m − 4)√2 > 0。
@@ -358,16 +506,18 @@
   };
   const violationLabels = { HoleCount: '洞', PinchPointCount: '捏點', ConcaveAngleCount: '凹角', Perimeter: '周長' };
 
-  // 開場就是一個「控制變因」的對照：依凹角分列，周長鎖在 38～42
-  // （P2-5 的篩選後池子裡，凹角 × 周長的相關係數是 0.44，不鎖的話看到的差別一半是周長）
+  // 開場就依暫定難度分列、不鎖，直接看「從上到下是不是越來越難」（2026-09-11 改）。
+  // 原本開場是「依凹角分列、周長鎖 38～42」的控制變因對照——那個用法仍然可以在控制列自己設
   const defaultSettings = {
-    rowFeature: 'concaveAngleCount',
+    rowFeature: 'provisionalDifficulty',
     bucketWidths: {},   // 使用者改過的分段寬度，依特徵分開存；沒改過就用特徵定義裡的 bucket
     pool: 'accepted',
     tilesPerRow: 8,
     sampleSeed: 1,
-    locks: { perimeter: { minimum: 38, maximum: 42 } },
+    locks: {},
     showSolution: false,
+    difficultyWeights: {},   // 使用者改過的暫定難度權重；沒改過就用 difficultyTerms 裡的預設值
+    fillGate: 0.6,           // 凸包填滿率門檻；0 或留空＝不設。2026-09-12 從 0.65 放寬：簡單題約 4 倍、難題數量不變
   };
   const storageKey = 'tangram-feature-wall-settings';
   let settings = loadSettings();
@@ -546,7 +696,7 @@
   function render() {
     renderControls();
     const shapes = wallData.shapes;
-    const pool = settings.pool === 'accepted' ? shapes.filter(shape => shape.acceptedByDefault) : shapes;
+    const pool = settings.pool === 'accepted' ? shapes.filter(isPlayable) : shapes;
     const matching = pool.filter(passesLocks);
 
     document.getElementById('summary').innerHTML =
@@ -622,12 +772,12 @@
     tile.dataset.index = shape.index;
     tile.setAttribute('aria-label',
       `第 ${shape.index} 個形狀：凹角 ${shape.concaveAngleCount}、方向 ${shape.directionVarietyCount}、周長 ${shape.perimeter.toFixed(1)}` +
-      (shape.acceptedByDefault ? '' : `，被預設門檻擋掉（${shape.violations.map(rule => violationLabels[rule]).join('、')}）`));
+      (isPlayable(shape) ? '' : `，被門檻擋掉（${blockedRulesOf(shape).join('、')}）`));
     tile.appendChild(shapeSvg(shape, false));
-    if (!shape.acceptedByDefault) {
+    if (!isPlayable(shape)) {
       const flag = document.createElement('span');
       flag.className = 'tile-flag';
-      flag.textContent = shape.violations.map(rule => violationLabels[rule]).join('·');
+      flag.textContent = blockedRulesOf(shape).join('·');
       tile.appendChild(flag);
     }
     const caption = document.createElement('span');
@@ -662,14 +812,15 @@
     inspector.appendChild(shapeSvg(shape, true));
 
     const verdict = document.createElement('div');
-    verdict.className = 'verdict' + (shape.acceptedByDefault ? '' : ' is-rejected');
-    verdict.textContent = shape.acceptedByDefault
-      ? '預設門檻會收：玩家會碰到這種形狀。'
-      : `預設門檻會擋掉，沒過的是：${shape.violations.map(rule => violationLabels[rule]).join('、')}。`;
+    verdict.className = 'verdict' + (isPlayable(shape) ? '' : ' is-rejected');
+    verdict.textContent = isPlayable(shape)
+      ? '門檻都過：玩家會碰到這種形狀。'
+      : `會被門檻擋掉，沒過的是：${blockedRulesOf(shape).join('、')}。`;
     inspector.appendChild(verdict);
 
     const list = document.createElement('dl');
     const rows = [
+      ...difficultyRows(shape),
       ['凹角數', shape.concaveAngleCount],
       ['邊方向種類', shape.directionVarietyCount],
       ['周長', shape.perimeter.toFixed(4)],
@@ -681,6 +832,10 @@
       ['等價交換', swapLabels[shape.equivalentSwap] || shape.equivalentSwap],
       ['凸包填滿率', shape.convexHullFillRatio.toFixed(2)],
       ['邊接觸（參考解）', `完全 ${shape.fullEdgeContactCount} 處、錯開 ${shape.staggeredEdgeContactCount} 處`],
+      ['三片露出的頂點', keyPieceExposureText(shape)],
+      ['被外框逼出來的片', shape.forcedPieceCount === 0 ? '沒有' :
+        `${shape.forcedPieceCount} 片：${shape.forcedPieceKinds.map(kind => forcedKindLabels[kind] || kind).join('、')}`],
+      ['兩片大三角（參考解）', largeTriangleUnionLabels[shape.largeTriangleUnion] || '沒有共用整條邊'],
       ['最長的邊', `${formatExact(shape.longestEdgeExact)}（${shape.longestEdgeLength.toFixed(2)}）` +
         (isLongerThanLongHypotenuse(shape) ? '，比 4√2 長：一定是兩片以上接起來的' : '')],
       ['輪廓環數', shape.rings.length],
@@ -725,6 +880,7 @@
     document.getElementById('solution-toggle').textContent = settings.showSolution ? '隱藏分片線' : '顯示分片線';
     document.getElementById('solution-legend').hidden = !settings.showSolution;
     renderLocks();
+    renderDifficultyWeights();
   }
 
   function renderLocks() {
@@ -792,7 +948,7 @@
     error.textContent = message;
   }
 
-  function changed() { saveSettings(); render(); }
+  function changed() { saveSettings(); renderProvenance(); render(); }
 
   function wireControls() {
     for (const button of document.querySelectorAll('#pool-buttons button')) {
@@ -815,15 +971,36 @@
     });
     document.getElementById('next-batch').addEventListener('click', () => { settings.sampleSeed += 1; changed(); });
     document.getElementById('solution-toggle').addEventListener('click', () => { settings.showSolution = !settings.showSolution; changed(); });
+    document.getElementById('reset-weights').addEventListener('click', () => {
+      settings.difficultyWeights = {};
+      computeDifficulty(wallData.shapes);
+      changed();
+    });
     document.getElementById('clear-locks').addEventListener('click', () => { settings.locks = {}; showLockError(''); changed(); });
   }
 
   function renderProvenance() {
     const accepted = wallData.shapes.filter(shape => shape.acceptedByDefault).length;
+    const playable = wallData.shapes.filter(isPlayable).length;
     const limits = wallData.defaultLimits;
+    const gate = fillGateOf();
     document.getElementById('provenance').innerHTML =
       `出題器種子 <b>${wallData.seed}</b> · <b>${wallData.shapeCount}</b> 個拼得起來的形狀 · ` +
-      `預設門檻（洞 ≤ ${limits.maximumHoleCount}、捏點 ≤ ${limits.maximumPinchPointCount}、凹角 ≤ ${limits.maximumConcaveAngleCount}、周長 ≤ ${limits.maximumPerimeter}）收 <b>${accepted}</b> 個`;
+      `預設門檻（洞 ≤ ${limits.maximumHoleCount}、捏點 ≤ ${limits.maximumPinchPointCount}、凹角 ≤ ${limits.maximumConcaveAngleCount}、周長 ≤ ${limits.maximumPerimeter}）收 <b>${accepted}</b> 個` +
+      (gate === null ? '' : ` · 再加凸包填滿率 ≥ ${gate} 剩 <b>${playable}</b> 個`);
+  }
+
+  // 檢視窗用：三片各露出幾個頂點（照參考解的槽順序，大三角、大三角、平行四邊形不一定照這個次序）
+  const forcedKindLabels = {
+    LargeTriangle: '大三角', MediumTriangle: '中三角', SmallTriangle: '小三角', Square: '正方形', Parallelogram: '平行四邊形',
+  };
+  const largeTriangleUnionLabels = {
+    square: '拼成正方形（共用斜邊）', triangle: '拼成更大的三角形（共用一條股）', parallelogram: '拼成平行四邊形（共用一條股）',
+  };
+  function keyPieceExposureText(shape) {
+    const counts = shape.keyPieceExposedVertexCounts || [];
+    return `各露 ${counts.join('、')} 個 → 只露 ≤ 1 個的有 ${shape.keyPiecesExposingOneVertex} 片` +
+      `（合計藏起 ${shape.hiddenKeyVertexCount} / 10）`;
   }
 
   if (!wallData) {
@@ -837,6 +1014,7 @@
     for (const shape of wallData.shapes) {
       exactLabelByLongestEdge.set(distinctKeyOf(shape.longestEdgeLength), formatExact(shape.longestEdgeExact));
     }
+    computeDifficulty(wallData.shapes);   // 一定要在第一次 render 之前：分列與鎖定都會讀 provisionalDifficulty
     renderProvenance();
     wireControls();
     render();
