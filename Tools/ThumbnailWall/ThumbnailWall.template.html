@@ -33,6 +33,9 @@
     --tile-outline: #D9DEE6;
     --tile-warning: #E3A33A;
     --tile-selected: #8FC1EA;
+    --tile-seam: #C4CBD6;
+    --tile-piece-large: #9AA3B0;
+    --tile-piece-parallelogram: #6D8EAF;
     --font-label: "Barlow Semi Condensed", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
     --font-body: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", sans-serif;
     --font-data: "IBM Plex Mono", "Consolas", monospace;
@@ -142,6 +145,7 @@
     white-space: nowrap;
   }
   .plain-button:hover { border-color: var(--accent); color: var(--accent); }
+  .plain-button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .text-button { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font-size: 12px; }
   .text-button:hover { text-decoration: underline; }
 
@@ -163,9 +167,21 @@
   .summary { font-size: 13px; color: var(--ink-muted); }
   .summary b { color: var(--ink); font-family: var(--font-data); font-weight: 500; font-variant-numeric: tabular-nums; }
 
-  /* ── 主體：牆 + 檢視窗 ── */
-  .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
-  @media (max-width: 1100px) { .workspace { grid-template-columns: minmax(0, 1fr); } .inspector { order: -1; } }
+  /* ── 主體：牆 + 檢視窗 ──
+     ⚠️ 檢視窗是 sticky，捲動時它必須待在「自己的那一欄」裡。
+     第一版在 1100px 以下改成單欄、檢視窗排到最上面卻仍然 sticky，
+     結果往下捲時牆的列從它上面滑過去，放大圖整個被蓋住（2026-09-11 使用者回報，視窗約 780px）。
+     現在兩欄一路撐到 720px；更窄（手機）才改單欄，而且那時檢視窗不再 sticky。 */
+  .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; }
+  @media (max-width: 900px) {
+    .wall-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+    .row-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+  }
+  @media (max-width: 720px) {
+    .workspace { grid-template-columns: minmax(0, 1fr); }
+    .inspector { order: -1; position: static; max-height: none; }
+    .inspector svg { max-width: 280px; }
+  }
 
   .wall { display: grid; gap: 2px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   .wall-row { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 14px; padding: 12px 14px; background: var(--surface); }
@@ -216,6 +232,9 @@
   .inspector {
     position: sticky;
     top: 12px;
+    z-index: 1;
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: 8px;
@@ -276,6 +295,11 @@
         <input type="number" id="sample-seed" min="1" step="1">
         <button type="button" class="plain-button" id="next-batch">換一批</button>
       </div>
+      <div class="field">
+        <span class="field-label">參考解</span>
+        <button type="button" class="plain-button" id="solution-toggle" aria-pressed="false">顯示分片線</button>
+        <span class="range-hint" id="solution-legend" hidden>大三角淺灰、平行四邊形藍色</span>
+      </div>
     </div>
     <div class="control-row">
       <span class="field-label">鎖住其他特徵</span>
@@ -302,7 +326,18 @@
     { key: 'perimeter', label: '周長', short: '周長', integer: false },
     { key: 'pinchPointCount', label: '捏點數', short: '捏點', integer: true },
     { key: 'holeCount', label: '洞數', short: '洞', integer: true },
+    // 探索用（2026-09-11）：還不是正式的難度特徵，見匯出程式 CornerCountOf 的說明
+    { key: 'cornerCount', label: '轉角數', short: '轉角', integer: true },
+    // 以下兩個也是探索用：4√2 只看輪廓；等價交換要看參考解（「一題 = 形狀 + 存下來的參考解」，2026-09-11 定案）
+    { key: 'longHypotenuseEdgeCount', label: '4√2 邊數', short: '4√2', integer: true },
+    { key: 'hasEquivalentSwap', label: '等價交換', short: '交換', integer: true },
   ];
+  const swapLabels = {
+    None: '參考解裡看不出來（不代表只有一種解）',
+    Square: '有：兩個小三角拼成正方形，跟正方形對調就是另一種解',
+    MediumTriangle: '有：兩個小三角拼成中三角，跟中三角對調就是另一種解',
+    Parallelogram: '有：兩個小三角拼成平行四邊形，跟平行四邊形對調就是另一種解',
+  };
   const violationLabels = { HoleCount: '洞', PinchPointCount: '捏點', ConcaveAngleCount: '凹角', Perimeter: '周長' };
 
   // 開場就是一個「控制變因」的對照：依凹角分列，周長鎖在 38～42
@@ -314,6 +349,7 @@
     tilesPerRow: 8,
     sampleSeed: 1,
     locks: { perimeter: { minimum: 38, maximum: 42 } },
+    showSolution: false,
   };
   const storageKey = 'tangram-feature-wall-settings';
   let settings = loadSettings();
@@ -404,6 +440,21 @@
     path.setAttribute('vector-effect', 'non-scaling-stroke');
     path.setAttribute('stroke-linejoin', 'miter');
     svg.appendChild(path);
+    if (settings.showSolution && shape.referenceSolution) {
+      // 參考解的分片線：跟輪廓同一個座標系、同一個比例尺。大三角與平行四邊形另外上色，判斷「暴不暴露」用
+      const pieceFills = { LargeTriangle: 'var(--tile-piece-large)', Parallelogram: 'var(--tile-piece-parallelogram)' };
+      for (const piece of shape.referenceSolution) {
+        const polygon = document.createElementNS(namespace, 'polygon');
+        polygon.setAttribute('points', piece.vertices.map(([x, y]) =>
+          `${(50 + (x - shape.centerX) * commonScale).toFixed(2)},${(50 - (y - shape.centerY) * commonScale).toFixed(2)}`).join(' '));
+        polygon.setAttribute('fill', pieceFills[piece.kind] || 'none');
+        polygon.setAttribute('stroke', 'var(--tile-seam)');
+        polygon.setAttribute('stroke-width', withScaleBar ? '0.8' : '1');
+        polygon.setAttribute('vector-effect', 'non-scaling-stroke');
+        polygon.setAttribute('stroke-linejoin', 'round');
+        svg.appendChild(polygon);
+      }
+    }
     if (withScaleBar) {
       // 比例尺：小三角的股長 = 2 個模型單位
       const barLength = 2 * commonScale;
@@ -594,6 +645,9 @@
       ['藏起來的邊長 ×2', formatExact(shape.doubledHiddenEdgeLength)],
       ['捏點數', shape.pinchPointCount],
       ['洞數', shape.holeCount],
+      ['轉角數', `${shape.cornerCount}（藏起來的頂點 ${23 - shape.cornerCount}）`],
+      ['4√2 的邊', `${shape.longHypotenuseEdgeCount} 條`],
+      ['等價交換', swapLabels[shape.equivalentSwap] || shape.equivalentSwap],
       ['輪廓環數', shape.rings.length],
       ['PuzzleKey', shape.key],
     ];
@@ -624,6 +678,9 @@
     document.getElementById('bucket-width').value = settings.bucketWidth;
     document.getElementById('tiles-per-row').value = settings.tilesPerRow;
     document.getElementById('sample-seed').value = settings.sampleSeed;
+    document.getElementById('solution-toggle').setAttribute('aria-pressed', settings.showSolution ? 'true' : 'false');
+    document.getElementById('solution-toggle').textContent = settings.showSolution ? '隱藏分片線' : '顯示分片線';
+    document.getElementById('solution-legend').hidden = !settings.showSolution;
     renderLocks();
   }
 
@@ -711,6 +768,7 @@
       if (seed >= 1) { settings.sampleSeed = seed; changed(); }
     });
     document.getElementById('next-batch').addEventListener('click', () => { settings.sampleSeed += 1; changed(); });
+    document.getElementById('solution-toggle').addEventListener('click', () => { settings.showSolution = !settings.showSolution; changed(); });
     document.getElementById('clear-locks').addEventListener('click', () => { settings.locks = {}; showLockError(''); changed(); });
   }
 

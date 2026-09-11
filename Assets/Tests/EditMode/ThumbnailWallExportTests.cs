@@ -209,6 +209,11 @@ namespace Tangram.Data.Tests
                 .Append(",\"directionVarietyCount\":").Append(features.DirectionVarietyCount)
                 .Append(",\"pinchPointCount\":").Append(features.PinchPointCount)
                 .Append(",\"holeCount\":").Append(features.HoleCount)
+                .Append(",\"cornerCount\":").Append(CornerCountOf(shape.Puzzle.Walks))
+                .Append(",\"longHypotenuseEdgeCount\":").Append(LongHypotenuseEdgeCountOf(shape.Puzzle.Walks));
+            string swap = EquivalentSwapOf(shape.ReferenceSolution);
+            text.Append(",\"equivalentSwap\":\"").Append(swap).Append('"')
+                .Append(",\"hasEquivalentSwap\":").Append(swap == NoSwap ? 0 : 1)
                 .Append(",\"perimeter\":").Append(Number(perimeter.ToDouble()))
                 .Append(",\"doubledHiddenEdgeLength\":");
             AppendExactScalar(text, features.DoubledHiddenEdgeLength);
@@ -245,9 +250,99 @@ namespace Tangram.Data.Tests
                 AppendExactScalar(text, piece.Translation.X);
                 text.Append(",\"y\":");
                 AppendExactScalar(text, piece.Translation.Y);
-                text.Append('}');
+
+                // 這一片在世界座標的頂點（浮點，只給牆上畫分片線用）。跟輪廓同一個座標系——生成器保證參考解與題目一起正規化
+                text.Append(",\"vertices\":[");
+                ExactVector2[] pieceVertices = piece.Vertices();
+                for (int vertexIndex = 0; vertexIndex < pieceVertices.Length; vertexIndex++)
+                {
+                    if (vertexIndex > 0) text.Append(',');
+                    text.Append('[').Append(Number(pieceVertices[vertexIndex].X.ToDouble()))
+                        .Append(',').Append(Number(pieceVertices[vertexIndex].Y.ToDouble())).Append(']');
+                }
+                text.Append("]}");
             }
             text.Append("]}");
+        }
+
+        /// <summary>
+        /// 輪廓上真正的轉角數。<b>探索用</b>（2026-09-11 使用者提議「總頂點數」）。
+        ///
+        /// 七片的頂點加起來固定是 23 個，所以「被藏起來或合併掉的頂點」= 23 − 這個數，兩者是同一件事。
+        /// 捏點處共線的中繼點（相鄰兩條邊同方向）不算——玩家看不到那個點。
+        ///
+        /// ⚠️ <b>還不是正式的難度特徵</b>。P2-6 決定採用的話要搬進 <see cref="DifficultyFeatures"/>，
+        /// 並補上「對 16 種整體變換不變」的測試，不要留在這裡——特徵只准有一個家。
+        /// ⚠️ 它跟凹角數的相關係數是 0.88（預設門檻收的形狀），而且方向相反：
+        /// 凹角多 → 轉角多 → 藏起來的頂點少。放進公式前要先想清楚兩者誰代表「難」。
+        /// </summary>
+        /// <param name="walks">正規化後的輪廓環。</param>
+        /// <returns>所有環的轉角數加總。</returns>
+        private static int CornerCountOf(Walk[] walks)
+        {
+            int corners = 0;
+            foreach (Walk walk in walks)
+            {
+                Edge[] edges = walk.Edges;
+                for (int index = 0; index < edges.Length; index++)
+                {
+                    int incoming = (index - 1 + edges.Length) % edges.Length;
+                    if (edges[index].Direction != edges[incoming].Direction) corners++;
+                }
+            }
+            return corners;
+        }
+
+        /// <summary>
+        /// 輪廓上長度剛好是 4√2 的邊有幾條。<b>探索用</b>（2026-09-11 使用者提議「特殊邊長」）。
+        ///
+        /// 單片的邊裡只有大三角的斜邊是 4√2，所以它通常是「大三角放這裡」的提示。
+        /// ⚠️ 但它也可能是兩片接起來的（例如小三角斜邊 2√2 + 平行四邊形長邊 2√2），那時就不是提示而是陷阱。
+        /// 只看輪廓就能算，不需要解。其他長度（2、2√2、4）佔了輪廓邊的七成以上，幾乎每題都有，所以只挑這一個。
+        /// </summary>
+        /// <param name="walks">正規化後的輪廓環。</param>
+        /// <returns>長度剛好 4√2 的輪廓邊數。</returns>
+        private static int LongHypotenuseEdgeCountOf(Walk[] walks)
+        {
+            var longHypotenuse = new Scalar(0, 4);
+            int count = 0;
+            foreach (Walk walk in walks)
+                foreach (Edge edge in walk.Edges)
+                    if (edge.Length == longHypotenuse) count++;
+            return count;
+        }
+
+        /// <summary>參考解裡沒有看得出來的等價交換。</summary>
+        private const string NoSwap = "None";
+
+        /// <summary>
+        /// 參考解裡兩個小三角有沒有剛好拼成另一片的形狀。<b>探索用</b>（2026-09-11 使用者提議「等價交換」）。
+        ///
+        /// 兩個小三角共用一整條邊時，拼出來的必定是正方形、中三角或平行四邊形之一——
+        /// 那一片本身也能被兩個小三角填滿，所以<b>把這一對跟那一片對調就是另一種合法的解</b>。
+        /// 有 = 這個形狀保證不只一種解（容錯高）；⚠️ 沒有 ≠ 只有一種解，別種交換沒算進來。
+        /// </summary>
+        /// <param name="pieces">參考解。</param>
+        /// <returns><c>None</c>、<c>Square</c>、<c>MediumTriangle</c> 或 <c>Parallelogram</c>。</returns>
+        private static string EquivalentSwapOf(Placement[] pieces)
+        {
+            var smallTriangles = new List<Placement>(2);
+            foreach (Placement piece in pieces)
+                if (piece.Kind == PieceKind.SmallTriangle) smallTriangles.Add(piece);
+            if (smallTriangles.Count != 2) return NoSwap;
+
+            // 共用兩個頂點 = 共用一整條邊（三角形的任兩個頂點就是一條邊）
+            var firstVertices = new HashSet<ExactVector2>(smallTriangles[0].Vertices());
+            int shared = 0;
+            foreach (ExactVector2 vertex in smallTriangles[1].Vertices())
+                if (firstVertices.Contains(vertex)) shared++;
+            if (shared != 2) return NoSwap;
+
+            Edge[] edges = BoundaryTracer.Trace(smallTriangles)[0].Edges;
+            if (edges.Length == 3) return "MediumTriangle";
+            foreach (Edge edge in edges)
+                if (edge.Length != Scalar.FromInteger(2)) return "Parallelogram";
+            return "Square";
         }
 
         /// <summary>沒過的門檻寫成字串陣列，順序固定，全過就是空陣列。</summary>
