@@ -214,7 +214,12 @@ namespace Tangram.Data.Tests
             string swap = EquivalentSwapOf(shape.ReferenceSolution);
             text.Append(",\"equivalentSwap\":\"").Append(swap).Append('"')
                 .Append(",\"hasEquivalentSwap\":").Append(swap == NoSwap ? 0 : 1)
-                .Append(",\"perimeter\":").Append(Number(perimeter.ToDouble()))
+                .Append(",\"convexHullFillRatio\":").Append(Number(ConvexHullFillRatioOf(shape.Puzzle.Walks)));
+            Scalar longestEdge = LongestEdgeOf(shape.Puzzle.Walks);
+            text.Append(",\"longestEdgeLength\":").Append(Number(longestEdge.ToDouble()))
+                .Append(",\"longestEdgeExact\":");
+            AppendExactScalar(text, longestEdge);
+            text.Append(",\"perimeter\":").Append(Number(perimeter.ToDouble()))
                 .Append(",\"doubledHiddenEdgeLength\":");
             AppendExactScalar(text, features.DoubledHiddenEdgeLength);
 
@@ -310,6 +315,81 @@ namespace Tangram.Data.Tests
                 foreach (Edge edge in walk.Edges)
                     if (edge.Length == longHypotenuse) count++;
             return count;
+        }
+
+        /// <summary>
+        /// 凸包填滿率：形狀面積 ÷ 凸包面積。<b>探索用</b>（2026-09-11 使用者提議「越接近圓越難」）。
+        ///
+        /// 1 = 完全凸；越小代表缺口越大、伸出去的手臂越多。「中間一大坨、只露出幾個小尖角」就是填滿率高。
+        /// 凸包用精確座標算（單調鏈），最後才轉成浮點。形狀面積恆為 32。
+        /// ⚠️ 跟周長的相關係數 −0.58（預設門檻收的形狀）：面積固定，周長短本來就代表胖，會重疊一部分但沒有到可以互相取代。
+        /// </summary>
+        /// <param name="walks">正規化後的輪廓環（洞環的頂點一定在凸包裡，一起丟進去無妨）。</param>
+        /// <returns>0 到 1 之間的填滿率。</returns>
+        private static double ConvexHullFillRatioOf(Walk[] walks)
+        {
+            var points = new List<ExactVector2>();
+            foreach (Walk walk in walks) points.AddRange(walk.Vertices());
+            points.Sort((left, right) => left.CompareTo(right));
+
+            // 單調鏈：下半圈與上半圈各走一次，右轉或共線就把上一個點丟掉
+            var hull = new List<ExactVector2>();
+            for (int pass = 0; pass < 2; pass++)
+            {
+                int chainStart = hull.Count;
+                for (int offset = 0; offset < points.Count; offset++)
+                {
+                    ExactVector2 point = pass == 0 ? points[offset] : points[points.Count - 1 - offset];
+                    while (hull.Count >= chainStart + 2
+                           && Geometry.Cross(hull[hull.Count - 2], hull[hull.Count - 1], point).Sign <= 0)
+                        hull.RemoveAt(hull.Count - 1);
+                    hull.Add(point);
+                }
+                hull.RemoveAt(hull.Count - 1);   // 終點就是下一半的起點
+            }
+
+            double hullDoubleArea = Geometry.SignedDoubleArea(hull).Abs.ToDouble();
+            return DifficultyFeatures.ExpectedDoubleArea.ToDouble() / hullDoubleArea;
+        }
+
+        /// <summary>
+        /// 輪廓上最長的一條直邊。<b>探索用</b>（2026-09-11 使用者提議「最大邊長」）。
+        ///
+        /// 單片最長的邊是大三角的斜邊 4√2，所以<b>比 4√2 還長的邊一定是兩片以上接起來的</b>。
+        /// 剛好 4 或 4√2 的邊可能是一片、也可能是兩片，那兩種不確定。
+        /// ⚠️ 捏點處共線的中繼點會把一條直邊切成兩段，要先接回去——所以從一個真正的轉角開始走。
+        /// 跟現有特徵幾乎無關（跟周長 0.07、凹角 −0.31、填滿率 −0.02），是目前唯一真正帶來新資訊的候選。
+        /// </summary>
+        /// <param name="walks">正規化後的輪廓環。</param>
+        /// <returns>最長直邊的精確長度。</returns>
+        private static Scalar LongestEdgeOf(Walk[] walks)
+        {
+            Scalar longest = Scalar.Zero;
+            foreach (Walk walk in walks)
+            {
+                Edge[] edges = walk.Edges;
+                int count = edges.Length;
+
+                int start = 0;
+                for (int index = 0; index < count; index++)
+                {
+                    if (edges[index].Direction == edges[(index - 1 + count) % count].Direction) continue;
+                    start = index;
+                    break;
+                }
+
+                Scalar straightRun = Scalar.Zero;
+                for (int step = 0; step < count; step++)
+                {
+                    Edge edge = edges[(start + step) % count];
+                    Edge previous = edges[(start + step - 1 + count) % count];
+                    straightRun = step > 0 && edge.Direction == previous.Direction
+                        ? straightRun + edge.Length
+                        : edge.Length;
+                    if (straightRun > longest) longest = straightRun;
+                }
+            }
+            return longest;
         }
 
         /// <summary>參考解裡沒有看得出來的等價交換。</summary>

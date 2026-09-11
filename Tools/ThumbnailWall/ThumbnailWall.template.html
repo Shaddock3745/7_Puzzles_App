@@ -276,8 +276,8 @@
         <div class="segmented" id="row-feature-buttons" role="group" aria-label="分列依據"></div>
       </div>
       <div class="field" id="bucket-field">
-        <span class="field-label">周長分段寬度</span>
-        <input type="number" id="bucket-width" min="0.5" step="0.5">
+        <span class="field-label" id="bucket-label">分段寬度</span>
+        <input type="number" id="bucket-width">
       </div>
       <div class="field">
         <span class="field-label">池子</span>
@@ -323,7 +323,9 @@
   const features = [
     { key: 'concaveAngleCount', label: '凹角數', short: '凹角', integer: true },
     { key: 'directionVarietyCount', label: '邊方向種類', short: '方向', integer: true },
-    { key: 'perimeter', label: '周長', short: '周長', integer: false },
+    // 小數的特徵各有自己的分段寬度（bucket）、鎖定的間距（step）與顯示位數（decimals）——
+    // 範圍差太多（填滿率 0.4～0.9、周長 27～54），不能共用一個寬度
+    { key: 'perimeter', label: '周長', short: '周長', integer: false, bucket: 2, step: 0.5, decimals: 1 },
     { key: 'pinchPointCount', label: '捏點數', short: '捏點', integer: true },
     { key: 'holeCount', label: '洞數', short: '洞', integer: true },
     // 探索用（2026-09-11）：還不是正式的難度特徵，見匯出程式 CornerCountOf 的說明
@@ -331,7 +333,21 @@
     // 以下兩個也是探索用：4√2 只看輪廓；等價交換要看參考解（「一題 = 形狀 + 存下來的參考解」，2026-09-11 定案）
     { key: 'longHypotenuseEdgeCount', label: '4√2 邊數', short: '4√2', integer: true },
     { key: 'hasEquivalentSwap', label: '等價交換', short: '交換', integer: true },
+    // 使用者提議（2026-09-11）：只看輪廓、探索用
+    { key: 'convexHullFillRatio', label: '凸包填滿率', short: '填滿', integer: false, bucket: 0.05, step: 0.01, decimals: 2 },
+    // 最長的邊只會出現幾個固定值（2√2、4、4 + √2、4√2、6……），分段會把不同的值混在一起，所以一個值一列
+    { key: 'longestEdgeLength', label: '最長的邊', short: '最長邊', integer: false, distinct: true, step: 0.5, decimals: 2 },
   ];
+  const exactLabelByLongestEdge = new Map();     // 最長邊的列標題用精確值，例如「4 + 2√2」
+
+  // 最長邊有沒有比 4√2（單片最長的邊，大三角斜邊）還長。
+  // ⚠️ 一定要用精確值 [n, m] 比：n + m√2 > 4√2 ⇔ n + (m − 4)√2 > 0。
+  // 資料檔裡的浮點長度四捨五入到小數四位，4√2 = 5.65685… 會存成 5.6569，
+  // 拿它跟 4√2 比會把「剛好 4√2」的邊誤判成「比較長」（2026-09-11 對帳時抓到）
+  function isLongerThanLongHypotenuse(shape) {
+    const [rational, rootCoefficient] = shape.longestEdgeExact;
+    return rational + (rootCoefficient - 4) * Math.SQRT2 > 1e-9;
+  }
   const swapLabels = {
     None: '參考解裡看不出來（不代表只有一種解）',
     Square: '有：兩個小三角拼成正方形，跟正方形對調就是另一種解',
@@ -344,7 +360,7 @@
   // （P2-5 的篩選後池子裡，凹角 × 周長的相關係數是 0.44，不鎖的話看到的差別一半是周長）
   const defaultSettings = {
     rowFeature: 'concaveAngleCount',
-    bucketWidth: 2,
+    bucketWidths: {},   // 使用者改過的分段寬度，依特徵分開存；沒改過就用特徵定義裡的 bucket
     pool: 'accepted',
     tilesPerRow: 8,
     sampleSeed: 1,
@@ -394,7 +410,7 @@
     return rational + (rootCoefficient < 0 ? ' − ' : ' + ') + rootPart;
   }
   function formatValue(feature, value) {
-    return feature.integer ? String(value) : value.toFixed(1);
+    return feature.integer ? String(value) : value.toFixed(feature.decimals);
   }
   const featureByKey = Object.fromEntries(features.map(feature => [feature.key, feature]));
 
@@ -477,11 +493,19 @@
   }
 
   // ── 列的切法 ──
+  // 三種特徵三種切法：整數一個值一列；「distinct」的小數也一個值一列；其他小數依分段寬度切。
+  // ⚠️ 分段的 key 用「第幾段」這個整數，不用起點的小數——用起點的話，一段一段累加寬度會累積浮點誤差，
+  //    同一段算出兩個略有差異的 key，形狀就對不到它的列（寬度 0.05 時一定會發生）
+  function bucketWidthOf(feature) {
+    return (settings.bucketWidths && settings.bucketWidths[feature.key]) || feature.bucket;
+  }
+  function distinctKeyOf(value) { return Math.round(value * 100) / 100; }
   function rowKeyOf(shape) {
-    const value = shape[settings.rowFeature];
-    if (featureByKey[settings.rowFeature].integer) return value;
-    const width = settings.bucketWidth;
-    return Math.floor(value / width + 1e-9) * width;
+    const feature = featureByKey[settings.rowFeature];
+    const value = shape[feature.key];
+    if (feature.integer) return value;
+    if (feature.distinct) return distinctKeyOf(value);
+    return Math.floor(value / bucketWidthOf(feature) + 1e-9);
   }
   function allRowKeys(shapes) {
     const feature = featureByKey[settings.rowFeature];
@@ -490,16 +514,21 @@
     const keys = [];
     if (feature.integer) {
       for (let value = minimum; value <= maximum; value++) keys.push(value);
+    } else if (feature.distinct) {
+      keys.push(...[...new Set(values.map(distinctKeyOf))].sort((left, right) => left - right));
     } else {
-      const width = settings.bucketWidth;
-      for (let start = Math.floor(minimum / width + 1e-9) * width; start <= maximum + 1e-9; start += width) keys.push(start);
+      const width = bucketWidthOf(feature);
+      const first = Math.floor(minimum / width + 1e-9), last = Math.floor(maximum / width + 1e-9);
+      for (let bucket = first; bucket <= last; bucket++) keys.push(bucket);
     }
     return keys;
   }
   function rowLabel(key) {
     const feature = featureByKey[settings.rowFeature];
     if (feature.integer) return String(key);
-    return `${key.toFixed(1)}–${(key + settings.bucketWidth).toFixed(1)}`;
+    if (feature.distinct) return exactLabelByLongestEdge.get(key) || key.toFixed(feature.decimals);
+    const width = bucketWidthOf(feature);
+    return `${(key * width).toFixed(feature.decimals)}–${((key + 1) * width).toFixed(feature.decimals)}`;
   }
 
   function passesLocks(shape) {
@@ -648,6 +677,9 @@
       ['轉角數', `${shape.cornerCount}（藏起來的頂點 ${23 - shape.cornerCount}）`],
       ['4√2 的邊', `${shape.longHypotenuseEdgeCount} 條`],
       ['等價交換', swapLabels[shape.equivalentSwap] || shape.equivalentSwap],
+      ['凸包填滿率', shape.convexHullFillRatio.toFixed(2)],
+      ['最長的邊', `${formatExact(shape.longestEdgeExact)}（${shape.longestEdgeLength.toFixed(2)}）` +
+        (isLongerThanLongHypotenuse(shape) ? '，比 4√2 長：一定是兩片以上接起來的' : '')],
       ['輪廓環數', shape.rings.length],
       ['PuzzleKey', shape.key],
     ];
@@ -674,8 +706,16 @@
     for (const button of document.querySelectorAll('#pool-buttons button')) {
       button.setAttribute('aria-pressed', button.dataset.pool === settings.pool ? 'true' : 'false');
     }
-    document.getElementById('bucket-field').hidden = settings.rowFeature !== 'perimeter';
-    document.getElementById('bucket-width').value = settings.bucketWidth;
+    const rowFeature = featureByKey[settings.rowFeature];
+    const needsBucket = !rowFeature.integer && !rowFeature.distinct;
+    document.getElementById('bucket-field').hidden = !needsBucket;
+    if (needsBucket) {
+      const bucketInput = document.getElementById('bucket-width');
+      document.getElementById('bucket-label').textContent = `${rowFeature.label}分段寬度`;
+      bucketInput.step = String(rowFeature.step);
+      bucketInput.min = String(rowFeature.step);
+      bucketInput.value = bucketWidthOf(rowFeature);
+    }
     document.getElementById('tiles-per-row').value = settings.tilesPerRow;
     document.getElementById('sample-seed').value = settings.sampleSeed;
     document.getElementById('solution-toggle').setAttribute('aria-pressed', settings.showSolution ? 'true' : 'false');
@@ -700,7 +740,7 @@
       label.textContent = feature.short;
       lock.appendChild(label);
 
-      const step = feature.integer ? 1 : 0.5;
+      const step = feature.integer ? 1 : feature.step;
       const minimumInput = numberInput(range ? range.minimum : fullMinimum, step, isRow, `${feature.label}最小值`);
       const maximumInput = numberInput(range ? range.maximum : fullMaximum, step, isRow, `${feature.label}最大值`);
       const dash = document.createElement('span'); dash.textContent = '～';
@@ -756,8 +796,11 @@
       button.addEventListener('click', () => { settings.pool = button.dataset.pool; changed(); });
     }
     document.getElementById('bucket-width').addEventListener('change', event => {
+      const feature = featureByKey[settings.rowFeature];
       const width = Number(event.target.value);
-      if (Number.isFinite(width) && width >= 0.5) { settings.bucketWidth = width; changed(); }
+      if (!Number.isFinite(width) || width < feature.step) return;
+      settings.bucketWidths = Object.assign({}, settings.bucketWidths, { [feature.key]: width });
+      changed();
     });
     document.getElementById('tiles-per-row').addEventListener('change', event => {
       const count = Math.round(Number(event.target.value));
@@ -788,6 +831,9 @@
       '<p>2. <code>powershell -File Tools/ThumbnailWall/Build-ThumbnailWall.ps1 -OutputPath wall.html</code></p></div>';
   } else {
     prepareGeometry(wallData.shapes);
+    for (const shape of wallData.shapes) {
+      exactLabelByLongestEdge.set(distinctKeyOf(shape.longestEdgeLength), formatExact(shape.longestEdgeExact));
+    }
     renderProvenance();
     wireControls();
     render();
