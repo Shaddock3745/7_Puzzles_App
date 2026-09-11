@@ -1202,7 +1202,7 @@ MonoBehaviour:
   useGeneratedPuzzles: 1
   generatorSeed: 20260910
   generatedPuzzleCount: 10
-  inspectRejectedShapes: 1
+  inspectRejectedShapes: 0
   relaxedMaximumHoleCount: 0
   relaxedMaximumConcaveAngleCount: 3
   inspectMinimumHoleCount: 0
