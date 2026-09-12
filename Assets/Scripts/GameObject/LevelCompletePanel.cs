@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 
 /// <summary>
@@ -27,7 +28,14 @@ using UnityEngine;
 /// <item>兩顆的 <c>onClick</c> 分別接到 <see cref="OnExitPressed"/> / <see cref="OnNextLevelPressed"/></item>
 /// <item>⚠️ <b>這支腳本掛在另一個物件上，不能掛在 Panel 身上</b>（理由見下）</item>
 /// <item>把 Panel 的 <c>GameObject</c> 填進 <see cref="completePanel"/></item>
+/// <item>⚠️ <b>P2-7 臨時的</b>：對話框上再放一個 <c>TMP_InputField</c>，拖進
+/// <see cref="targetDifficultyField"/>。那是下一關的目標難度（手動輸入）</item>
 /// </list>
+///
+/// ⚠️ <b>輸入框那一段是臨時的，P2-14 接上 ELO 時整段拿掉。</b>
+/// 但<b>位置是對的、不會換</b>——「下一關要多難」本來就是在這一刻決定的
+/// （玩家剛打完一題、實力值剛更新完）。到時候只是把「讀輸入框」換成「讀 <c>SkillRating</c>」，
+/// 資料流一行都不用改。
 ///
 /// ⚠️ <b>Panel 的 <c>RectTransform</c> 一定要滿版</b>，因為擋片區擋的就是它那塊矩形。
 /// 只做成中間一個小對話框的話，<b>對話框外面的盤面還是抓得到片</b>。
@@ -47,6 +55,18 @@ public class LevelCompletePanel : MonoBehaviour
 
     [Tooltip("整個彈窗的根物件。⚠️ 它的 RectTransform 要滿版，擋片區擋的就是它。")]
     [SerializeField] private GameObject completePanel;
+
+    // ───────── 以下是 P2-7 的臨時接法，P2-14 接上 ELO 時整段拿掉 ─────────
+
+    [Tooltip("⚠️ P2-7 臨時的。下一關的目標難度。留空或打錯字就沿用上一次的值。")]
+    [SerializeField] private TMP_InputField targetDifficultyField;
+
+    /// <summary>
+    /// ⚠️ <b>P2-7 臨時的</b>：上一次用過的目標難度，輸入框讀不出數字時的退路。
+    /// 初始值跟 <c>LevelController.startingTargetDifficulty</c> 一樣是 1200，
+    /// 但<b>兩邊刻意不互相參照</b>——這一整段之後要拿掉，牽線只會讓拿掉變麻煩。
+    /// </summary>
+    private int lastTargetDifficulty = 1200;
 
     private void Awake()
     {
@@ -148,15 +168,38 @@ public class LevelCompletePanel : MonoBehaviour
     /// <summary>
     /// 「下一關」被按下。接在 Unity <c>Button.onClick</c> 上。
     ///
-    /// ⚠️ <b>目前接的是同一個大正方形</b>，只為了驗證換關這條路徑（P1-10，暫時的）。
-    /// 之後會變成「難度回饋 → 挑下一題」，但換關本身走的還是
-    /// <see cref="LevelController.EnterNextLevel"/>，而它內部走的還是那條已經實測過的五步順序。
+    /// <b>下一關的難度來自 <see cref="targetDifficultyField"/></b>（P2-7）。
+    /// 換關本身走的還是 <see cref="LevelController.EnterNextLevel(int)"/>，
+    /// 而它內部走的還是那條已經實測過的五步順序。
     ///
-    /// 💡 <b>畫面看起來會跟原本一模一樣</b>——只有七片回到抽屜、undo 堆疊清空、
-    /// 過關旗標歸零（於是這個彈窗下一幀自己消失）。那是正常的。
+    /// ⚠️ <b>按下去會凍住畫面零點幾到一點多秒</b>（Editor 裡目標 1500 約 1.2 ～ 1.7 秒）。
+    /// 那是生成在跑，不是當掉。<b>刻意不做「生成中…」</b>——Unity 在同一幀改 UI 文字
+    /// 再做長運算，畫面根本不會更新，要做得先 <c>yield</c> 一幀，而現在不值得為它多一條協程。
     /// </summary>
     public void OnNextLevelPressed()
     {
-        if (levelController != null) levelController.EnterNextLevel();
+        if (levelController == null) return;
+        levelController.EnterNextLevel(ReadTargetDifficulty());
+    }
+
+    /// <summary>
+    /// 讀輸入框裡的目標難度。
+    ///
+    /// ⚠️ <b>刻意寫得很寬鬆</b>（2026-09-12 定）：這是內部測試與拍片用的入口，
+    /// 不是玩家會碰的東西，所以<b>壞輸入不提示、不擋，直接退回上一次用過的值</b>。
+    /// 空白、打錯字、沒有輸入框都走同一條路。
+    /// 真的變成玩家介面時要補的是提示，不是這裡的判斷。
+    ///
+    /// 範圍不在這裡管——超出去由 <c>TargetedPuzzleGenerator.ClampTarget</c> 夾住，
+    /// <b>兩個地方都夾的話哪一邊生效會變成要查的問題</b>。
+    /// </summary>
+    /// <returns>目標難度。讀不到就是上一次用過的值。</returns>
+    private int ReadTargetDifficulty()
+    {
+        if (targetDifficultyField != null
+            && int.TryParse(targetDifficultyField.text, out int parsed))
+            lastTargetDifficulty = parsed;
+
+        return lastTargetDifficulty;
     }
 }

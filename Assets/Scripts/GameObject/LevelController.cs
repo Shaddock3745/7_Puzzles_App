@@ -30,30 +30,25 @@ public class LevelController : MonoBehaviour
     [Tooltip("待用區抽屜。換關時要叫它把七片的姿態重設。沒有也能跑。")]
     [SerializeField] private TrayView trayView;
 
-    [Tooltip("勾起來的話 Start 會自動載入第一關。")]
-    [SerializeField] private bool loadClassicSquareOnStart = true;
+    [Tooltip("勾起來的話 Start 會自動載入第一關。⚠️ 2026-09-12 從 loadClassicSquareOnStart 改名——場景裡的舊值會失效並退回預設的 true，而那就是原本的值。")]
+    [SerializeField] private bool loadFirstLevelOnStart = true;
 
-    // ───────── 以下三個是 P2-4 的暫時鷹架，驗完手感就整段拿掉 ─────────
-
-    [Tooltip("⚠️ P2-4 暫時的。勾起來時，第 2 關開始改用出題器現生的題目。")]
-    [SerializeField] private bool useGeneratedPuzzles = true;
-
-    [Tooltip("⚠️ P2-4 暫時的。固定種子，同一個值每次都生出同一串題目——看到怪東西才重現得出來。")]
+    [Tooltip("固定種子，同一個值每次都生出同一串題目——看到怪東西才重現得出來。")]
     [SerializeField] private int generatorSeed = 20260910;
 
-    [Tooltip("⚠️ P2-4 暫時的。生成的題目玩幾關，之後回到經典大正方形當對照。")]
-    [SerializeField] private int generatedPuzzleCount = 10;
+    [Tooltip("開場第一關的目標難度。之後每一關的目標由呼叫端給（現在是完成彈窗上的輸入框）。")]
+    [SerializeField] private int startingTargetDifficulty = 1200;
 
     /// <summary>這一場。<b>別人請走 <c>LevelSession.Current</c>，不要跟這支要。</b></summary>
     private LevelSession session;
 
-    /// <summary>⚠️ P2-4 暫時的：生成器叫幾次還生不出來就放棄這一關。</summary>
-    private const int MaximumGenerationAttempts = 50;
+    /// <summary>
+    /// 整場共用一個，這樣<b>去重才跨關成立</b>——每次換關 new 一個的話，
+    /// <c>seenKeys</c> 歸零，同一批題會一直回來。
+    /// </summary>
+    private TargetedPuzzleGenerator generator;
 
-    /// <summary>⚠️ P2-4 暫時的：整場共用一個生成器，這樣「不重複」才跨關成立。</summary>
-    private PuzzleGenerator generator;
-
-    /// <summary>⚠️ P2-4 暫時的：這一場玩到第幾關（從 0 開始）。</summary>
+    /// <summary>這一場玩到第幾關（從 0 開始）。只拿來寫 log。</summary>
     private int levelIndex;
 
     private void Awake()
@@ -89,7 +84,7 @@ public class LevelController : MonoBehaviour
 
     private void Start()
     {
-        if (!loadClassicSquareOnStart) return;
+        if (!loadFirstLevelOnStart) return;
         EnterNextLevel();
     }
 
@@ -108,70 +103,62 @@ public class LevelController : MonoBehaviour
     /// 介面只會多一層轉接——接縫是「語意穩定的方法名」，不一定要是型別。
     /// （同一條標準讓 P1-6 決定不實作 <c>IInputSource</c>。）
     ///
-    /// <b>目前的實作</b>：P1 沒有題庫，永遠回經典大正方形。
-    /// 它同時是題目也是參考解——盒子的填色就是靠這七片三角化出來的。
-    /// 之後會換成「難度回饋 → 挑下一題」。
+    /// <b>目前的實作</b>：用出題器照目標難度現生一題（P2-7）。
+    /// 沒有指定目標時用 <see cref="startingTargetDifficulty"/>——開場那一關走的就是這條。
     ///
-    /// 💡 所以現在測「下一關」的時候<b>畫面看起來會跟原本一模一樣</b>，
-    /// 只有七片回到抽屜、undo 堆疊清空、過關旗標歸零。那是正常的，不是沒換到。
+    /// ⚠️ <b>刻意不讀檔</b>：讀檔得先做序列化、先決定存檔字串、先開 <c>StreamingAssets</c>，
+    /// 那三件事全是 P2-8 的工作。
     /// </summary>
-    public void EnterNextLevel()
+    public void EnterNextLevel() => EnterNextLevel(startingTargetDifficulty);
+
+    /// <summary>
+    /// 進下一關，<b>指定目標難度</b>（P2-7）。
+    ///
+    /// ⚠️ <b>目標從哪來，是呼叫端的事。</b>現在是完成彈窗上的輸入框（手動、臨時），
+    /// P2-14 之後會換成玩家的 <c>SkillRating</c>——那時候要改的只有呼叫端，這一支不用動。
+    ///
+    /// <b>三種下場都要處理</b>：
+    /// <list type="bullet">
+    /// <item><b>正中</b>：直接進關</item>
+    /// <item><b>將就</b>：照樣進關，但<b>要把「你要的」與「實際拿到的」都印出來</b>——
+    ///   實測目標 1600 有 11% 會走到這裡、1700 是 40%，而畫面上看不出差別</item>
+    /// <item><b>失敗</b>：連題目都沒有，<b>退回經典大正方形</b>。
+    ///   九百次測試裡沒發生過，但它是唯一「手上沒有題目」的情況，不擋的話會進到一個空的關</item>
+    /// </list>
+    /// </summary>
+    /// <param name="targetDifficulty">目標難度；超出範圍會被 <c>TargetedPuzzleGenerator</c> 夾住。</param>
+    public void EnterNextLevel(int targetDifficulty)
     {
-        int currentIndex = levelIndex;
         levelIndex++;
 
-        // ⚠️ P2-4 的暫時鷹架。第 1 關與第 12 關是經典大正方形，中間十關是現生的
-        // ——**前後都要有對照組**，因為「手感有沒有變」是比較級的問題：
-        // 不在同一次遊玩、同一台裝置上摸過舊的那題，就只是在跟記憶比
-        if (useGeneratedPuzzles && currentIndex >= 1 && currentIndex <= generatedPuzzleCount
-            && TryEnterGeneratedLevel(currentIndex)) return;
+        if (generator == null)
+            generator = new TargetedPuzzleGenerator(
+                new PuzzleGenerator(generatorSeed, AestheticLimits.Default));
 
-        Placement[] solution = PickNextPuzzleSolution();
-        EnterLevel(Puzzle.FromPlacements(solution), solution, allowRoll: true);
-    }
+        TargetedGenerationResult result = generator.Generate(targetDifficulty);
 
-    /// <summary>
-    /// 挑下一題。<b>「挑哪一題」的規則只住在這裡</b>——P2 接上題庫、
-    /// P3 接上難度回饋時，要改的就是這一支。
-    /// </summary>
-    /// <returns>那一題的參考解（目前恆為經典大正方形）。</returns>
-    private static Placement[] PickNextPuzzleSolution() => Fixtures.ClassicSquare();
-
-    /// <summary>
-    /// ⚠️ <b>P2-4 的暫時鷹架，驗完手感就整段拿掉。</b>
-    ///
-    /// 用出題器現生一題進來。<b>刻意不讀檔</b>——讀檔得先做序列化、先決定存檔字串、
-    /// 先開 <c>StreamingAssets</c>，那三件事全是 P2-8 的工作，為了玩十題把它們拖到現在做不划算。
-    /// 生成器在 <c>Data</c> 層，這支透過 <c>Core</c> 就叫得到。
-    ///
-    /// ⚠️ <b>迴圈在這裡而不在生成器裡。</b>生成器刻意「失敗就直接回報，不自己重試」，
-    /// 那樣「試幾次中一題」才量得出來（P2-5 要用）。所以重試是呼叫端的事。
-    /// 命中率實測約 48%，這個迴圈幾乎不會跑幾次。
-    /// </summary>
-    /// <param name="levelNumber">這是第幾關，只用來寫 log。</param>
-    /// <returns>有沒有成功進到一關生成的題目。false 時呼叫端會退回經典大正方形。</returns>
-    private bool TryEnterGeneratedLevel(int levelNumber)
-    {
-        if (generator == null) generator = new PuzzleGenerator(generatorSeed, AestheticLimits.Default);
-
-        for (int attempt = 0; attempt < MaximumGenerationAttempts; attempt++)
+        if (result.Outcome == TargetedGenerationOutcome.Failed)
         {
-            GenerationResult result = generator.TryGenerate();
-            if (result.Outcome != GenerationOutcome.Generated) continue;
+            Debug.LogWarning(
+                $"第 {levelIndex} 關：目標 {result.TargetDifficulty} 叫了 {result.AttemptCount} 次" +
+                "都沒生出題目，退回經典大正方形。審美門檻可能收太緊了。", this);
 
-            // 特徵印出來，判斷「十題的難度有沒有落差」時要看。⚠️ 實機看不到 Console，
-            // 所以形狀與難度在 Editor 裡看，手感才需要上實機
-            Debug.Log($"第 {levelNumber} 關（生成，叫了 {attempt + 1} 次）：{result.Features}", this);
-
-            // ⚠️ allowRoll 傳 false：要評估的是「存進去的那個角度好不好看」，
-            // 讓相機轉會看不到真實情況
-            EnterLevel(result.Puzzle, result.ReferenceSolution, allowRoll: false);
-            return true;
+            Placement[] fallback = Fixtures.ClassicSquare();
+            EnterLevel(Puzzle.FromPlacements(fallback), fallback, allowRoll: true);
+            return;
         }
 
-        Debug.LogWarning($"叫了 {MaximumGenerationAttempts} 次都沒生出題目，這一關退回經典大正方形。" +
-                         "審美門檻可能收太緊了。", this);
-        return false;
+        // ⚠️ 「將就」在畫面上看不出來——玩家拿到一題難度不對的題目，而一切看起來都正常。
+        // 所以這裡一定要講，而且要把兩個數字都講出來
+        string hit = result.Outcome == TargetedGenerationOutcome.OnTarget
+            ? "正中"
+            : $"⚠️ 將就（差 {Mathf.Abs(result.Difficulty - result.TargetDifficulty)}）";
+        Debug.Log($"第 {levelIndex} 關：目標 {result.TargetDifficulty} → 實際 {result.Difficulty}　" +
+                  $"{hit}，叫了 {result.AttemptCount} 次", this);
+
+        // ⚠️ allowRoll 傳 false：生成題要看的是「存進去的那個角度好不好看」，
+        // 讓相機轉會看不到真實情況。P2-8 接上題庫時這條要重新決定
+        EnterLevel(result.Puzzle, result.ReferenceSolution, allowRoll: false);
     }
 
     /// <summary>
