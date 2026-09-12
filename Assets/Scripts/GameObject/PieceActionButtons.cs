@@ -122,14 +122,12 @@ public class PieceActionButtons : MonoBehaviour
     /// <summary>旋轉鈕被按下。接在 Unity <c>Button.onClick</c> 上。</summary>
     public void OnRotatePressed()
     {
-        Debug.Log("Rotate");
         if (inputController != null) inputController.RotateSelected();
     }
 
     /// <summary>翻面鈕被按下。接在 Unity <c>Button.onClick</c> 上。</summary>
     public void OnFlipPressed()
     {
-        Debug.Log("Flip");
         if (inputController != null) inputController.FlipSelected();
     }
 }

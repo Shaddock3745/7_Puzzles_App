@@ -641,17 +641,35 @@ public class PuzzleEntryToolController : MonoBehaviour
     }
 
     /// <summary>
-    /// 輸出檔要放哪個資料夾：<b>exe 旁邊</b>。
+    /// 輸出檔要放哪個資料夾：<b>專案（或 exe）旁邊的 <c>Tools/PuzzleEntries/</c></b>（2026-09-12，P2-8a）。
     ///
     /// standalone 的 <c>Application.dataPath</c> 是「exe 資料夾/專案名_Data」，
     /// 所以它的上一層就是 exe 所在的地方。在 Editor 裡 <c>dataPath</c> 是
     /// 「專案/Assets」，上一層剛好是專案資料夾——兩邊都是打開就看得到檔案的位置。
+    ///
+    /// ⚠️ <b>為什麼是 <c>Tools/</c> 底下，不是直接丟專案根目錄</b>（P2-8a 定）：
+    /// <list type="number">
+    /// <item><b>這是工作檔，不是出貨檔。</b>工作檔是 JSON Lines、逐題追加（當掉只掉最後一題、
+    /// 兩個人的檔案好合併）；遊戲讀的出貨檔是 <c>Assets/Resources/</c> 底下的單一 JSON，
+    /// 中間靠一支 <c>[Explicit]</c> 測試轉換——跟權重檔完全一樣的模式</item>
+    /// <item>⚠️ <b><c>Tools/</c> 在 <c>Assets/</c> 外面，Unity 完全不會看它</b>
+    /// （跟 <c>Tools/DotnetTests/UnityStub.cs</c> 同一個理由）。
+    /// 幫忙出題的人不會碰到 <c>Assets/</c>，也就不會有漏 <c>.meta</c> 的問題</item>
+    /// <item>一個資料夾放得下多份檔案，之後多人各自一份時不會撞在一起</item>
+    /// </list>
     /// </summary>
-    /// <returns>資料夾路徑。</returns>
+    /// <returns>資料夾路徑；不存在就建出來。</returns>
     private static string ResolveOutputDirectory()
     {
         DirectoryInfo parent = Directory.GetParent(Application.dataPath);
-        return parent != null ? parent.FullName : Application.persistentDataPath;
+        string root = parent != null ? parent.FullName : Application.persistentDataPath;
+        string directory = Path.Combine(root, "Tools", "PuzzleEntries");
+
+        // 第一次跑的時候資料夾還不存在。⚠️ 不先建的話症狀是「按了存檔但什麼都沒發生」
+        // ——寫檔會丟 DirectoryNotFoundException，而那被 WriteAllEntries 的 catch 吃掉，
+        // 只在狀態列留一行紅字
+        Directory.CreateDirectory(directory);
+        return directory;
     }
 
     /// <summary>把訊息顯示在畫面上，同時寫進 Console（實機看不到 Console，Editor 看不到也不方便）。</summary>
