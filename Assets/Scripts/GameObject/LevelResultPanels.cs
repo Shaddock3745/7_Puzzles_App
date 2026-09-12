@@ -2,7 +2,12 @@ using TMPro;
 using UnityEngine;
 
 /// <summary>
-/// 過關之後的完成彈窗（P1-10，互動設計 §7）。
+/// 這一關結束之後的兩個彈窗：<b>過關</b>與<b>放棄</b>（P1-10 + P2-13，互動設計 §7）。
+///
+/// ⚠️ <b>2026-09-12 從 LevelCompletePanel 改名並改成一支管兩個</b>。
+/// 兩個彈窗是同一類東西（都是「這一關結束了」）、機制一模一樣（滿版擋片區、每幀問條件、
+/// 把按下轉給別人），照 <see cref="BoardActionButtons"/> 那個「一支腳本管一組同類 UI」的模式該放一起。
+/// ⚠️ <b>互斥不是這裡保證的</b>——是 <c>LevelData</c>：已過關就不能放棄、已放棄就不能過關。
 ///
 /// <b>跟 <see cref="PieceActionButtons"/> / <see cref="BoardActionButtons"/> 同一個形狀</b>：
 /// 不做事，只負責「什麼時候顯示」與「把按下轉給別人」。
@@ -45,7 +50,7 @@ using UnityEngine;
 /// → 從此再也開不回來，<b>而且不報錯</b>（除錯記錄 004 踩過一次）。
 /// </summary>
 [DisallowMultipleComponent]
-public class LevelCompletePanel : MonoBehaviour
+public class LevelResultPanels : MonoBehaviour
 {
     [Tooltip("過關狀態與擋片區的來源。留空的話 Awake 會自己找。")]
     [SerializeField] private TouchInputController inputController;
@@ -56,17 +61,13 @@ public class LevelCompletePanel : MonoBehaviour
     [Tooltip("整個彈窗的根物件。⚠️ 它的 RectTransform 要滿版，擋片區擋的就是它。")]
     [SerializeField] private GameObject completePanel;
 
+    [Tooltip("放棄彈窗的根物件（P2-13）。⚠️ 它的 RectTransform 也要滿版。")]
+    [SerializeField] private GameObject abandonedPanel;
+
     // ───────── 以下是 P2-7 的臨時接法，P2-14 接上 ELO 時整段拿掉 ─────────
 
-    [Tooltip("⚠️ P2-7 臨時的。下一關的目標難度。留空或打錯字就沿用上一次的值。")]
+    [Tooltip("⚠️ P2-7 臨時的。下一關的目標難度。留空或打錯字就沿用上一次用過的值。")]
     [SerializeField] private TMP_InputField targetDifficultyField;
-
-    /// <summary>
-    /// ⚠️ <b>P2-7 臨時的</b>：上一次用過的目標難度，輸入框讀不出數字時的退路。
-    /// 初始值跟 <c>LevelController.startingTargetDifficulty</c> 一樣是 1200，
-    /// 但<b>兩邊刻意不互相參照</b>——這一整段之後要拿掉，牽線只會讓拿掉變麻煩。
-    /// </summary>
-    private int lastTargetDifficulty = 1200;
 
     private void Awake()
     {
@@ -74,17 +75,17 @@ public class LevelCompletePanel : MonoBehaviour
         if (levelController == null) levelController = FindFirstObjectByType<LevelController>();
 
         if (inputController == null)
-            Debug.LogError("LevelCompletePanel 找不到 TouchInputController：彈窗永遠不會出現。", this);
+            Debug.LogError("LevelResultPanels 找不到 TouchInputController：彈窗永遠不會出現。", this);
         if (levelController == null)
-            Debug.LogError("LevelCompletePanel 找不到 LevelController：「下一關」按了不會有反應。", this);
+            Debug.LogError("LevelResultPanels 找不到 LevelController：「下一關」按了不會有反應。", this);
         if (completePanel == null)
-            Debug.LogError("LevelCompletePanel 的 completePanel 欄位沒填：彈窗不會被顯示或隱藏。", this);
+            Debug.LogError("LevelResultPanels 的 completePanel 欄位沒填：彈窗不會被顯示或隱藏。", this);
 
         // ⚠️ 這是會讓彈窗「永遠不出現而且不報錯」的接法，所以在這裡吵起來。
         // 停用的物件不跑 Update，掛在自己身上的話第一幀就把自己鎖死了（見類別說明）
         else if (completePanel == gameObject)
             Debug.LogError(
-                "LevelCompletePanel 掛在它自己要開關的 Panel 上了。一關開始還沒過關時它會把自己 " +
+                "LevelResultPanels 掛在它自己要開關的 Panel 上了。一關開始還沒過關時它會把自己 " +
                 "SetActive(false)，而停用的物件不再跑 Update——彈窗從此永遠不會出現。" +
                 "請把這支腳本移到另一個物件上（照 BoardActionButtons 的做法）。", this);
     }
@@ -100,13 +101,15 @@ public class LevelCompletePanel : MonoBehaviour
     /// </summary>
     private void OnEnable()
     {
-        panelArea = RegisterArea(completePanel);
+        completeArea = RegisterArea(completePanel);
+        abandonedArea = RegisterArea(abandonedPanel);
     }
 
     private void OnDisable()
     {
         if (inputController == null) return;
-        inputController.UnregisterPressBlockingArea(panelArea);
+        inputController.UnregisterPressBlockingArea(completeArea);
+        inputController.UnregisterPressBlockingArea(abandonedArea);
     }
 
     /// <param name="panel">彈窗根物件，可以是 null。</param>
@@ -127,14 +130,18 @@ public class LevelCompletePanel : MonoBehaviour
         return area;
     }
 
-    private RectTransform panelArea;
+    private RectTransform completeArea;
+    private RectTransform abandonedArea;
 
     /// <summary>
     /// 每幀重算「該不該顯示」。跟四顆按鈕同一個模式：只是過關狀態的函數，不訂閱任何東西。
     /// </summary>
     private void Update()
     {
+        // ⚠️ 兩個彈窗互斥，但那不是這裡保證的——LevelData 那邊已經擋死
+        // 「已過關不能放棄、已放棄不能過關」，所以這裡各問各的就好
         SetShown(completePanel, inputController != null && inputController.IsLevelComplete);
+        SetShown(abandonedPanel, inputController != null && inputController.IsLevelAbandoned);
     }
 
     /// <param name="panel">要顯示或隱藏的物件，可以是 null。</param>
@@ -179,27 +186,27 @@ public class LevelCompletePanel : MonoBehaviour
     public void OnNextLevelPressed()
     {
         if (levelController == null) return;
-        levelController.EnterNextLevel(ReadTargetDifficulty());
+
+        // ⚠️ 讀得到數字就傳值，讀不到就叫無參數那支——「上一次用過的目標」
+        // 的真相住在 LevelController，這裡刻意不留第二份（P2-13）
+        if (targetDifficultyField != null
+            && int.TryParse(targetDifficultyField.text, out int target))
+            levelController.EnterNextLevel(target);
+        else
+            levelController.EnterNextLevel();
     }
 
     /// <summary>
-    /// 讀輸入框裡的目標難度。
+    /// 放棄彈窗的「下一題」被按下（P2-13）。接在 Unity <c>Button.onClick</c> 上。
     ///
-    /// ⚠️ <b>刻意寫得很寬鬆</b>（2026-09-12 定）：這是內部測試與拍片用的入口，
-    /// 不是玩家會碰的東西，所以<b>壞輸入不提示、不擋，直接退回上一次用過的值</b>。
-    /// 空白、打錯字、沒有輸入框都走同一條路。
-    /// 真的變成玩家介面時要補的是提示，不是這裡的判斷。
-    ///
-    /// 範圍不在這裡管——超出去由 <c>TargetedPuzzleGenerator.ClampTarget</c> 夾住，
-    /// <b>兩個地方都夾的話哪一邊生效會變成要查的問題</b>。
+    /// <b>難度用上一次用過的那個</b>——放棄彈窗刻意不放輸入框。
+    /// ⭐ 而且這不是「送他一題簡單的」：下一題的難度本來就跟著實力值走，
+    /// 而放棄已經扣過分了（P2-14），所以<b>「用放棄刷簡單題」不是漏洞</b>
+    /// ——題目確實變簡單，但他的實力值也真的變低了。
     /// </summary>
-    /// <returns>目標難度。讀不到就是上一次用過的值。</returns>
-    private int ReadTargetDifficulty()
+    public void OnNextAfterAbandonPressed()
     {
-        if (targetDifficultyField != null
-            && int.TryParse(targetDifficultyField.text, out int parsed))
-            lastTargetDifficulty = parsed;
-
-        return lastTargetDifficulty;
+        if (levelController != null) levelController.EnterNextLevel();
     }
+
 }

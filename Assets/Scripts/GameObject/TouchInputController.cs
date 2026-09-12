@@ -119,8 +119,11 @@ public class TouchInputController : MonoBehaviour
     ///
     /// ⚠️ 場景沒有 <c>TrayView</c> 時要回 <c>false</c>，不是 true——
     /// 沒有抽屜的話按鈕本來就不該被壓制。
+    ///
+    /// ⚠️ <b>2026-09-12 從 private 改成 public</b>（P2-13 的放棄鈕要它）。
+    /// 不算破封裝：<c>TrayView.IsOpen</c> 本來就是公開的，這裡只是省掉每個按鈕自己去問抽屜。
     /// </summary>
-    private bool IsTrayDrawerOpen => trayView != null && trayView.IsOpen;
+    public bool IsTrayDrawerOpen => trayView != null && trayView.IsOpen;
 
     /// <summary>
     /// 這一關結束了沒（P1-10）。<b>過關之後盤面整個鎖住</b>——完成彈窗會蓋滿畫面，
@@ -140,6 +143,57 @@ public class TouchInputController : MonoBehaviour
             LevelData level = LevelSession.Current?.Data;
             return level != null && level.IsSolved;
         }
+    }
+
+    /// <summary>玩家按了放棄沒（P2-13）。放棄彈窗靠它決定要不要顯示。</summary>
+    public bool IsLevelAbandoned
+    {
+        get
+        {
+            LevelData level = LevelSession.Current?.Data;
+            return level != null && level.IsAbandoned;
+        }
+    }
+
+    /// <summary>
+    /// 這一關<b>卡了多久</b>（前景秒數，含還在跑的那一段）。沒有關就是 0。
+    ///
+    /// 放棄鈕靠它決定要不要出現，之後三級提示鈕也是——⭐ <b>門檻幾秒、分幾級、誰來比，
+    /// 全部是按鈕那邊的事</b>，這一層只回答「卡了多久」。之後怎麼調階梯都不用回頭改統計。
+    ///
+    /// ⚠️ 一定要用 <c>ForegroundSecondsAt</c> 而不是 <c>ForegroundSeconds</c>——
+    /// 後者只在「停止」時才累加，整關玩下來一直是 0，問它等於什麼都問不到。
+    /// </summary>
+    public double StuckSeconds
+    {
+        get
+        {
+            LevelData level = LevelSession.Current?.Data;
+            return level == null ? 0.0 : level.ForegroundSecondsAt(GameClock.NowSeconds);
+        }
+    }
+
+    /// <summary>
+    /// 放棄這一關（P2-13）。接在放棄鈕的 <c>onClick</c> 上。
+    ///
+    /// ⚠️ <b>盤面刻意不動</b>：片留在原地——讓玩家看著自己的殘局按「下一題」比空盤面合理，
+    /// 而且換關時 <c>LevelData</c> 整包換掉本來就會重置。
+    /// 放棄彈窗是滿版擋片區，所以這時候他動不了那些片。
+    ///
+    /// ⚠️ <b>扣分不在這裡</b>——這一層只記旗標，算輸與扣實力值是 P2-14 的事。
+    /// </summary>
+    public void AbandonLevel()
+    {
+        LevelData level = LevelSession.Current?.Data;
+        if (level == null) return;
+
+        // 已經過關的一局放棄不了。互斥由 LevelData 保證（見 MarkAbandoned），
+        // 這裡照它的回傳值走就好
+        if (!level.MarkAbandoned(GameClock.NowSeconds)) return;
+
+        // 跟換關、版面重算、清空走同一條路：留著選取的話，
+        // 彈窗蓋上去之後底下還高亮著一片
+        SetSelection(null);
     }
 
     /// <summary>
@@ -632,6 +686,10 @@ public class TouchInputController : MonoBehaviour
         movedPastThreshold = false;
         positionBeforeDrag = piece.Position;
 
+        // 局內統計（P2-13）。⚠️ **按下就開始計，不看移動門檻**——點選也算，
+        // 這樣規則只有一條。每次約 0.1 秒，怎麼算都不影響大局，但規則得寫死才測得了
+        level.StartDragTiming(GameClock.NowSeconds);
+
         if (fromTray)
         {
             locationBeforeDrag = PieceLocation.Tray;
@@ -767,6 +825,12 @@ public class TouchInputController : MonoBehaviour
     /// <param name="screenPoint">放手時的螢幕座標。回收框的判定要用它。</param>
     private void EndPress(LevelData level, Vector2 screenPoint)
     {
+        // 局內統計（P2-13）：⚠️ **一定要排在過關判定之前**，
+        // 這樣最後那一段拖曳才算得進去。
+        // 💡 這裡與 CancelInteraction 是拖曳的兩個出口，兩邊都要叫——
+        // 冪等規則②（沒在計時就什麼都不做）讓「兩邊都叫」變成安全的
+        level.StopDragTiming(GameClock.NowSeconds);
+
         if (movedPastThreshold)
         {
             // 回收**優先於吸附**（決定 22）：兩者同時成立時，
@@ -784,7 +848,13 @@ public class TouchInputController : MonoBehaviour
             //
             // ⚠️ 一定要在 movedPastThreshold 這個區塊**裡面**：點選那條完全不碰盤面，
             // 在外面問等於每次點一下都白算一次
-            level.MarkSolvedIfAllOnBoard();
+            if (level.MarkSolvedIfAllOnBoard())
+            {
+                // 過關了，前景也停（拖曳上面已經停過，冪等規則讓這裡再叫一次無害）。
+                // ⚠️ 一定要停：不停的話這一局的前景時間會一路算到玩家按「下一關」為止，
+                // 而那段時間他只是在看彈窗——ELO 會把「慢慢欣賞」算成「解得很慢」
+                level.StopAllTiming(GameClock.NowSeconds);
+            }
         }
 
         // §4 的高亮規則，加上 P1-5 之後收成一句：
@@ -871,6 +941,13 @@ public class TouchInputController : MonoBehaviour
     public void CancelInteraction()
     {
         SetSelection(null);
+
+        // ⚠️ 局內統計（P2-13）：**這裡是拖曳的第二個出口**。
+        // 它接在 BoardView.LayoutRecomputed 上，所以**螢幕尺寸一變就會走到這裡**，
+        // 而那條路不經過 EndPress。只把「停止」寫在 EndPress 裡的話，
+        // 轉一次螢幕方向計時器就再也停不下來，那一局的拖曳時間會一路累加到過關，
+        // **而且不報錯**。冪等規則②讓兩個出口都叫變成安全的
+        LevelSession.Current?.Data?.StopDragTiming(GameClock.NowSeconds);
 
         // 鎖定的指標一定要跟著放掉。忘了的話症狀是「換關之後怎麼點都沒反應」——
         // 因為還鎖著上一關那根早就抬起來的手指
@@ -1048,6 +1125,10 @@ public class TouchInputController : MonoBehaviour
 
         LevelData level = LevelSession.Current.Data;
         if (!level.TryClearBoardToTray(out IReadOnlyList<PieceObservation> cleared)) return;
+
+        // 局內統計（P2-13）。⚠️ 要在真的清成功之後才記——上面那個 return 是
+        // 「盤面本來就空的」，那不算一次清空
+        level.RecordClear();
 
         foreach (PieceObservation observation in cleared) HidePieceToTray(observation.Index);
 

@@ -51,6 +51,17 @@ public class LevelController : MonoBehaviour
     /// <summary>這一場玩到第幾關（從 0 開始）。只拿來寫 log。</summary>
     private int levelIndex;
 
+    /// <summary>
+    /// 上一次實際用過的目標難度（P2-13 搬過來的）。
+    ///
+    /// ⚠️ <b>這個值的真相只有一份，而且住在這裡</b>：過關彈窗與放棄彈窗都要「下一題要多難」，
+    /// 兩邊各記一份就是<b>兩個地方各自認定真相</b>——那正是 <c>PiecePreview</c> 那個教訓的形狀。
+    ///
+    /// ⭐ <b>記的是夾過的值</b>（<c>TargetedPuzzleGenerator.ClampTarget</c> 之後的），
+    /// 因為那才是「實際用過的目標」。
+    /// </summary>
+    private int lastTargetDifficulty;
+
     private void Awake()
     {
         session = new LevelSession();
@@ -92,7 +103,7 @@ public class LevelController : MonoBehaviour
     /// 進下一關。<b>開局與完成彈窗的「下一關」共用這一支。</b>
     ///
     /// ⚠️ <b>這個名字是接縫，刻意不叫「載入大正方形」</b>（2026-09-09）。
-    /// 呼叫端（<see cref="LevelCompletePanel"/>、<c>Start</c>）該表達的是
+    /// 呼叫端（<see cref="LevelResultPanels"/>、<c>Start</c>）該表達的是
     /// 「玩家要進下一關」這個**意圖**，不是「載入哪一題」這個**當下的實作**。
     ///
     /// 名字裡寫死題目的話，P2 接上題庫時<b>呼叫端也得跟著改</b>，
@@ -109,7 +120,8 @@ public class LevelController : MonoBehaviour
     /// ⚠️ <b>刻意不讀檔</b>：讀檔得先做序列化、先決定存檔字串、先開 <c>StreamingAssets</c>，
     /// 那三件事全是 P2-8 的工作。
     /// </summary>
-    public void EnterNextLevel() => EnterNextLevel(startingTargetDifficulty);
+    public void EnterNextLevel() => EnterNextLevel(
+        lastTargetDifficulty > 0 ? lastTargetDifficulty : startingTargetDifficulty);
 
     /// <summary>
     /// 進下一關，<b>指定目標難度</b>（P2-7）。
@@ -136,6 +148,9 @@ public class LevelController : MonoBehaviour
                 new PuzzleGenerator(generatorSeed, AestheticLimits.Default));
 
         TargetedGenerationResult result = generator.Generate(targetDifficulty);
+
+        // 記夾過的那個值，下一次沒指定目標時用它（P2-13：兩個彈窗共用同一份真相）
+        lastTargetDifficulty = result.TargetDifficulty;
 
         if (result.Outcome == TargetedGenerationOutcome.Failed)
         {
@@ -203,6 +218,34 @@ public class LevelController : MonoBehaviour
         //    所以都接到 TouchInputController.CancelInteraction，不各寫一次。
         //    它同時會把輸入層歸零（清選取、放掉鎖定的那根手指）
         if (dragController != null) dragController.CancelInteraction();
+
+        // 6. 開始計前景時間（P2-13）。⚠️ 一定要排在第 5 步**之後**——
+        //    CancelInteraction 會叫 StopDragTiming，而那一支對「新的這一關」來說
+        //    本來就沒在計時，所以無害；但順序反過來讀起來像是「開始了又停掉」
+        level.StartForegroundTiming(GameClock.NowSeconds);
+    }
+
+    // ───────── App 進出前景（P2-13）─────────
+    //
+    // ⚠️ 兩個回呼都接，因為兩邊在不同平台上的行為不一樣：
+    // Android 進背景給的是 OnApplicationPause(true)，桌機切視窗給的是 OnApplicationFocus(false)。
+    // 💡 冪等規則讓「兩個都接、有時候重複觸發」變成安全的——
+    // 已經停了再叫停止什麼都不做，已經在計了再叫開始也什麼都不做。
+
+    /// <param name="paused">是不是被暫停（進背景）。</param>
+    private void OnApplicationPause(bool paused) => SetForegroundTiming(!paused);
+
+    /// <param name="focused">是不是拿到焦點。</param>
+    private void OnApplicationFocus(bool focused) => SetForegroundTiming(focused);
+
+    /// <param name="inForeground">現在在不在前景。</param>
+    private void SetForegroundTiming(bool inForeground)
+    {
+        LevelData level = session?.Data;
+        if (level == null) return;
+
+        if (inForeground) level.StartForegroundTiming(GameClock.NowSeconds);
+        else level.StopAllTiming(GameClock.NowSeconds);
     }
 
     /// <summary>

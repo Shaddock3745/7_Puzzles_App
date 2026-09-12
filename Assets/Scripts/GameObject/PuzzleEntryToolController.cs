@@ -32,7 +32,7 @@ using UnityEngine;
 /// ⚠️ <b>場景上不要放 <c>LevelController</c></b>——兩支都會在 <c>Awake</c> 設定
 /// <c>LevelSession.Current</c> 與 <c>SharedUiState.Current</c>，誰後跑誰贏，
 /// 而 <c>MonoBehaviour</c> 之間的順序是未定義的。症狀會是「有時候盒子是大方框、
-/// 有時候是大正方形」，而且不報錯。同理，<c>LevelCompletePanel</c> 與 <c>DebugTools</c>
+/// 有時候是大正方形」，而且不報錯。同理，<c>LevelResultPanels</c> 與 <c>DebugTools</c>
 /// 也請從工具場景移除（前者依賴 <c>LevelController</c>，後者會去叫生成器）。
 /// </summary>
 [DisallowMultipleComponent]

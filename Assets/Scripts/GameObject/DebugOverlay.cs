@@ -237,6 +237,16 @@ public class DebugOverlay : MonoBehaviour
         // 而這個 overlay 在正式版會自動關掉
         builder.AppendLine($"難度    {level.Difficulty}   （1200 是基準批次的平均，一個標準差 200）");
 
+        // P2-13：局內統計。⚠️ 前景要用 ForegroundSecondsAt 不是 ForegroundSeconds——
+        // 後者只在「停止」時才累加，玩的時候一直是 0，看了會以為計時壞了
+        double foreground = level.ForegroundSecondsAt(GameClock.NowSeconds);
+        builder.AppendLine(
+            $"時間    前景 {foreground:F1}s　拖曳 {level.DragSeconds:F1}s（{level.DragCount} 次）" +
+            $"　思考 {level.ThinkingSecondsAt(GameClock.NowSeconds):F1}s");
+        builder.AppendLine(
+            $"局內    清空 {level.ClearCount} 次　提示 {level.HintsUsed} 次" +
+            $"　{(level.IsAbandoned ? "⚠️ 已放棄" : level.IsSolved ? "已過關" : "進行中")}");
+
         AppendCameraLine();
         AppendPointerLine();
 

@@ -71,6 +71,86 @@ namespace Tangram.Core
         /// <summary>過關了沒。</summary>
         public bool IsSolved { get; private set; }
 
+        // ───────── 局內統計（P2-13）。ELO 的輸入就是這幾個數字 ─────────
+
+        /// <summary>
+        /// <b>單次拖曳最多算幾秒</b>，超過的部分算進<see cref="ThinkingSeconds">思考時間</see>。
+        ///
+        /// ⭐ <b>這個數字不是亂訂的</b>：「移動」本質上很快——手指從抽屜拖到盤面另一端，
+        /// 手機約 1 秒、平板 1 ～ 2 秒頂天。<b>超過那個就不是在移動，是拿著在想</b>。
+        /// 而「拖著片在盤面上試位置」本來就該算思考，上限剛好把它重新分類。
+        ///
+        /// ⚠️ <b>3 秒目前仍然是猜的</b>，但之後量得出來：回饋收集場景會給一堆真人的
+        /// 單次拖曳時長分布，<b>看長尾從哪裡開始就是它</b>。
+        ///
+        /// ⚠️ <b>要老實：短促的邊拖邊想抓不到</b>——拿著片想 2 秒、放下、再拿起來想 2 秒，
+        /// 每次都在上限內，看起來跟果斷的人一樣。這是降低污染，不是排除。
+        /// </summary>
+        public const double MaximumSingleDragSeconds = 3.0;
+
+        /// <summary>
+        /// 拖曳累積秒數（<b>已經套過 <see cref="MaximumSingleDragSeconds"/> 上限</b>）。
+        /// <b>按下就開始計，不看移動門檻</b>——點選也算（2026-09-12 定，規則只有一條才測得了）。
+        /// </summary>
+        public double DragSeconds { get; private set; }
+
+        /// <summary>
+        /// 拖曳了幾次。⭐ <b>記著但不進公式</b>——它讓「平均每次拖曳多久」算得出來，
+        /// 而那是<b>「邊拖邊想」的指紋</b>：果斷 = 次數少每次短、邊拖邊想 = <b>次數少每次長</b>、
+        /// 反覆試 = 次數多每次短。只有這個量分得出中間那種。
+        /// </summary>
+        public int DragCount { get; private set; }
+
+        /// <summary>前景累積秒數——App 在前面、而且這一關還沒結束的那段時間。</summary>
+        public double ForegroundSeconds { get; private set; }
+
+        /// <summary>
+        /// 思考時間 = 前景 − 拖曳。<b>衍生值，不另外存。</b>
+        ///
+        /// ⭐ <b>ELO 的公式用兩項：<c>w₁ × 拖曳 + w₂ × 思考</c>，而 w₂ &gt; w₁</b>——
+        /// 「花在想的時間，比花在動手的時間更能說明你不會」。整把都在拖的人思考時間接近 0，
+        /// 只付便宜的那個權重；拖很久的人拖曳時間很大，<b>還是會被扣，只是每秒比較便宜</b>。
+        ///
+        /// ⚠️ <b>它永遠 ≥ 0</b>：背景時不可能拖曳，而前景涵蓋整關，所以拖曳 ≤ 前景。
+        /// <b>一旦為負就代表某個呼叫點接錯了</b>（測試 <c>思考時間_永遠不為負</c> 釘住）。
+        ///
+        /// ⚠️ <b>但那只在「兩個計時都停了」的時候成立</b>——遊玩途中
+        /// <see cref="ForegroundSeconds"/> 還沒累加（它只在停止時加）而
+        /// <see cref="DragSeconds"/> 已經有值，所以<b>這一支會是負的</b>。
+        /// 這是給 <b>ELO 在一局結束後</b>讀的；要在遊玩途中看就用
+        /// <see cref="ThinkingSecondsAt"/>。
+        /// </summary>
+        public double ThinkingSeconds => ForegroundSeconds - DragSeconds;
+
+        /// <summary>
+        /// <b>到這一刻為止</b>的思考時間，含還在跑的那一段前景。
+        /// 遊玩途中要看（除錯 overlay、之後的監控面板）就用這一支。
+        /// </summary>
+        /// <param name="nowSeconds">現在的時刻（秒）。</param>
+        /// <returns>思考秒數。</returns>
+        public double ThinkingSecondsAt(double nowSeconds) =>
+            ForegroundSecondsAt(nowSeconds) - DragSeconds;
+
+        /// <summary>清空了幾次。<b>記著但不進公式</b>（undo 不記，所以它沒有對照組）。</summary>
+        public int ClearCount { get; private set; }
+
+        /// <summary>
+        /// 玩家按了放棄沒。⚠️ <b>它是 ELO 唯一的「輸」訊號</b>——沒有它實力值只會單調上升。
+        /// <b>扣分是 P2-14 的事，這一層只記旗標。</b>
+        /// </summary>
+        public bool IsAbandoned { get; private set; }
+
+        /// <summary>
+        /// 這一局結束了沒（過關或放棄）。<b>第三條冪等規則問的就是它。</b>
+        /// </summary>
+        public bool IsFinished => IsSolved || IsAbandoned;
+
+        /// <summary>這一段拖曳的開始時刻；<c>null</c> = 現在沒在計。</summary>
+        private double? dragStartedAt;
+
+        /// <summary>這一段前景的開始時刻；<c>null</c> = 現在沒在計。</summary>
+        private double? foregroundStartedAt;
+
         /// <param name="puzzle">這一關的題目。</param>
         /// <param name="boxOrigin">盒子原點。</param>
         /// <param name="boxRegion">盒子在盤面座標的區域。</param>
@@ -97,6 +177,126 @@ namespace Tangram.Core
 
         /// <summary>用掉一次提示。</summary>
         public void UseHint() => HintsUsed++;
+
+        // ───────── 局內統計的四件事（P2-13）─────────
+        //
+        // ⚠️ 三條冪等規則，整段最重要的東西：
+        //   ① 已經在計時再叫「開始」→ 什麼都不做
+        //      （少了它，連續兩次「開始」會蓋掉第一段的開始時刻，那段時間永遠漏掉而且不報錯）
+        //   ② 沒在計時叫「停止」→ 什麼都不做
+        //      （這條讓「兩個出口都叫停止」變成安全的，見 TouchInputController 的呼叫點）
+        //   ③ 這一局已經結束 → 所有計時請求一律忽略
+        //      （放棄那一幀彈窗還沒出現，玩家還碰得到螢幕；他剛好按下一片就會重新開始計時）
+        //
+        // ⚠️ 現在幾點由呼叫端傳進來，這一層不知道——這樣測試傳假時間就驗得完，
+        // 完全不用開 Unity，而且「用哪個時鐘」整個住在呼叫端。
+        // 💡 同一個模式：Serialization.ToDto 的 createdAtUtc。
+
+        /// <summary>開始計拖曳。已經在計、或這一局已經結束時什麼都不做。</summary>
+        /// <param name="nowSeconds">現在的時刻（秒）。來源見 <c>LevelController</c>。</param>
+        public void StartDragTiming(double nowSeconds)
+        {
+            if (IsFinished || dragStartedAt.HasValue) return;
+            dragStartedAt = nowSeconds;
+            DragCount++;
+        }
+
+        /// <summary>
+        /// 停止計拖曳並累加。沒在計時就什麼都不做。
+        /// ⚠️ <b>這裡是套上限的唯一地方</b>——超過 <see cref="MaximumSingleDragSeconds"/> 的部分
+        /// 不計進拖曳，而因為思考時間是「前景 − 拖曳」算出來的，<b>那段自動落到思考那邊</b>。
+        /// </summary>
+        /// <param name="nowSeconds">現在的時刻（秒）。</param>
+        public void StopDragTiming(double nowSeconds)
+        {
+            if (!dragStartedAt.HasValue) return;
+
+            double elapsed = nowSeconds - dragStartedAt.Value;
+            dragStartedAt = null;
+
+            // 時刻倒退代表呼叫端換了時鐘或傳錯值。不擋的話累積會變小甚至變負，
+            // 而「思考時間為負」的斷言會在很遠的地方才炸，查起來看不出源頭
+            if (elapsed <= 0.0) return;
+
+            DragSeconds += elapsed > MaximumSingleDragSeconds ? MaximumSingleDragSeconds : elapsed;
+        }
+
+        /// <summary>開始計前景。已經在計、或這一局已經結束時什麼都不做。</summary>
+        /// <param name="nowSeconds">現在的時刻（秒）。</param>
+        public void StartForegroundTiming(double nowSeconds)
+        {
+            if (IsFinished || foregroundStartedAt.HasValue) return;
+            foregroundStartedAt = nowSeconds;
+        }
+
+        /// <summary>
+        /// 停止計前景並累加。沒在計時就什麼都不做。
+        /// ⚠️ <b>前景沒有上限</b>——上限是為了把「拿著片在想」歸類成思考，而前景本來就包含思考。
+        /// </summary>
+        /// <param name="nowSeconds">現在的時刻（秒）。</param>
+        public void StopForegroundTiming(double nowSeconds)
+        {
+            if (!foregroundStartedAt.HasValue) return;
+
+            double elapsed = nowSeconds - foregroundStartedAt.Value;
+            foregroundStartedAt = null;
+            if (elapsed <= 0.0) return;
+
+            ForegroundSeconds += elapsed;
+        }
+
+        /// <summary>
+        /// 這一局結束了，兩個計時都停。<b>過關與放棄都走這一支</b>，
+        /// 這樣「結束時要停哪些計時」只寫在一個地方。
+        /// </summary>
+        /// <param name="nowSeconds">現在的時刻（秒）。</param>
+        public void StopAllTiming(double nowSeconds)
+        {
+            StopDragTiming(nowSeconds);
+            StopForegroundTiming(nowSeconds);
+        }
+
+        /// <summary>
+        /// <b>到這一刻為止</b>的前景時間——含<b>還在跑的那一段</b>。
+        ///
+        /// ⚠️ <see cref="ForegroundSeconds"/> 只在「停止」時才累加，所以整關玩下來它一直是 0，
+        /// <b>問它等於什麼都問不到</b>。要即時知道「這一關卡了多久」（放棄鈕與之後的提示鈕
+        /// 靠它決定要不要出現）就得用這一支。
+        ///
+        /// <b>只讀，不改任何狀態</b>——每幀問也沒關係。
+        /// </summary>
+        /// <param name="nowSeconds">現在的時刻（秒）。</param>
+        /// <returns>前景累積秒數，含還在跑的那一段。</returns>
+        public double ForegroundSecondsAt(double nowSeconds)
+        {
+            if (!foregroundStartedAt.HasValue) return ForegroundSeconds;
+
+            double running = nowSeconds - foregroundStartedAt.Value;
+            return running > 0.0 ? ForegroundSeconds + running : ForegroundSeconds;
+        }
+
+        /// <summary>記一次清空。</summary>
+        public void RecordClear() => ClearCount++;
+
+        /// <summary>
+        /// 標記放棄，並把兩個計時停掉。
+        ///
+        /// ⚠️ <b>已經過關就不做事</b>——互斥由這一層保證，不是由 UI 保證。
+        /// 不擋的話這一局會<b>同時</b>是「放棄」與「過關」，而 ELO 會把它算成兩件事。
+        /// 💡 跟 <see cref="MarkSolvedIfAllOnBoard"/> 那邊的守衛是同一對。
+        /// </summary>
+        /// <param name="nowSeconds">現在的時刻（秒）。</param>
+        /// <returns>這一次有沒有真的標記成放棄。</returns>
+        public bool MarkAbandoned(double nowSeconds)
+        {
+            if (IsFinished) return false;
+
+            // ⚠️ 順序：先停計時再標旗標。反過來的話 IsFinished 已經是 true，
+            // 而 StopDragTiming 雖然不看它、StartXxx 卻會——留著這個順序比較不容易寫錯
+            StopAllTiming(nowSeconds);
+            IsAbandoned = true;
+            return true;
+        }
 
         /// <summary>標記過關。</summary>
         public void MarkSolved() => IsSolved = true;
@@ -126,6 +326,12 @@ namespace Tangram.Core
         public bool MarkSolvedIfAllOnBoard()
         {
             if (Puzzle == null) return false;
+
+            // ⚠️ 已經放棄的一局不能再過關（P2-13）。互斥由這一層保證，不是由 UI——
+            // 放棄彈窗雖然會蓋住整個畫面，但那要等下一幀 Update 才出現。
+            // 不擋的話這一局同時是「放棄」與「過關」，ELO 會算成兩件事
+            if (IsAbandoned) return false;
+
             if (Board.AllOnBoard) MarkSolved();
             return IsSolved;
         }

@@ -49,6 +49,14 @@ public class BoardActionButtons : MonoBehaviour
     [Tooltip("清空鈕的 GameObject。它的 Button.onClick 要接到這支的 OnClearPressed。")]
     [SerializeField] private GameObject clearButton;
 
+    [Tooltip("放棄鈕的 GameObject（P2-13）。onClick 接到這支的 OnAbandonPressed。"
+             + "⚠️ 它跟另外兩顆不一樣：卡夠久才會出現，見下面那個門檻。")]
+    [SerializeField] private GameObject abandonButton;
+
+    [Tooltip("卡多久放棄鈕才出現（秒）。⚠️ 評審現場只玩 2~3 局，demo 時調成 5 秒。"
+             + "⭐ 之後三級提示鈕照同一個框架，而它們的門檻都要比這個早（暫定 45、90、135）。")]
+    [SerializeField] private float stuckSecondsBeforeAbandon = 135f;
+
     private void Awake()
     {
         if (inputController == null) inputController = FindFirstObjectByType<TouchInputController>();
@@ -79,6 +87,7 @@ public class BoardActionButtons : MonoBehaviour
     {
         undoArea = RegisterArea(undoButton);
         clearArea = RegisterArea(clearButton);
+        abandonArea = RegisterArea(abandonButton);
     }
 
     private void OnDisable()
@@ -86,6 +95,7 @@ public class BoardActionButtons : MonoBehaviour
         if (inputController == null) return;
         inputController.UnregisterPressBlockingArea(undoArea);
         inputController.UnregisterPressBlockingArea(clearArea);
+        inputController.UnregisterPressBlockingArea(abandonArea);
     }
 
     /// <param name="button">按鈕物件，可以是 null。</param>
@@ -108,6 +118,7 @@ public class BoardActionButtons : MonoBehaviour
 
     private RectTransform undoArea;
     private RectTransform clearArea;
+    private RectTransform abandonArea;
 
     /// <summary>
     /// 每幀重算「該不該顯示」。
@@ -126,7 +137,27 @@ public class BoardActionButtons : MonoBehaviour
         // 顯示條件與作用條件刻意共用同一個算式（見那兩個屬性的說明）
         SetShown(undoButton, inputController != null && inputController.CanUndo);
         SetShown(clearButton, inputController != null && inputController.CanClearBoard);
+        SetShown(abandonButton, CanAbandon);
     }
+
+    /// <summary>
+    /// 放棄鈕該不該出現（P2-13）：<b>卡夠久，而且這一關還沒結束</b>。
+    ///
+    /// ⭐ <b>「卡夠久才出現」一次解掉兩個問題</b>：
+    /// ① 按鈕已經很擠（旋轉／翻面、undo／清空、抽屜箭頭、回收框），而它前
+    /// <see cref="stuckSecondsBeforeAbandon"/> 秒<b>根本不佔位</b>；
+    /// ② 放棄不可逆而且會扣實力值，但<b>只有真的卡住的人看得到它</b>——
+    /// 所以刻意<b>不做二次確認</b>，兩個決定互相支援。
+    ///
+    /// 💡 它跟 undo／清空是同一個形狀：<b>按鈕只是某個算式的函數，不訂閱任何東西</b>。
+    /// ⭐ 之後三級提示鈕照同一個框架接上來，各自有自己的門檻（而且要比放棄早）。
+    /// </summary>
+    private bool CanAbandon =>
+        inputController != null
+        && !inputController.IsLevelComplete
+        && !inputController.IsLevelAbandoned
+        && !inputController.IsTrayDrawerOpen
+        && inputController.StuckSeconds >= stuckSecondsBeforeAbandon;
 
     /// <param name="button">要顯示或隱藏的按鈕物件，可以是 null。</param>
     /// <param name="shown">要不要顯示。</param>
@@ -147,5 +178,16 @@ public class BoardActionButtons : MonoBehaviour
     public void OnClearPressed()
     {
         if (inputController != null) inputController.ClearBoard();
+    }
+
+    /// <summary>
+    /// 放棄鈕被按下（P2-13）。接在 Unity <c>Button.onClick</c> 上。
+    ///
+    /// ⚠️ <b>刻意沒有二次確認</b>——理由見 <see cref="CanAbandon"/>：
+    /// 這顆鈕要卡夠久才出現，誤觸的風險已經被門檻吃掉了。
+    /// </summary>
+    public void OnAbandonPressed()
+    {
+        if (inputController != null) inputController.AbandonLevel();
     }
 }
