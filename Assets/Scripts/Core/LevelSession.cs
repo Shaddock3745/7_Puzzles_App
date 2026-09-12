@@ -115,10 +115,17 @@ namespace Tangram.Core
         /// <b>單向的</b>：只會把 <see cref="IsSolved"/> 設成 true，不會設回 false。
         /// 過關之後彈窗會蓋住整個畫面，玩家只剩「退出」與「下一關」兩個出口，
         /// 所以不需要「退回未過關」那條路；真正的重置是換關（整包資料換掉）。
+        ///
+        /// ⚠️ <b>沒有題目的盤面永遠不會過關</b>（出題工具那個空方框，見
+        /// <see cref="LevelSession.LoadBoxOnly"/>）。那裡的盒子面積遠大於 32，
+        /// 上面那條「七片都在盤上 ⟹ 填滿」在工具裡剛好就是不成立的那個情況。
+        /// 而且真讓它標成過關的話，<c>TouchInputController.IsLevelComplete</c> 會把
+        /// 旋轉／翻面鈕鎖掉——工具正好要在七片都放上去之後繼續微調。
         /// </summary>
         /// <returns>這一關過關了沒（呼叫之後的狀態）。</returns>
         public bool MarkSolvedIfAllOnBoard()
         {
+            if (Puzzle == null) return false;
             if (Board.AllOnBoard) MarkSolved();
             return IsSolved;
         }
@@ -323,6 +330,61 @@ namespace Tangram.Core
             return true;
         }
 
+        /// <summary>
+        /// 用一組指定的擺放蓋掉整個盤面。<b>給出題工具的「載入之前存過的題目」用</b>
+        /// （遊玩迴圈不會呼叫它——玩家的片只能自己拖）。
+        ///
+        /// 跟 <see cref="TryFillFromReferenceSolution"/> 的差別只有一個：擺放是呼叫端給的，
+        /// 不是這一關的參考解。工具那邊沒有參考解，它的來源是存檔解碼出來的七片。
+        ///
+        /// <b>整組算一步 undo</b>，所以載入之後按一次 undo 會回到載入前的盤面。
+        /// </summary>
+        /// <param name="placementsBySlot">
+        /// 七個擺放，<b>索引就是槽索引</b>，而且每一槽的片種必須跟 <see cref="BoardState"/>
+        /// 那一槽的片種相同。順序不對的話會丟例外——默默放錯槽的症狀是
+        /// 「畫面上是正方形，模型卻以為那是小三角」，之後每一步都跟著錯而且不報錯。
+        /// </param>
+        /// <param name="affected">動之前的七槽（undo 用）。</param>
+        /// <returns>有沒有真的填。已經過關時回 false。</returns>
+        /// <exception cref="System.ArgumentException">數量不是七片，或某一槽的片種對不上。</exception>
+        public bool TryFillFromPlacements(IReadOnlyList<Placement> placementsBySlot,
+                                          out IReadOnlyList<PieceObservation> affected)
+        {
+            affected = null;
+            if (placementsBySlot == null || placementsBySlot.Count != BoardState.PieceCount)
+                throw new System.ArgumentException(
+                    $"要給滿 {BoardState.PieceCount} 片，現在是 {placementsBySlot?.Count ?? 0} 片",
+                    nameof(placementsBySlot));
+
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                if (placementsBySlot[slotIndex].Kind != Board.KindOf(slotIndex))
+                    throw new System.ArgumentException(
+                        $"第 {slotIndex} 槽是 {Board.KindOf(slotIndex)}，"
+                        + $"但給的是 {placementsBySlot[slotIndex].Kind}", nameof(placementsBySlot));
+
+            if (IsSolved) return false;
+
+            var before = new PieceObservation[BoardState.PieceCount];
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                before[slotIndex] = Board[slotIndex];
+            PushUndoStep(before);
+
+            // ⚠️ 順序跟清空、undo 同一組陷阱：先讓盤面放手，再設待用區。
+            // 反過來的話 SetInTray 會對著還在盤上的片丟例外
+            Board.Clear();
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                SetInTray(slotIndex, true);
+
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+            {
+                SetInTray(slotIndex, false);
+                Board.Place(slotIndex, placementsBySlot[slotIndex]);
+            }
+
+            affected = before;
+            return true;
+        }
+
         public bool TryClearBoardToTray(out IReadOnlyList<PieceObservation> cleared)
         {
             cleared = null;
@@ -406,6 +468,30 @@ namespace Tangram.Core
                 translated[i] = referenceSolution[i].Translated(boxOrigin);
 
             Data = new LevelData(puzzle, boxOrigin, boxRegion, translated, allowRoll);
+        }
+
+        /// <summary>
+        /// <b>只載入一個空的盒子，沒有題目也沒有參考解。</b>
+        ///
+        /// ⚠️ <b>這一支是給出題工具用的，遊玩迴圈不會呼叫它。</b>
+        /// 工具（把古典七巧板圖形拼出來、存成題目的那個獨立場景）需要一個「很大的空方框」
+        /// 當作業區：七片在框內自由拼，拼完才知道形狀是什麼。反過來說，
+        /// <see cref="Load"/> 的前提是「題目已經存在」——它從題目的輪廓反推盒子區域，
+        /// 工具那邊沒有東西可以反推。
+        ///
+        /// 用同一份 <see cref="LevelData"/> 而不是另外寫一套狀態，是為了讓吸附、抽屜、
+        /// 旋轉翻面、undo 全部原樣沿用；它們都是跟 <c>LevelSession.Current</c> 拿資料的。
+        ///
+        /// ⚠️ 這樣載入的 <c>Data</c> 有三個欄位是空的或沒有意義：
+        /// <c>Puzzle</c> 與 <c>ReferenceSolution</c> 是 null、<c>Difficulty</c> 是 0。
+        /// 所以<b>任何會碰參考解的功能在工具場景都不能用</b>（提示、盒子填色、
+        /// <c>TryFillFromReferenceSolution</c>），呼叫端要自己避開。
+        /// </summary>
+        /// <param name="boxRegion">作業區。工具目前給的是一個邊長 12 的正方形。</param>
+        public void LoadBoxOnly(Region boxRegion)
+        {
+            // allowRoll 傳 false：作業區是正方形，轉相機只會讓「拼出來的圖形是正的嗎」難以判斷
+            Data = new LevelData(null, ExactVector2.Zero, boxRegion, null, allowRoll: false);
         }
 
         /// <summary>離開這一關。之後 <see cref="HasLevel"/> 回 false。</summary>

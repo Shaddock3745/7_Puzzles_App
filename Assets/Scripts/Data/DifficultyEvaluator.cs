@@ -32,10 +32,22 @@ namespace Tangram.Data
         /// <param name="puzzle">題目。</param>
         /// <param name="referenceSolution">參考解。</param>
         /// <param name="weights">權重；傳 null 用 <see cref="DifficultyWeights.Default"/>。</param>
-        /// <returns>難度值，1200 是基準批次的平均。</returns>
+        /// <returns>
+        /// 難度值，1200 是基準批次的平均。
+        /// <b>題目或參考解是 null 時回 0</b>——那代表「還沒有題目」，見下面的說明。
+        /// </returns>
         public static int Score(Puzzle puzzle, IReadOnlyList<Placement> referenceSolution,
                                 DifficultyWeights weights = null)
         {
+            // ⚠️ 這兩個 null 是給<b>出題工具</b>用的（把古典圖形拼出來存成題目的那個獨立場景）。
+            // 那個場景的「盒子」是一個空的大方框，既沒有題目也沒有參考解，但它仍然要建一份
+            // LevelData 才能沿用吸附、抽屜、旋轉翻面那一整套；而 LevelData 的建構子會算難度。
+            //
+            // 回 0 而不是丟例外的理由：0 落在正常難度值的範圍外（實測約 900 ～ 1600），
+            // 所以它讀起來就是「這不是一道題」，不會被誤認成很簡單的題目。
+            // 遊戲裡的每一關都一定有題目與參考解，所以這條路在遊玩迴圈中走不到。
+            if (puzzle == null || referenceSolution == null) return 0;
+
             return Score(DifficultyFeatures.Measure(puzzle.Walks),
                          DifficultyFeatures.ForcedPieceCountOf(puzzle.Walks),
                          SolutionFeatures.Measure(referenceSolution),

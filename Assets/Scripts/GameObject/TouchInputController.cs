@@ -1076,8 +1076,23 @@ public class TouchInputController : MonoBehaviour
         // 大三角是 TangramSet 的第 0 槽
         if (!level.TryFillFromReferenceSolution(0, out _)) return;
 
-        // ⚠️ 照**現在**的盤面重畫全部七槽，不是照回傳的那幾筆——
-        // 那幾筆是「動之前」的樣子，拿來當「現在該長什麼樣」會整組畫錯
+        RefreshAllPiecesFromBoard();
+    }
+
+    /// <summary>
+    /// 照<b>現在的盤面</b>把七片的畫面整組重畫一次，然後清掉選取。
+    ///
+    /// ⚠️ <b>一定是照現在的盤面，不是照「動了哪幾片」的回傳值</b>——那些回傳的是
+    /// 「動之前」的樣子，拿來當「現在該長什麼樣」會整組畫錯。
+    ///
+    /// 給那些<b>一次改掉一整盤</b>的動作用：除錯用的照參考解填、
+    /// 出題工具載入之前存過的題目。一般的拖曳不走這裡，它只動被拖的那一片。
+    /// </summary>
+    public void RefreshAllPiecesFromBoard()
+    {
+        LevelData level = LevelSession.Current?.Data;
+        if (level == null) return;
+
         for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
         {
             PieceObservation current = level.Board[slotIndex];
