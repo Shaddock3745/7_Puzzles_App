@@ -56,6 +56,15 @@ namespace Tangram.Core
         /// </summary>
         private readonly bool[] inTray = new bool[BoardState.PieceCount];
 
+        /// <summary>
+        /// 這一關的難度值（P2-6）。1200 是基準批次的平均，一個標準差 200 分。
+        ///
+        /// <b>在建構的時候算一次就存起來</b>：它只由題目與參考解決定，整關都不會變，
+        /// 而其中「被外框逼出來的片數」不便宜（每題約 0.2 ms），不適合每次要看都重算。
+        /// ⚠️ 同一題永遠要得到同一個數字（ELO 的前提），細節見 <see cref="DifficultyEvaluator"/>。
+        /// </summary>
+        public readonly int Difficulty;
+
         /// <summary>提示用掉幾次。上限 3（互動設計 §9）。</summary>
         public int HintsUsed { get; private set; }
 
@@ -76,6 +85,7 @@ namespace Tangram.Core
             ReferenceSolution = referenceSolution;
             AllowRoll = allowRoll;
             Board = new BoardState();
+            Difficulty = DifficultyEvaluator.Score(puzzle, referenceSolution);
             HintsUsed = 0;
             IsSolved = false;
 

@@ -279,12 +279,36 @@ namespace Tangram.Data.Tests
         /// </summary>
         private static readonly Scalar DoubledHiddenForPerimeterFortyFour = new Scalar(-4, 20);
 
+        /// <summary>
+        /// 只填門檻會看的四個數字，其餘特徵填「一定過」的值。
+        ///
+        /// 轉角不參與門檻判斷，填 0 就好；凸包面積 ×2 給 100
+        /// （填滿率 = 64 ÷ 100 = 0.64，過得了預設的 0.6 下限）。
+        /// ⚠️ 這些測試要驗的是<b>門檻的判斷</b>，不是特徵怎麼量出來的，所以直接組特徵、不跑 Measure。
+        /// </summary>
+        /// <param name="concaveAngleCount">凹角數。</param>
+        /// <param name="doubledHiddenEdgeLength">藏起來的邊長 ×2。</param>
+        /// <param name="pinchPointCount">捏點數。</param>
+        /// <param name="holeCount">洞數。</param>
+        /// <param name="convexHullDoubleArea">
+        /// 凸包面積 ×2，預設 100（填滿率 = 64 ÷ 100 = 0.64，過得了預設的 0.6 下限）。
+        /// </param>
+        /// <returns>可以直接餵給 <c>Violations</c> 的特徵。</returns>
+        private static DifficultyFeatures FeaturesForLimits(int concaveAngleCount,
+                                                            Scalar doubledHiddenEdgeLength,
+                                                            int pinchPointCount, int holeCount,
+                                                            long convexHullDoubleArea = 100)
+            => new DifficultyFeatures(concaveAngleCount, 8, doubledHiddenEdgeLength,
+                                      pinchPointCount, holeCount,
+                                      cornerCount: 0,
+                                      convexHullDoubleArea: Scalar.FromInteger(convexHullDoubleArea));
+
         /// <summary>上限是「最多幾個」：<b>剛好等於上限算過</b>，四條都一樣。</summary>
         [Test]
         public void 門檻_剛好等於上限算過()
         {
             var limits = new AestheticLimits(1, 1, 10, Scalar.FromInteger(44));
-            var features = new DifficultyFeatures(10, 8, DoubledHiddenForPerimeterFortyFour, 1, 1);
+            DifficultyFeatures features = FeaturesForLimits(10, DoubledHiddenForPerimeterFortyFour, 1, 1);
 
             Assert.AreEqual(AestheticRules.None, limits.Violations(features));
             Assert.IsTrue(limits.Accepts(features));
@@ -302,13 +326,51 @@ namespace Tangram.Data.Tests
             Scalar oneLonger = hidden - Scalar.One;     // 藏起來的少一點 → 周長多 1
 
             Assert.AreEqual(AestheticRules.HoleCount,
-                limits.Violations(new DifficultyFeatures(10, 8, hidden, 1, 2)));
+                limits.Violations(FeaturesForLimits(10, hidden, 1, 2)));
             Assert.AreEqual(AestheticRules.PinchPointCount,
-                limits.Violations(new DifficultyFeatures(10, 8, hidden, 2, 1)));
+                limits.Violations(FeaturesForLimits(10, hidden, 2, 1)));
             Assert.AreEqual(AestheticRules.ConcaveAngleCount,
-                limits.Violations(new DifficultyFeatures(11, 8, hidden, 1, 1)));
+                limits.Violations(FeaturesForLimits(11, hidden, 1, 1)));
             Assert.AreEqual(AestheticRules.Perimeter,
-                limits.Violations(new DifficultyFeatures(10, 8, oneLonger, 1, 1)));
+                limits.Violations(FeaturesForLimits(10, oneLonger, 1, 1)));
+        }
+
+        /// <summary>
+        /// ⭐ <b>填滿率門檻在界線上剛好對。</b>（2026-09-12，P2-6）
+        ///
+        /// 門檻存的是分數 3/5，比較時兩邊乘開：面積 ×2（64）× 分母 ≥ 分子 × 凸包面積 ×2。
+        /// 所以 64 × 5 = 320 ≥ 3 × 凸包 ⇔ <b>凸包 ≤ 106.67</b>，也就是 106 過、107 不過。
+        /// ⚠️ 這條在守「不要改成除法」：改成 <c>64.0 / 凸包 >= 0.6</c> 的話界線會飄，
+        /// 而且飄的方向取決於浮點誤差——同一個形狀在不同機器上可能一個收一個不收。
+        /// </summary>
+        [Test]
+        public void 門檻_填滿率剛好在界線上()
+        {
+            var limits = new AestheticLimits(1, 1, 10, Scalar.FromInteger(45),
+                                             minimumFillRatioNumerator: 3, minimumFillRatioDenominator: 5);
+
+            DifficultyFeatures justInside = FeaturesForLimits(
+                10, DoubledHiddenForPerimeterFortyFour, 1, 1, convexHullDoubleArea: 106);
+            DifficultyFeatures justOutside = FeaturesForLimits(
+                10, DoubledHiddenForPerimeterFortyFour, 1, 1, convexHullDoubleArea: 107);
+
+            Assert.AreEqual(AestheticRules.None, limits.Violations(justInside), "凸包 106 應該過");
+            Assert.AreEqual(AestheticRules.ConvexHullFillRatio, limits.Violations(justOutside),
+                "凸包 107 應該只沒過填滿率這一條");
+        }
+
+        /// <summary>
+        /// 分子 0 = 不設填滿率門檻。縮圖牆與審視鷹架都會開「全開」的門檻，
+        /// 那時候這一條必須完全不作用——預設值如果不是 0，它們會安靜地少收一批形狀。
+        /// </summary>
+        [Test]
+        public void 門檻_沒設填滿率時再散的形狀也收()
+        {
+            var limits = new AestheticLimits(1, 1, 10, Scalar.FromInteger(45));
+            DifficultyFeatures verySpread = FeaturesForLimits(
+                10, DoubledHiddenForPerimeterFortyFour, 1, 1, convexHullDoubleArea: 10000);
+
+            Assert.AreEqual(AestheticRules.None, limits.Violations(verySpread));
         }
 
         /// <summary>同時超過好幾條，每一條都要回報，不能只回報第一條就停。</summary>
@@ -316,7 +378,7 @@ namespace Tangram.Data.Tests
         public void 門檻_同時超過好幾條全部回報()
         {
             var limits = new AestheticLimits(0, 0, 3, Scalar.FromInteger(30));
-            var features = new DifficultyFeatures(4, 8, DoubledHiddenForPerimeterFortyFour, 1, 1);
+            DifficultyFeatures features = FeaturesForLimits(4, DoubledHiddenForPerimeterFortyFour, 1, 1);
 
             Assert.AreEqual(
                 AestheticRules.HoleCount | AestheticRules.PinchPointCount

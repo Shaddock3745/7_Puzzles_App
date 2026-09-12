@@ -353,6 +353,9 @@
     { key: 'forcedPieceCount', label: '被外框逼出來的片數', short: '逼出', integer: true },
     // 使用者在 #219 發現（2026-09-11）：參考解裡兩片大三角共用整條邊、拼成一大塊，意外地好拼
     { key: 'largeTrianglesJoined', label: '兩片大三角拼成一塊', short: '大三角合體', integer: true },
+    // P2-6 定案的難度值，由 DifficultyEvaluator 用權重檔算好寫進資料裡（跟遊戲裡看到的是同一個數字）。
+    // 上面那個「暫定難度」是頁面自己算的、權重可調，兩者刻意並存：調權重時要看得到改成這樣會排成什麼樣
+    { key: 'difficulty', label: '難度（權重檔）', short: '難度', integer: true },
   ];
   const exactLabelByLongestEdge = new Map();     // 最長邊的列標題用精確值，例如「4 + 2√2」
 
@@ -427,7 +430,8 @@
   }
   // 檢視窗用：每個特徵貢獻了幾分。加起來就是「難度 − 1200」（差一個取平均的常數，實務上是 0）
   function difficultyRows(shape) {
-    const rows = [['暫定難度', `${Math.round(shape.provisionalDifficulty)}（1200 是平均）`]];
+    const rows = [['難度（權重檔）', `${shape.difficulty}（P2-6 定案的值，1200 是基準批次的平均）`],
+      ['暫定難度', `${Math.round(shape.provisionalDifficulty)}（這一頁自己算的，權重可調）`]];
     for (const term of difficultyTerms) {
       const standardized = standardizedTerm(shape, term);
       const points = difficultySpread * weightOf(term) * standardized / difficultyStatistics.weightedDeviation;
@@ -504,7 +508,8 @@
     MediumTriangle: '有：兩個小三角拼成中三角，跟中三角對調就是另一種解',
     Parallelogram: '有：兩個小三角拼成平行四邊形，跟平行四邊形對調就是另一種解',
   };
-  const violationLabels = { HoleCount: '洞', PinchPointCount: '捏點', ConcaveAngleCount: '凹角', Perimeter: '周長' };
+  const violationLabels = { HoleCount: '洞', PinchPointCount: '捏點', ConcaveAngleCount: '凹角',
+    Perimeter: '周長', ConvexHullFillRatio: '填滿率' };
 
   // 開場就依暫定難度分列、不鎖，直接看「從上到下是不是越來越難」（2026-09-11 改）。
   // 原本開場是「依凹角分列、周長鎖 38～42」的控制變因對照——那個用法仍然可以在控制列自己設
@@ -517,7 +522,9 @@
     locks: {},
     showSolution: false,
     difficultyWeights: {},   // 使用者改過的暫定難度權重；沒改過就用 difficultyTerms 裡的預設值
-    fillGate: 0.6,           // 凸包填滿率門檻；0 或留空＝不設。2026-09-12 從 0.65 放寬：簡單題約 4 倍、難題數量不變
+    fillGate: 0,             // 頁面自己的填滿率閘門；0 = 不設。
+                             // ⚠️ 2026-09-12 之後 0.6 這條已經進了 AestheticLimits.Default，
+                             // acceptedByDefault 裡就包含它了；這個欄位留著是為了在頁面上試「更嚴」的值
   };
   const storageKey = 'tangram-feature-wall-settings';
   let settings = loadSettings();
@@ -998,9 +1005,8 @@
     square: '拼成正方形（共用斜邊）', triangle: '拼成更大的三角形（共用一條股）', parallelogram: '拼成平行四邊形（共用一條股）',
   };
   function keyPieceExposureText(shape) {
-    const counts = shape.keyPieceExposedVertexCounts || [];
-    return `各露 ${counts.join('、')} 個 → 只露 ≤ 1 個的有 ${shape.keyPiecesExposingOneVertex} 片` +
-      `（合計藏起 ${shape.hiddenKeyVertexCount} / 10）`;
+    // 大三角 ×2 與平行四邊形三片裡，露出的頂點 ≤ 1 的有幾片。數字由 SolutionFeatures 算（P2-6 之後只有一份實作）
+    return `${shape.keyPiecesExposingOneVertex} / 3 片只露 ≤ 1 個頂點`;
   }
 
   if (!wallData) {

@@ -120,6 +120,10 @@ public class DebugOverlay : MonoBehaviour
 
         builder.AppendLine($"關卡    {(level.IsSolved ? "已過關" : "進行中")}   提示 {level.HintsUsed}/3");
 
+        // P2-6：難度值。⚠️ 這裡只是「現在看得到它」——正式的顯示位置是 P2-15 的監控面板，
+        // 而這個 overlay 在正式版會自動關掉
+        builder.AppendLine($"難度    {level.Difficulty}   （1200 是基準批次的平均，一個標準差 200）");
+
         AppendCameraLine();
         AppendPointerLine();
 

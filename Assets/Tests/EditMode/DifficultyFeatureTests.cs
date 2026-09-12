@@ -63,6 +63,13 @@ namespace Tangram.Data.Tests
                 Assert.AreEqual(original.DoubledHiddenEdgeLength, actual.DoubledHiddenEdgeLength, $"{label} 藏起來的長度");
                 Assert.AreEqual(original.PinchPointCount, actual.PinchPointCount, $"{label} 捏點數");
                 Assert.AreEqual(original.HoleCount, actual.HoleCount, $"{label} 洞數");
+
+                // 2026-09-12 加的三個（P2-6）。凸包與逼出來的片數都跟座標有關，
+                // 是這條測試裡最可能被鏡射寫錯咬到的
+                Assert.AreEqual(original.CornerCount, actual.CornerCount, $"{label} 轉角數");
+                Assert.AreEqual(original.ConvexHullDoubleArea, actual.ConvexHullDoubleArea, $"{label} 凸包面積");
+                Assert.AreEqual(DifficultyFeatures.ForcedPieceCountOf(walks),
+                                DifficultyFeatures.ForcedPieceCountOf(transformed), $"{label} 被逼出來的片數");
             }
         }
 
@@ -176,6 +183,76 @@ namespace Tangram.Data.Tests
             Assert.AreEqual(new Scalar(40, 4), features.DoubledHiddenEdgeLength);
             Assert.AreEqual(0, features.PinchPointCount);
             Assert.AreEqual(0, features.HoleCount);
+            Assert.AreEqual(4, features.CornerCount, "正方形只有四個轉角");
+
+            // 凸形狀的凸包就是它自己，所以填滿率剛好 1：凸包面積 ×2 = 七片面積 ×2 = 64
+            Assert.AreEqual(DifficultyFeatures.ExpectedDoubleArea, features.ConvexHullDoubleArea,
+                "凸形狀的凸包等於自己");
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // 二之二、被外框逼出來的片（P2-6）
+        // ─────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// 古典大正方形一片都逼不出來：四個角都是 90°，每個角都有一堆片放得進去
+        /// （大中小三角的直角、正方形，還有兩個 45° 尖角湊一個 90° 的各種組合）。
+        /// </summary>
+        [Test]
+        public void 逼出來的片_古典大正方形一片都沒有()
+        {
+            Assert.AreEqual(0, DifficultyFeatures.ForcedPieceCountOf(ClassicSquarePuzzle().Walks));
+        }
+
+        /// <summary>
+        /// ⭐ <b>被逼出來的片一定出現在參考解裡。</b>
+        ///
+        /// 這條是「逼出來」這個概念的定義本身：如果某個角只放得進一種擺法，
+        /// 那<b>任何</b>解都得那樣放——參考解當然也不例外。
+        /// ⚠️ 反過來不成立：參考解裡的片不一定被逼出來。
+        ///
+        /// 它同時是 <c>ForcedPiecesOf</c> 唯一有力的守衛。角的凸凹判斷、開口的方向、
+        /// 「一種佔位」的定義，任何一個寫錯都會讓某個角少算擺法，然後這裡就會冒出
+        /// 一片不在參考解裡的片。（同樣的檢查在縮圖牆的匯出程式跑過 2000 個形狀。）
+        /// </summary>
+        [Test]
+        public void 逼出來的片_一定在參考解裡()
+        {
+            var generator = new PuzzleGenerator(seed: 20260912);
+            int checkedPuzzles = 0, forcedTotal = 0;
+
+            for (int attempt = 0; attempt < 5000 && checkedPuzzles < 40; attempt++)
+            {
+                GenerationResult result = generator.TryGenerate();
+                if (result.Outcome != GenerationOutcome.Generated) continue;
+                checkedPuzzles++;
+
+                var referenceFootprints = new HashSet<string>();
+                foreach (Placement piece in result.ReferenceSolution)
+                    referenceFootprints.Add(FootprintKeyOf(piece));
+
+                foreach (Placement forced in DifficultyFeatures.ForcedPiecesOf(result.Puzzle.Walks))
+                {
+                    forcedTotal++;
+                    Assert.IsTrue(referenceFootprints.Contains(FootprintKeyOf(forced)),
+                        $"{result.Puzzle.Key}：逼出來的 {forced} 不在參考解裡");
+                }
+            }
+
+            Assert.AreEqual(40, checkedPuzzles, "沒能在上限內生滿 40 題");
+            TestContext.WriteLine($"40 題裡總共逼出 {forcedTotal} 片");
+        }
+
+        /// <summary>「佔哪塊地」的鍵：片種 + 排序過的頂點。姿態不同但佔位相同的會得到同一個鍵。</summary>
+        /// <param name="placement">擺放。</param>
+        /// <returns>比對用的字串。</returns>
+        private static string FootprintKeyOf(Placement placement)
+        {
+            ExactVector2[] vertices = placement.Vertices();
+            Array.Sort(vertices, (left, right) => left.CompareTo(right));
+            var key = new System.Text.StringBuilder(placement.Kind.ToString());
+            foreach (ExactVector2 vertex in vertices) key.Append(' ').Append(vertex.ToKey());
+            return key.ToString();
         }
 
         // ─────────────────────────────────────────────────────────────

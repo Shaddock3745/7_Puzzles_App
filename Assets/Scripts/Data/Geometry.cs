@@ -267,5 +267,47 @@ namespace Tangram.Data
             }
             return expectedSide != 0;
         }
+
+        /// <summary>
+        /// 一堆點的凸包面積 ×2（Andrew's monotone chain，全程精確叉積）。
+        ///
+        /// 難度特徵「凸包填滿率」用它：填滿率 = 形狀面積 ÷ 凸包面積 =
+        /// <see cref="DifficultyFeatures.ExpectedDoubleArea"/> ÷ 這個值。
+        /// ⚠️ <b>刻意回傳面積而不是比率</b>——比率是除法，存下來就變浮點（鐵則一）。
+        /// 要比「填滿率 ≥ 分子/分母」時改成兩邊乘開的整數比較，見
+        /// <c>AestheticLimits.Violations</c>。
+        ///
+        /// 共線的點不會留在凸包上（叉積為 0 就彈掉），所以面積跟有沒有中繼點無關。
+        /// </summary>
+        /// <param name="points">任意順序的點，可以有重複。</param>
+        /// <returns>凸包面積的兩倍，恆為非負。點少於三個（或全部共線）時是 0。</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="points"/> 是 null。</exception>
+        public static Scalar ConvexHullDoubleArea(IReadOnlyList<ExactVector2> points)
+        {
+            if (points == null) throw new ArgumentNullException(nameof(points));
+            if (points.Count < 3) return Scalar.Zero;
+
+            var sorted = new List<ExactVector2>(points);
+            sorted.Sort((left, right) => left.CompareTo(right));
+
+            // 下半部再上半部：兩趟都把「不是左轉」的點彈掉，剩下的就是凸包（CCW）
+            var hull = new List<ExactVector2>(sorted.Count + 1);
+            for (int pass = 0; pass < 2; pass++)
+            {
+                int passStart = hull.Count;
+                for (int index = 0; index < sorted.Count; index++)
+                {
+                    ExactVector2 point = pass == 0 ? sorted[index] : sorted[sorted.Count - 1 - index];
+                    while (hull.Count >= passStart + 2
+                           && Cross(hull[hull.Count - 2], hull[hull.Count - 1], point).Sign <= 0)
+                        hull.RemoveAt(hull.Count - 1);
+                    hull.Add(point);
+                }
+                hull.RemoveAt(hull.Count - 1);   // 結尾那個是下一趟的起點，留著會重複
+            }
+
+            Scalar doubleArea = SignedDoubleArea(hull);
+            return doubleArea.Sign < 0 ? -doubleArea : doubleArea;
+        }
     }
 }

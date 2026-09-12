@@ -23,6 +23,9 @@ namespace Tangram.Data
 
         /// <summary>周長太長（太細長）。</summary>
         Perimeter = 8,
+
+        /// <summary>凸包填滿率太低（形狀太散）。</summary>
+        ConvexHullFillRatio = 16,
     }
 
     /// <summary>
@@ -51,17 +54,44 @@ namespace Tangram.Data
         /// </summary>
         public readonly Scalar MaximumPerimeter;
 
+        /// <summary>
+        /// 凸包填滿率的下限，<b>用分數存</b>（分子）。填滿率 = 形狀面積 ÷ 凸包面積，越接近 1 越緊湊。
+        ///
+        /// ⚠️ <b>為什麼是分數不是小數</b>：填滿率本身是除法，存成 double 就把浮點帶進判定，
+        /// 而判定結果會決定題目收不收（鐵則一）。存成分數的話，比較可以兩邊乘開成整數：
+        /// 「面積 ÷ 凸包 ≥ 分子 ÷ 分母」等價於「面積 × 分母 ≥ 分子 × 凸包」。
+        ///
+        /// 分子 0 = 不設這條門檻。
+        /// </summary>
+        public readonly long MinimumFillRatioNumerator;
+
+        /// <summary>凸包填滿率下限的分母。見 <see cref="MinimumFillRatioNumerator"/>。</summary>
+        public readonly long MinimumFillRatioDenominator;
+
         /// <param name="maximumHoleCount">洞最多幾個。</param>
         /// <param name="maximumPinchPointCount">捏點最多幾個。</param>
         /// <param name="maximumConcaveAngleCount">凹角最多幾個。</param>
         /// <param name="maximumPerimeter">周長上限。</param>
+        /// <param name="minimumFillRatioNumerator">
+        /// 填滿率下限的分子，<b>預設 0 = 不設這條</b>。刻意不預設成 <see cref="Default"/> 那一組——
+        /// 縮圖牆與審視鷹架會刻意開一組「全開」的門檻，預設值不是 0 的話它們會安靜地少收一批形狀。
+        /// </param>
+        /// <param name="minimumFillRatioDenominator">填滿率下限的分母，預設 1。</param>
+        /// <exception cref="ArgumentOutOfRangeException">分母不是正數。</exception>
         public AestheticLimits(int maximumHoleCount, int maximumPinchPointCount,
-                               int maximumConcaveAngleCount, Scalar maximumPerimeter)
+                               int maximumConcaveAngleCount, Scalar maximumPerimeter,
+                               long minimumFillRatioNumerator = 0, long minimumFillRatioDenominator = 1)
         {
+            if (minimumFillRatioDenominator <= 0)
+                throw new ArgumentOutOfRangeException(nameof(minimumFillRatioDenominator),
+                    minimumFillRatioDenominator, "填滿率下限的分母必須是正數");
+
             MaximumHoleCount = maximumHoleCount;
             MaximumPinchPointCount = maximumPinchPointCount;
             MaximumConcaveAngleCount = maximumConcaveAngleCount;
             MaximumPerimeter = maximumPerimeter;
+            MinimumFillRatioNumerator = minimumFillRatioNumerator;
+            MinimumFillRatioDenominator = minimumFillRatioDenominator;
         }
 
         /// <summary>
@@ -80,11 +110,19 @@ namespace Tangram.Data
             Scalar perimeter = DifficultyFeatures.TotalPiecePerimeter - features.DoubledHiddenEdgeLength;
             if (perimeter > MaximumPerimeter) violated |= AestheticRules.Perimeter;
 
+            // 填滿率 ≥ 分子/分母 ⇔ 面積 × 分母 ≥ 分子 × 凸包面積。兩邊都乘開，不做除法
+            if (MinimumFillRatioNumerator > 0)
+            {
+                Scalar left = DifficultyFeatures.ExpectedDoubleArea * MinimumFillRatioDenominator;
+                Scalar right = features.ConvexHullDoubleArea * MinimumFillRatioNumerator;
+                if (left < right) violated |= AestheticRules.ConvexHullFillRatio;
+            }
+
             return violated;
         }
 
         /// <param name="features">一個形狀的特徵。</param>
-        /// <returns>四條門檻是否全部通過。</returns>
+        /// <returns>全部門檻是否都通過。</returns>
         public bool Accepts(DifficultyFeatures features) => Violations(features) == AestheticRules.None;
 
         /// <summary>
@@ -115,6 +153,13 @@ namespace Tangram.Data
         /// 而且周長長 = 簡單。使用者要的是<b>簡單題多一點</b>，所以只放寬上限；
         /// ⚠️ <b>刻意不設下限</b>——周長短的正是最難的那一端，本來就稀有，設下限會把難題篩掉。
         ///
+        /// <b>2026-09-12 多一條：凸包填滿率 ≥ 0.6</b>（P2-6）。使用者在對照牆上的判斷：
+        /// 填滿率當權重看不太出效果，但<b>拿來當門檻，其他特徵會更有感</b>——散開的形狀不管
+        /// 周長轉角怎麼變都一樣好拼，留著它們等於在難度尺上加雜訊。
+        /// 2000 個形狀裡：只有前四條收 1594 個，加上這一條剩 845 個；
+        /// 簡單題（≤ 900 分）從 21 題變 84 題，難題（≥ 1500 分）維持約 30 題。
+        /// ⚠️ 0.65 與 0.62 也試過（442／676 題），使用者選 0.6。
+        ///
         /// ⚠️ <b>第一版的門檻是憑感覺猜的，四個裡有兩個錯得離譜</b>——
         /// 周長猜 44 而當時實測的最小值是 44.3（等於全部篩掉），捏點猜 1 而中位數是 4。
         /// 那次 1027 次嘗試只中 3 題（0.3%）。真正的修法不是放寬門檻，
@@ -124,7 +169,9 @@ namespace Tangram.Data
             maximumHoleCount: 1,
             maximumPinchPointCount: 1,
             maximumConcaveAngleCount: 10,
-            maximumPerimeter: Scalar.FromInteger(45));
+            maximumPerimeter: Scalar.FromInteger(45),
+            minimumFillRatioNumerator: 3,        // 填滿率 ≥ 3/5 = 0.6
+            minimumFillRatioDenominator: 5);
     }
 
     /// <summary>生一次的結果。</summary>

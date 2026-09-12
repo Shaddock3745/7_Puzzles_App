@@ -1,0 +1,50 @@
+{
+  "center": 1200,
+  "spread": 200,
+  "weightedMean": 0,
+  "weightedDeviation": 0.628725,
+  "terms": [
+    {
+      "key": "perimeter",
+      "weight": 0.35,
+      "direction": -1,
+      "mean": 38.895101,
+      "deviation": 3.134819
+    },
+    {
+      "key": "cornerCount",
+      "weight": 0.25,
+      "direction": -1,
+      "mean": 16.311243,
+      "deviation": 1.953041
+    },
+    {
+      "key": "keyPiecesExposingOneVertex",
+      "weight": 0.15,
+      "direction": 1,
+      "mean": 1.725444,
+      "deviation": 0.736458
+    },
+    {
+      "key": "forcedPieceCount",
+      "weight": 0.15,
+      "direction": -1,
+      "mean": 0.276923,
+      "deviation": 0.487962
+    },
+    {
+      "key": "largeTrianglesJoined",
+      "weight": 0.15,
+      "direction": -1,
+      "mean": 0.066272,
+      "deviation": 0.248757
+    },
+    {
+      "key": "staggeredEdgeContactCount",
+      "weight": 0.1,
+      "direction": -1,
+      "mean": 1.642604,
+      "deviation": 1.017054
+    }
+  ]
+}
