@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Tangram.Core;
 using Tangram.Data;
@@ -42,6 +43,16 @@ public class TouchInputController : MonoBehaviour
     /// 其餘由各自的 UI 在啟用時自己註冊。
     /// </summary>
     private readonly List<RectTransform> blockingAreas = new List<RectTransform>();
+
+    /// <summary>
+    /// 另一種「不給抓片」的矩形：<b>直接給螢幕座標</b>，不需要 <c>RectTransform</c>。
+    ///
+    /// 為了 <c>OnGUI</c> 畫的東西而加的（<c>DebugOverlay</c> 的摺疊把手，2026-09-12）——
+    /// 那類東西沒有 <c>RectTransform</c>，但一樣不能讓按下穿過去抓到片。
+    /// ⚠️ 收的是<b>函式</b>不是矩形：畫面尺寸一變矩形就換了，存值會過期而且不報錯。
+    /// 座標系跟 <c>Pointer.position</c> 一致（<b>原點在左下</b>），不是 <c>OnGUI</c> 的左上。
+    /// </summary>
+    private readonly List<Func<Rect>> blockingScreenRects = new List<Func<Rect>>();
 
     /// <summary>手指底下那一片。<b>可能只是「按著」，還沒變成拖曳。</b></summary>
     private PieceView pressedPiece;
@@ -333,6 +344,26 @@ public class TouchInputController : MonoBehaviour
     public void UnregisterPressBlockingArea(RectTransform area)
     {
         if (area != null) blockingAreas.Remove(area);
+    }
+
+    /// <summary>
+    /// 登記一塊用<b>螢幕座標</b>描述的擋片區，給沒有 <c>RectTransform</c> 的 UI 用
+    /// （<c>OnGUI</c> 畫的東西）。說明見 <see cref="blockingScreenRects"/>。
+    /// </summary>
+    /// <param name="screenRect">
+    /// 回傳當下矩形的函式，原點左下。傳函式是因為畫面尺寸一變矩形就換了。
+    /// null 或重複登記都會被忽略。
+    /// </param>
+    public void RegisterPressBlockingScreenRect(Func<Rect> screenRect)
+    {
+        if (screenRect == null || blockingScreenRects.Contains(screenRect)) return;
+        blockingScreenRects.Add(screenRect);
+    }
+
+    /// <param name="screenRect">要取消登記的那個函式。null 或不在清單裡都安全。</param>
+    public void UnregisterPressBlockingScreenRect(Func<Rect> screenRect)
+    {
+        if (screenRect != null) blockingScreenRects.Remove(screenRect);
     }
 
     private void OnEnable()
@@ -1112,6 +1143,10 @@ public class TouchInputController : MonoBehaviour
             if (RectTransformUtility.RectangleContainsScreenPoint(area, screenPoint, canvasCamera))
                 return true;
         }
+
+        foreach (Func<Rect> screenRect in blockingScreenRects)
+            if (screenRect != null && screenRect().Contains(screenPoint)) return true;
+
         return false;
     }
 

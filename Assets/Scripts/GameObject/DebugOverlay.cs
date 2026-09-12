@@ -34,6 +34,26 @@ public class DebugOverlay : MonoBehaviour
     [Tooltip("拖曳狀態的來源。留空的話 Awake 會自己找。沒有也能跑，只是少一行。")]
     [SerializeField] private TouchInputController dragController;
 
+    [Tooltip("摺疊把手的邊長，單位 dp。抽屜的箭頭是 48 dp（可觸控的最小建議值），這個刻意小一點。")]
+    [SerializeField] private float handleSizeDp = 32f;
+
+    [Tooltip("一進場是展開還是收折的。調手感時通常收折，看模型狀態時展開。")]
+    [SerializeField] private bool startExpanded = true;
+
+    /// <summary>
+    /// 現在是展開還是收折。收折時只畫把手，<see cref="BuildText"/> 連組字串都省下來。
+    ///
+    /// ⚠️ <b>刻意不存進 <c>PlayerPrefs</c></b>：抽屜也是每場重來（開場一律關著）。
+    /// 這種一眼看得出狀態、一下就切回來的東西，記住它反而會變成「我上次明明關了」的困惑。
+    /// </summary>
+    private bool isExpanded;
+
+    /// <summary>
+    /// 註冊給 <see cref="TouchInputController"/> 的擋片區函式，<b>存起來是為了取消註冊時傳同一個</b>——
+    /// 每次寫 <c>() =&gt; HandleScreenRect()</c> 都會產生新的委派，那樣就取消不掉了。
+    /// </summary>
+    private System.Func<Rect> blockingRectProvider;
+
     /// <summary>在 <c>Update</c> 組好、<c>OnGUI</c> 只負責畫。</summary>
     private string overlayText;
 
@@ -44,6 +64,7 @@ public class DebugOverlay : MonoBehaviour
     {
         if (boardView == null) boardView = FindFirstObjectByType<BoardView>();
         if (dragController == null) dragController = FindFirstObjectByType<TouchInputController>();
+        isExpanded = startExpanded;
 
 #if !UNITY_EDITOR && !DEVELOPMENT_BUILD
         // 正式版直接關掉自己。**這樣就不必在 P4 記得刪** ——
@@ -53,15 +74,75 @@ public class DebugOverlay : MonoBehaviour
 #endif
     }
 
+    /// <summary>
+    /// 把手要登記成擋片區，不然<b>按下會穿過去抓到底下的片</b>——
+    /// 那正是這個專案踩過的坑（見 <c>TouchInputController.RegisterPressBlockingArea</c> 的說明）。
+    /// </summary>
+    private void OnEnable()
+    {
+        if (dragController == null) return;
+        if (blockingRectProvider == null) blockingRectProvider = () => HandleScreenRect();
+        dragController.RegisterPressBlockingScreenRect(blockingRectProvider);
+    }
+
+    private void OnDisable()
+    {
+        if (dragController != null) dragController.UnregisterPressBlockingScreenRect(blockingRectProvider);
+    }
+
     private void Update()
     {
+        PollHandleTap();
+
         // ⚠️ OnGUI 一幀會被呼叫好幾次（layout 一次、repaint 一次）。
         // 字串在那裡組會每幀配置好幾份，所以組在這裡、那裡只畫
-        overlayText = showOverlay ? BuildText() : null;
+        overlayText = showOverlay && isExpanded ? BuildText() : null;
+    }
+
+    /// <summary>
+    /// 把手在螢幕座標的矩形（<b>原點左下</b>，跟 <c>Pointer.position</c> 同一套）。
+    ///
+    /// ⚠️ <c>OnGUI</c> 的原點在左上，所以畫的時候要翻一次 Y（見 <see cref="HandleGuiRect"/>）。
+    /// 兩邊算同一塊地方的兩份程式，一份寫錯就會變成「看得到但按不到」，而且不報錯——
+    /// 所以只有這裡定義位置，畫的那邊從這裡換算過去。
+    /// </summary>
+    /// <returns>把手的矩形。</returns>
+    private Rect HandleScreenRect()
+    {
+        float size = ScreenMetrics.ToPixels(handleSizeDp);
+        float margin = ScreenMetrics.ToPixels(HandleMarginDp);
+        return new Rect(margin, Screen.height - margin - size, size, size);
+    }
+
+    /// <param name="screenRect">螢幕座標的矩形（原點左下）。</param>
+    /// <returns>同一塊地方在 <c>OnGUI</c> 座標的矩形（原點左上）。</returns>
+    private static Rect HandleGuiRect(Rect screenRect)
+        => new Rect(screenRect.x, Screen.height - screenRect.yMax, screenRect.width, screenRect.height);
+
+    /// <summary>把手與畫面邊緣的距離，單位 dp。</summary>
+    private const float HandleMarginDp = 6f;
+
+    /// <summary>
+    /// 按在把手上就開合。
+    ///
+    /// ⚠️ <b>用 <c>Pointer.current</c> 就夠了</b>，不像 <c>TouchInputController</c> 要鎖 touch id——
+    /// 那支要追整段拖曳，所以第二根手指會咬它；這裡只認「按下的那一瞬間」，
+    /// 而開發者不會用兩根手指去按一個除錯按鈕。
+    /// </summary>
+    private void PollHandleTap()
+    {
+        if (!showOverlay) return;
+
+        Pointer pointer = Pointer.current;
+        if (pointer == null || !pointer.press.wasPressedThisFrame) return;
+
+        if (HandleScreenRect().Contains(pointer.position.ReadValue())) isExpanded = !isExpanded;
     }
 
     private void OnGUI()
     {
+        if (!showOverlay) return;
+        DrawHandle();
         if (string.IsNullOrEmpty(overlayText)) return;
 
         // GUIStyle 只能在 OnGUI 裡安全地建（GUI.skin 在別的時機無效）
@@ -79,9 +160,11 @@ public class DebugOverlay : MonoBehaviour
         var content = new GUIContent(overlayText);
         Vector2 size = labelStyle.CalcSize(content);
 
-        const float margin = 8f;
         const float padding = 6f;
-        var box = new Rect(margin, margin, size.x + padding * 2f, size.y + padding * 2f);
+        // 面板接在把手底下，跟把手切齊——抽屜也是「把手在外、本體從把手長出來」
+        Rect handle = HandleGuiRect(HandleScreenRect());
+        var box = new Rect(handle.x, handle.yMax + ScreenMetrics.ToPixels(HandleMarginDp),
+                           size.x + padding * 2f, size.y + padding * 2f);
 
         Color previous = GUI.color;
         GUI.color = new Color(0f, 0f, 0f, 0.65f);
@@ -90,6 +173,36 @@ public class DebugOverlay : MonoBehaviour
 
         GUI.Label(new Rect(box.x + padding, box.y + padding, size.x, size.y), content, labelStyle);
     }
+
+    /// <summary>
+    /// 畫把手：一個小方塊加一個箭頭，展開時朝上（收起來）、收折時朝下（打開）。
+    /// 跟抽屜的箭頭同一個意思——<b>箭頭指的是「按下去會往哪邊變」</b>。
+    /// </summary>
+    private void DrawHandle()
+    {
+        Rect handle = HandleGuiRect(HandleScreenRect());
+
+        Color previous = GUI.color;
+        GUI.color = new Color(0f, 0f, 0f, isExpanded ? 0.65f : 0.45f);
+        GUI.DrawTexture(handle, Texture2D.whiteTexture);
+        GUI.color = previous;
+
+        if (handleStyle == null)
+        {
+            handleStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                richText = false
+            };
+            handleStyle.normal.textColor = Color.white;
+        }
+        handleStyle.fontSize = Mathf.RoundToInt(handle.height * 0.55f);
+
+        GUI.Label(handle, isExpanded ? "▲" : "▼", handleStyle);
+    }
+
+    /// <summary>把手上那個箭頭的樣式。跟 <see cref="labelStyle"/> 一樣只能在 <c>OnGUI</c> 裡建。</summary>
+    private GUIStyle handleStyle;
 
     /// <returns>這一幀要顯示的文字。全部唯讀，不會改到任何狀態。</returns>
     private string BuildText()
