@@ -572,6 +572,43 @@ namespace Tangram.Core
         }
 
         /// <summary>
+        /// <b>開局就先擺好幾片</b>：照參考解把片放上去，只留指定的幾槽在抽屜裡。
+        /// 給回饋收集的<b>練習題</b>用（2026-09-13，見 <c>FeedbackPractice</c>）。
+        ///
+        /// 跟 <see cref="TryFillFromReferenceSolution"/> 的差別有兩個，都是刻意的：
+        /// <list type="number">
+        /// <item><b>不壓 undo</b>：這幾片是「題目本來的樣子」，不是玩家的一步。壓了的話受試者按 undo，
+        ///   擺好的五片會整組飛回抽屜——剛好在教操作的那一刻出現一個莫名其妙的畫面</item>
+        /// <item><b>只能在一關剛開始用</b>：盤面必須是空的、這一關還沒結束。中途用的話會蓋掉玩家已經放的片，
+        ///   而且因為不壓 undo，那些片再也拿不回來</item>
+        /// </list>
+        /// </summary>
+        /// <param name="slotsToLeaveEmpty">留在抽屜裡的槽。</param>
+        /// <returns>有沒有真的擺。沒有題目、已經結束、或盤面不是空的時回 false。</returns>
+        /// <exception cref="System.ArgumentOutOfRangeException">槽索引超出範圍。</exception>
+        public bool TryPrefillAtStart(IReadOnlyCollection<int> slotsToLeaveEmpty)
+        {
+            foreach (int slotIndex in slotsToLeaveEmpty)
+                if (slotIndex < 0 || slotIndex >= BoardState.PieceCount)
+                    throw new System.ArgumentOutOfRangeException(nameof(slotsToLeaveEmpty), slotIndex, "槽索引超出範圍");
+
+            if (Puzzle == null || ReferenceSolution == null || IsFinished) return false;
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+                if (Board[slotIndex].OnBoard) return false;
+
+            var leaveEmpty = new HashSet<int>(slotsToLeaveEmpty);
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+            {
+                if (leaveEmpty.Contains(slotIndex)) continue;
+
+                // ⚠️ 順序：先離開待用區再上盤面（同其他填盤面的方法）
+                SetInTray(slotIndex, false);
+                Board.Place(slotIndex, ReferenceSolution[slotIndex]);
+            }
+            return true;
+        }
+
+        /// <summary>
         /// 用一組指定的擺放蓋掉整個盤面。<b>給出題工具的「載入之前存過的題目」用</b>
         /// （遊玩迴圈不會呼叫它——玩家的片只能自己拖）。
         ///

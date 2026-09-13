@@ -77,6 +77,12 @@ namespace Tangram.Core
         /// <summary>箭頭／回收框。</summary>
         public const int TrayOverlaySortingOrder = 2;
 
+        /// <summary>
+        /// 箭頭方塊上的「▲／▼」、回收框上的「×」（2026-09-14）。一定要比方塊大，不然被方塊蓋住。
+        /// ⚠️ 仍然要比四顆按鈕的 Canvas（order 10）小——那是互動設計 §13.6 的層內約定。
+        /// </summary>
+        public const int TrayOverlayGlyphSortingOrder = 3;
+
 
         /// <param name="kind">片種，決定面積階數。</param>
         /// <param name="slotIndex">槽索引 0~6，只用來破同分。</param>

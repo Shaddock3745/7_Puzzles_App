@@ -15,9 +15,10 @@ using UnityEngine;
 ///
 /// <b>場景要做的事</b>（P1-8 的接線）：
 /// <list type="number">
-/// <item>建兩顆 UI Button（Unity 會自動補上 Canvas 與 EventSystem），擺右下角</item>
-/// <item>兩顆的 <c>onClick</c> 分別接到這支的 <c>OnRotatePressed</c> / <c>OnFlipPressed</c></item>
-/// <item>把兩顆的 <c>GameObject</c> 填進下面兩個欄位</item>
+/// <item>建三顆 UI Button（Unity 會自動補上 Canvas 與 EventSystem），擺右下角</item>
+/// <item>三顆的 <c>onClick</c> 分別接到這支的 <c>OnRotatePressed</c>（逆時針）/
+/// <c>OnRotateClockwisePressed</c>（順時針，2026-09-13 加）/ <c>OnFlipPressed</c></item>
+/// <item>把三顆的 <c>GameObject</c> 填進下面三個欄位</item>
 /// </list>
 ///
 /// <b>「不給抓片的矩形」這支會自己註冊</b>（2026-09-07），不用在
@@ -31,8 +32,11 @@ public class PieceActionButtons : MonoBehaviour
     [Tooltip("選取狀態的來源。留空的話 Awake 會自己找。")]
     [SerializeField] private TouchInputController inputController;
 
-    [Tooltip("旋轉鈕的 GameObject。它的 Button.onClick 要接到這支的 OnRotatePressed。")]
+    [Tooltip("逆時針旋轉鈕的 GameObject。它的 Button.onClick 要接到這支的 OnRotatePressed。")]
     [SerializeField] private GameObject rotateButton;
+
+    [Tooltip("順時針旋轉鈕的 GameObject（2026-09-13）。它的 Button.onClick 要接到這支的 OnRotateClockwisePressed。")]
+    [SerializeField] private GameObject rotateClockwiseButton;
 
     [Tooltip("翻面鈕的 GameObject。它的 Button.onClick 要接到這支的 OnFlipPressed。")]
     [SerializeField] private GameObject flipButton;
@@ -43,8 +47,9 @@ public class PieceActionButtons : MonoBehaviour
         if (inputController == null)
             Debug.LogError("PieceActionButtons 找不到 TouchInputController：按鈕永遠不會出現。", this);
 
-        if (rotateButton == null || flipButton == null)
-            Debug.LogError("PieceActionButtons 的按鈕欄位沒填滿：沒填的那顆不會被顯示或隱藏。", this);
+        if (rotateButton == null || rotateClockwiseButton == null || flipButton == null)
+            Debug.LogError("PieceActionButtons 的按鈕欄位沒填滿（逆時針、順時針、翻面三顆）：" +
+                           "沒填的那顆不會被顯示或隱藏。", this);
     }
 
     /// <summary>
@@ -59,6 +64,7 @@ public class PieceActionButtons : MonoBehaviour
     private void OnEnable()
     {
         rotateArea = RegisterArea(rotateButton);
+        rotateClockwiseArea = RegisterArea(rotateClockwiseButton);
         flipArea = RegisterArea(flipButton);
     }
 
@@ -66,6 +72,7 @@ public class PieceActionButtons : MonoBehaviour
     {
         if (inputController == null) return;
         inputController.UnregisterPressBlockingArea(rotateArea);
+        inputController.UnregisterPressBlockingArea(rotateClockwiseArea);
         inputController.UnregisterPressBlockingArea(flipArea);
     }
 
@@ -88,6 +95,7 @@ public class PieceActionButtons : MonoBehaviour
     }
 
     private RectTransform rotateArea;
+    private RectTransform rotateClockwiseArea;
     private RectTransform flipArea;
 
     /// <summary>
@@ -106,6 +114,9 @@ public class PieceActionButtons : MonoBehaviour
 
         SetShown(rotateButton, target != null);
 
+        // 兩顆旋轉鈕的顯示條件刻意是同一個算式——分岔的話會出現「只看得到一個方向」
+        SetShown(rotateClockwiseButton, target != null);
+
         // 翻面鈕再多一層：其餘片的鏡像等於某個旋轉，翻了是做白工
         SetShown(flipButton, target != null && SnapSolver.CanFlip(target.Kind));
     }
@@ -119,10 +130,16 @@ public class PieceActionButtons : MonoBehaviour
         button.SetActive(shown);
     }
 
-    /// <summary>旋轉鈕被按下。接在 Unity <c>Button.onClick</c> 上。</summary>
+    /// <summary>逆時針旋轉鈕被按下。接在 Unity <c>Button.onClick</c> 上。</summary>
     public void OnRotatePressed()
     {
         if (inputController != null) inputController.RotateSelected();
+    }
+
+    /// <summary>順時針旋轉鈕被按下。接在 Unity <c>Button.onClick</c> 上。</summary>
+    public void OnRotateClockwisePressed()
+    {
+        if (inputController != null) inputController.RotateSelectedClockwise();
     }
 
     /// <summary>翻面鈕被按下。接在 Unity <c>Button.onClick</c> 上。</summary>

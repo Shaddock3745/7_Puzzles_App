@@ -217,7 +217,25 @@ public class TouchInputController : MonoBehaviour
             : null;
 
     /// <summary>
-    /// 把選取的那一片轉一格（互動設計 §5）。
+    /// 把選取的那一片<b>逆時針</b>轉一格（互動設計 §5）。模型的旋轉方向就是逆時針。
+    /// 順時針那顆鈕走 <see cref="RotateSelectedClockwise"/>，兩顆共用 <see cref="RotateSelectedBy"/>。
+    /// </summary>
+    public void RotateSelected() => RotateSelectedBy(1, "RotateSelected");
+
+    /// <summary>
+    /// 把選取的那一片<b>順時針</b>轉一格（2026-09-13，排在收回饋資料之前）。
+    ///
+    /// <b>為什麼要有</b>：只有一個方向時，轉到想要的角度最壞要按 7 下，兩個方向最壞 4 下。
+    /// ⚠️ 趕在收回饋資料之前做，是因為「一直按旋轉很煩」會被受試者算進「這題很難」——
+    /// 需要大量旋轉的題目會被系統性高估，而那不是難度權重該量到的東西。
+    ///
+    /// ⚠️ 翻面過的平行四邊形也一樣是順時針：模型是「先翻面、再旋轉」，旋轉永遠作用在世界座標上，
+    /// 所以格數 −1 在畫面上永遠是順時針，翻不翻面不會反過來。
+    /// </summary>
+    public void RotateSelectedClockwise() => RotateSelectedBy(-1, "RotateSelectedClockwise");
+
+    /// <summary>
+    /// 把選取的那一片轉 <paramref name="steps"/> 格。<b>轉的規則只有這一份</b>，兩顆旋轉鈕都叫這裡。
     ///
     /// <b>轉的規則住在這裡，不在按鈕上。</b>按鈕只是眾多觸發器裡的一個——
     /// 之後的鍵盤快捷鍵、手勢、提示想觸發旋轉都叫這裡，規則永遠只有這一份。
@@ -228,17 +246,17 @@ public class TouchInputController : MonoBehaviour
     /// 軸心補償不用管——那做在 <see cref="PieceView.Rotation"/> 的設定值那一層，
     /// 而且作用對象必定沒吸住，補償一定會生效。
     /// </summary>
-    public void RotateSelected()
+    /// <param name="steps">正數逆時針、負數順時針。</param>
+    /// <param name="actionName">呼叫者的名字，只用在「沒有作用對象」的警告裡。</param>
+    private void RotateSelectedBy(int steps, string actionName)
     {
-        PieceView piece = RequireActionTarget("RotateSelected");
+        PieceView piece = RequireActionTarget(actionName);
         if (piece == null) return;
 
-        // ⚠️ 一定要照片種的循環長度取餘數，不是固定 8。
-        // 理由不是「按了沒反應」（正方形用 8 每按還是轉 45°），而是
-        // **同一個外觀不要有兩個編號**——正方形 rot 0 與 rot 2 佔位一樣但
-        // Placement.Equals 不相等，之後 undo 與解的比對會踩到
-        int cycleLength = SnapSolver.RotationCycleLength(piece.Kind);
-        piece.Rotation = (piece.Rotation + 1) % cycleLength;
+        // ⚠️ 一定要照片種的循環長度取餘數，不是固定 8，而且負數要繞回來——
+        // **同一個外觀不要有兩個編號**：正方形 rot 0 與 rot 2 佔位一樣但 Placement.Equals 不相等，
+        // 之後 undo 與解的比對會踩到。規則住在 PiecePrototype.RotateWithinCycle（離線測得到）
+        piece.Rotation = PiecePrototype.RotateWithinCycle(piece.Kind, piece.Rotation, steps);
     }
 
     /// <summary>

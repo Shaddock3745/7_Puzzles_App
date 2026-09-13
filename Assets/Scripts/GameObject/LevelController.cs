@@ -60,6 +60,14 @@ public class LevelController : MonoBehaviour
     /// </summary>
     private DifficultyWeights difficultyWeights;
 
+    /// <summary>
+    /// 目前的難度權重，讀不到時是 null。<b>唯讀</b>——給回饋收集場景自己生題單用（2026-09-13）。
+    ///
+    /// ⚠️ <b>要權重的人一律跟這裡拿，不要自己再讀一次檔</b>：讀兩次就是兩份，哪天其中一邊換了來源就會分家。
+    /// 在 <c>Start</c> 或之後讀——它在這支的 <c>Awake</c> 裡填，而 Unity 保證所有 <c>Awake</c> 都跑完才開始跑 <c>Start</c>。
+    /// </summary>
+    public DifficultyWeights CurrentDifficultyWeights => difficultyWeights;
+
     /// <summary>ELO 設定檔在 <c>Resources</c> 裡的名字（不含副檔名）。</summary>
     private const string SkillRatingSettingsResourceName = "SkillRatingSettings";
 

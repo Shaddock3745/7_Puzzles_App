@@ -163,6 +163,25 @@ namespace Tangram.Data
         }
 
         /// <summary>
+        /// 從 <paramref name="rotation"/> 轉 <paramref name="steps"/> 格之後落在哪一格，<b>保證落在 0 ～ 循環長度−1</b>。
+        /// 正數是逆時針（模型的旋轉方向），負數是順時針（2026-09-13 加了順時針鈕）。
+        ///
+        /// ⚠️ <b>負數要自己繞回來</b>：C# 的 <c>%</c> 對負數回負數（−1 % 8 = −1），直接拿去當旋轉值的話，
+        /// <c>Placement</c> 的建構子會把它正規化成 7，但 <c>PieceView</c> 那邊存的還是 −1——
+        /// 同一個外觀兩個編號，undo 與解的比對會踩到（跟「照循環長度取餘數，不是固定 8」同一個理由）。
+        /// ⚠️ 也不能用 <see cref="Symmetry.Modulo8"/>：正方形循環是 2、平行四邊形是 4。
+        /// </summary>
+        /// <param name="kind">片種，決定循環長度。</param>
+        /// <param name="rotation">目前的旋轉格數。</param>
+        /// <param name="steps">要轉幾格，可以是負的。</param>
+        /// <returns>轉完之後的旋轉格數。</returns>
+        public static int RotateWithinCycle(PieceKind kind, int rotation, int steps)
+        {
+            int cycleLength = RotationCycleLength(kind);
+            return ((rotation + steps) % cycleLength + cycleLength) % cycleLength;
+        }
+
+        /// <summary>
         /// 翻面對這一片有沒有意義。
         ///
         /// ⚠️ 同樣是**幾何事實**：三角形與正方形鏡射之後等同於某個旋轉，

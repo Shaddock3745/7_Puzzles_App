@@ -34,7 +34,7 @@ public static class ScreenMetrics
     /// <summary>
     /// 一個 dp 等於幾個螢幕像素。
     ///
-    /// ⚠️ <b>Editor 一律用基準密度</b>，不讀 <c>Screen.dpi</c>——
+    /// ⚠️ <b>Editor 與桌機版一律用基準密度</b>，不讀 <c>Screen.dpi</c>（桌機版是 2026-09-14 加的，理由見程式裡的註解）——
     /// 那支在 Editor 回的是**你螢幕的** dpi（桌機通常 96 左右），
     /// 所以 Game 視窗就算設成 1080×2340，UI 也會縮成手機上的四分之一大。
     /// 那不是 bug，但會讓「在 Editor 調好的手感」到實機上完全不成立。
@@ -46,7 +46,10 @@ public static class ScreenMetrics
     {
         get
         {
-#if UNITY_EDITOR
+            // ⚠️ 桌機版（exe）也用基準密度（2026-09-14）：回饋收集要在一台固定的舊筆電（1920×1080）上跑 exe，
+            // 而筆電的 Screen.dpi 大約 96——照讀的話吸附半徑、方塊、門檻全部縮成 Editor 的四分之一，
+            // 滑鼠很難吸上，受試者會把這個算進「這題很難」。用基準密度，受試者玩到的就是在 Editor 裡調過的手感
+#if UNITY_EDITOR || UNITY_STANDALONE
             float dotsPerInch = ReferenceDotsPerInch;
 #else
             float dotsPerInch = Screen.dpi;

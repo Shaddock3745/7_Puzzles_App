@@ -170,6 +170,39 @@ namespace Tangram.Core.Tests
             Assert.AreEqual(4, SnapSolver.RotationCycleLength(PieceKind.Parallelogram));
         }
 
+        /// <summary>
+        /// 順時針鈕（2026-09-13）：從 0 往回轉一格要落在<b>最後一格</b>，不是 −1。
+        /// ⚠️ C# 的 % 對負數回負數，直接用的話 PieceView 會存著 −1，同一個外觀兩個編號。
+        /// </summary>
+        [TestCase(PieceKind.SmallTriangle, 7)]
+        [TestCase(PieceKind.Square, 1)]
+        [TestCase(PieceKind.Parallelogram, 3)]
+        public void 旋轉_從零順時針轉一格落在最後一格(PieceKind kind, int expected)
+        {
+            Assert.AreEqual(expected, PiecePrototype.RotateWithinCycle(kind, 0, -1));
+        }
+
+        /// <summary>
+        /// 每一種片、每一個起點、正反各轉 N 格：結果永遠在循環範圍內，而且逆轉 N 格一定回到原點。
+        /// N 刻意包含比循環長度大的值（按很多下）。
+        /// </summary>
+        [Test]
+        public void 旋轉_順轉再逆轉回到原點而且永遠在範圍內()
+        {
+            foreach (PieceKind kind in PiecePrototype.TangramSet)
+            {
+                int cycleLength = PiecePrototype.RotationCycleLength(kind);
+                for (int start = 0; start < cycleLength; start++)
+                    foreach (int steps in new[] { 1, -1, 3, -5, 17, -17 })
+                    {
+                        int turned = PiecePrototype.RotateWithinCycle(kind, start, steps);
+                        Assert.That(turned, Is.InRange(0, cycleLength - 1), $"{kind} 從 {start} 轉 {steps} 格");
+                        Assert.AreEqual(start, PiecePrototype.RotateWithinCycle(kind, turned, -steps),
+                            $"{kind} 從 {start} 轉 {steps} 格再轉回來沒有回到原點");
+                    }
+            }
+        }
+
         // --- P1-7 盒子模式的吸附 ---
 
         /// <summary>經典大正方形當盒子，原點放在 (0,0)。</summary>

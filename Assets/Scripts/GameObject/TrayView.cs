@@ -59,6 +59,10 @@ public class TrayView : MonoBehaviour
     [Tooltip("箭頭（也是回收框）的邊長，單位 dp。48 dp 是 Android 建議的最小可觸控尺寸。")]
     [SerializeField] private float arrowSizeDp = 56f;
 
+    [Tooltip("箭頭方塊上的「▲／▼」與回收框上的「×」佔方塊邊長的比例。")]
+    [Range(0.2f, 0.9f)]
+    [SerializeField] private float glyphFillRatio = 0.5f;
+
     [Tooltip("縮圖佔一格的比例。1 = 塞滿，會貼在一起。")]
     [Range(0.3f, 1f)]
     [SerializeField] private float thumbnailFillRatio = 0.72f;
@@ -95,6 +99,27 @@ public class TrayView : MonoBehaviour
     private SpriteRenderer arrowTab;
     private SpriteRenderer recycleBox;
 
+    /// <summary>
+    /// 箭頭方塊上的三角形：抽屜關著朝上（按下去往上長出來）、開著朝下（按下去收回去）。
+    /// 跟 <c>DebugOverlay</c> 把手的意思一樣——<b>箭頭指的是按下去會往哪邊變</b>。
+    /// </summary>
+    private SpriteRenderer arrowGlyph;
+
+    /// <summary>回收框上的「×」：拖到這裡放手，片會回抽屜。</summary>
+    private SpriteRenderer recycleGlyph;
+
+    /// <summary>
+    /// 兩個符號的圖，<b>執行時生成</b>，不匯入美術資源（跟方塊、片的圖同一個理由，互動設計 §13.7）。
+    ///
+    /// ⚠️ <b>刻意不照 <c>DebugOverlay</c> 用 <c>OnGUI</c> 畫文字</b>（2026-09-14）：<c>OnGUI</c> 不吃 sorting layer，
+    /// 永遠疊在最上面——過關／放棄彈窗、回饋場景的滿版面板打開時，右下角還會浮著一個箭頭，而且不報錯。
+    /// DebugOverlay 可以那樣做，是因為它本來就該在最上面，而且正式版會被關掉。
+    /// </summary>
+    private Sprite triangleSprite;
+    private Texture2D triangleTexture;
+    private Sprite crossSprite;
+    private Texture2D crossTexture;
+
     /// <summary>程序生成的 1×1 白色 sprite，抽屜／箭頭／回收框都用它加 tint。</summary>
     private Sprite blockSprite;
     private Texture2D blockTexture;
@@ -108,6 +133,7 @@ public class TrayView : MonoBehaviour
                            "抽屜與縮圖不會出現在正確的位置。", this);
 
         BuildBlockSprite();
+        BuildGlyphSprites();
         BuildRoots();
         BuildPieces();          // ⚠️ 一定要在 Awake，見下面的註解
         BuildOverlay();
@@ -167,6 +193,105 @@ public class TrayView : MonoBehaviour
         drawerPanel = BuildBlock("DrawerPanel", DrawerSortingOrder, new Color(0.12f, 0.13f, 0.16f, 0.92f));
         arrowTab = BuildBlock("ArrowTab", OverlayTopSortingOrder, new Color(0.75f, 0.78f, 0.82f, 0.85f));
         recycleBox = BuildBlock("RecycleBox", OverlayTopSortingOrder, new Color(0.85f, 0.35f, 0.35f, 0.45f));
+
+        // 顏色是佔位的，美術往後放。只求在方塊上看得清楚：淺灰方塊配深色、半透明紅框配白色
+        arrowGlyph = BuildBlock("ArrowGlyph", GlyphSortingOrder, new Color(0.15f, 0.16f, 0.2f, 1f));
+        arrowGlyph.sprite = triangleSprite;
+        recycleGlyph = BuildBlock("RecycleGlyph", GlyphSortingOrder, new Color(1f, 1f, 1f, 0.9f));
+        recycleGlyph.sprite = crossSprite;
+    }
+
+    /// <summary>符號貼圖的邊長（像素）。放大到方塊一半大時仍然夠平滑。</summary>
+    private const int GlyphTextureSize = 64;
+
+    /// <summary>
+    /// 生成兩張符號貼圖：朝上的三角形、叉叉。白色，顏色由 <c>SpriteRenderer.color</c> 決定。
+    ///
+    /// <b>邊緣做反鋸齒</b>：每個像素算「離形狀邊界幾個像素」，換成 0 ～ 1 的透明度。
+    /// 不做的話縮放之後邊緣是一格一格的鋸齒。
+    ///
+    /// <c>pixelsPerUnit</c> 設成貼圖邊長，所以一張圖是 1 個世界單位——<c>localScale</c> 直接就是大小。
+    /// </summary>
+    private void BuildGlyphSprites()
+    {
+        // 朝上的三角形，逆時針。上下邊界對稱於 0.5（0.19 ～ 0.81），轉 180° 變成朝下時才不會上下跳一格。
+        // 留邊是為了反鋸齒那半個像素不被裁掉
+        Vector2[] triangle = { new Vector2(0.12f, 0.19f), new Vector2(0.88f, 0.19f), new Vector2(0.5f, 0.81f) };
+        triangleTexture = BuildGlyphTexture("TriangleGlyph", pixel => ConvexCoverage(pixel, triangle));
+
+        // 叉叉：兩條粗線
+        const float HalfThickness = 0.09f;
+        crossTexture = BuildGlyphTexture("CrossGlyph", pixel => Mathf.Max(
+            StrokeCoverage(pixel, new Vector2(0.2f, 0.2f), new Vector2(0.8f, 0.8f), HalfThickness),
+            StrokeCoverage(pixel, new Vector2(0.2f, 0.8f), new Vector2(0.8f, 0.2f), HalfThickness)));
+
+        triangleSprite = Sprite.Create(triangleTexture, new Rect(0f, 0f, GlyphTextureSize, GlyphTextureSize),
+                                       new Vector2(0.5f, 0.5f), pixelsPerUnit: GlyphTextureSize);
+        crossSprite = Sprite.Create(crossTexture, new Rect(0f, 0f, GlyphTextureSize, GlyphTextureSize),
+                                    new Vector2(0.5f, 0.5f), pixelsPerUnit: GlyphTextureSize);
+    }
+
+    /// <param name="textureName">貼圖名稱，只影響除錯時好不好認。</param>
+    /// <param name="coverageOf">給像素中心（0 ～ 1 的正規化座標），回傳 0 ～ 1 的覆蓋率。</param>
+    /// <returns>白色、透明度照覆蓋率的貼圖。</returns>
+    private static Texture2D BuildGlyphTexture(string textureName, System.Func<Vector2, float> coverageOf)
+    {
+        var texture = new Texture2D(GlyphTextureSize, GlyphTextureSize, TextureFormat.RGBA32, mipChain: false)
+        {
+            name = textureName,
+            wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Bilinear,
+        };
+
+        var pixels = new Color32[GlyphTextureSize * GlyphTextureSize];
+        for (int y = 0; y < GlyphTextureSize; y++)
+            for (int x = 0; x < GlyphTextureSize; x++)
+            {
+                var center = new Vector2((x + 0.5f) / GlyphTextureSize, (y + 0.5f) / GlyphTextureSize);
+                byte alpha = (byte)Mathf.RoundToInt(Mathf.Clamp01(coverageOf(center)) * 255f);
+                pixels[y * GlyphTextureSize + x] = new Color32(255, 255, 255, alpha);
+            }
+
+        texture.SetPixels32(pixels);
+        texture.Apply();
+        return texture;
+    }
+
+    /// <summary>
+    /// 凸多邊形（逆時針）對一個點的覆蓋率。取「離每條邊的有號距離」的最小值——在裡面是正的——
+    /// 換成像素之後加 0.5，邊界上剛好是半透明。
+    /// </summary>
+    /// <param name="point">正規化座標。</param>
+    /// <param name="vertices">逆時針的頂點，正規化座標。</param>
+    /// <returns>0 ～ 1（還沒夾）。</returns>
+    private static float ConvexCoverage(Vector2 point, Vector2[] vertices)
+    {
+        float nearest = float.MaxValue;
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            Vector2 start = vertices[i];
+            Vector2 edge = (vertices[(i + 1) % vertices.Length] - start).normalized;
+            Vector2 toPoint = point - start;
+
+            // 二維外積：逆時針時，點在邊的左邊（多邊形裡面）是正的
+            float signedDistance = edge.x * toPoint.y - edge.y * toPoint.x;
+            if (signedDistance < nearest) nearest = signedDistance;
+        }
+        return nearest * GlyphTextureSize + 0.5f;
+    }
+
+    /// <summary>一條有粗細的線段對一個點的覆蓋率。</summary>
+    /// <param name="point">正規化座標。</param>
+    /// <param name="from">線段起點。</param>
+    /// <param name="to">線段終點。</param>
+    /// <param name="halfThickness">半個線寬（正規化單位）。</param>
+    /// <returns>0 ～ 1（還沒夾）。</returns>
+    private static float StrokeCoverage(Vector2 point, Vector2 from, Vector2 to, float halfThickness)
+    {
+        Vector2 segment = to - from;
+        float along = Mathf.Clamp01(Vector2.Dot(point - from, segment) / segment.sqrMagnitude);
+        float distance = Vector2.Distance(point, from + segment * along);
+        return (halfThickness - distance) * GlyphTextureSize + 0.5f;
     }
 
     /// <param name="objectName">物件名稱，只影響 Hierarchy 好不好讀。</param>
@@ -211,6 +336,7 @@ public class TrayView : MonoBehaviour
     private const int DrawerSortingOrder = PieceSorting.TrayDrawerSortingOrder;
     private const int ThumbnailSortingOrder = PieceSorting.TrayThumbnailSortingOrder;
     private const int OverlayTopSortingOrder = PieceSorting.TrayOverlaySortingOrder;
+    private const int GlyphSortingOrder = PieceSorting.TrayOverlayGlyphSortingOrder;
 
     // ─────────────────────────────────────────────────────────────
     // 螢幕上的三塊矩形。每幀從 Screen 重算，不快取——
@@ -434,6 +560,10 @@ public class TrayView : MonoBehaviour
         PlaceBlock(arrowTab, arrow, pixelsPerUnit);
         PlaceBlock(recycleBox, arrow, pixelsPerUnit);
 
+        // 符號擺在方塊正中央。三角形：關著朝上、開著朝下（按下去會往哪邊變）
+        PlaceGlyph(arrowGlyph, arrow, pixelsPerUnit, IsOpen ? 180f : 0f);
+        PlaceGlyph(recycleGlyph, arrow, pixelsPerUnit, 0f);
+
         if (!IsOpen) return;
 
         Rect drawer = DrawerRect;
@@ -501,6 +631,21 @@ public class TrayView : MonoBehaviour
             new Vector3(screenRect.width / pixelsPerUnit, screenRect.height / pixelsPerUnit, 1f);
     }
 
+    /// <summary>把一個符號擺在方塊正中央，大小是方塊短邊乘上 <see cref="glyphFillRatio"/>。</summary>
+    /// <param name="renderer">符號。</param>
+    /// <param name="blockScreenRect">它所在的方塊在螢幕上的矩形。</param>
+    /// <param name="pixelsPerUnit">一個模型單位佔幾像素。</param>
+    /// <param name="angleDegrees">繞 Z 轉幾度（0 = 圖原本的方向）。</param>
+    private void PlaceGlyph(SpriteRenderer renderer, Rect blockScreenRect, float pixelsPerUnit, float angleDegrees)
+    {
+        if (renderer == null || !renderer.enabled) return;
+
+        float size = Mathf.Min(blockScreenRect.width, blockScreenRect.height) * glyphFillRatio / pixelsPerUnit;
+        renderer.transform.localPosition = ScreenToOverlayLocal(blockScreenRect.center, pixelsPerUnit);
+        renderer.transform.localRotation = Quaternion.Euler(0f, 0f, angleDegrees);
+        renderer.transform.localScale = new Vector3(size, size, 1f);
+    }
+
     /// <summary>
     /// 螢幕座標 → <see cref="overlayRoot"/> 的區域座標。
     ///
@@ -524,6 +669,10 @@ public class TrayView : MonoBehaviour
         if (drawerPanel != null) drawerPanel.enabled = drawer;
         if (arrowTab != null) arrowTab.enabled = arrow;
         if (recycleBox != null) recycleBox.enabled = recycle;
+
+        // 符號跟著它的方塊，條件一模一樣——分開算的話會出現「方塊不見了但箭頭還浮著」
+        if (arrowGlyph != null) arrowGlyph.enabled = arrow;
+        if (recycleGlyph != null) recycleGlyph.enabled = recycle;
 
         if (drawer) return;
         foreach (SpriteRenderer thumbnail in thumbnails)
@@ -561,5 +710,9 @@ public class TrayView : MonoBehaviour
         // 程序生成的東西不會被 Unity 自動回收，離開 Play 模式時會留在記憶體裡
         if (blockSprite != null) Destroy(blockSprite);
         if (blockTexture != null) Destroy(blockTexture);
+        if (triangleSprite != null) Destroy(triangleSprite);
+        if (triangleTexture != null) Destroy(triangleTexture);
+        if (crossSprite != null) Destroy(crossSprite);
+        if (crossTexture != null) Destroy(crossTexture);
     }
 }

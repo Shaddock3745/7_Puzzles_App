@@ -137,6 +137,48 @@ namespace Tangram.Data
         }
 
         /// <summary>
+        /// 這份權重的<b>指紋</b>：12 個十六進位字元的短雜湊。任何一個數字改了，指紋就變（2026-09-14）。
+        ///
+        /// <b>為什麼要有</b>：回饋收集會分好幾輪，中間可能換權重。每一行只記「當時的難度值」的話，
+        /// 不同輪的難度值是不同的尺量出來的，混在一起對不上，而且看不出來是哪一版。
+        /// 題目本身雖然存了、可以重算，但「當時受試者看到的題是照哪把尺挑出來的」會搞不清楚。
+        ///
+        /// ⚠️ <b>算的是數字不是檔案文字</b>：排版、空白、特徵的先後順序不影響指紋（公式是加總，順序本來就不影響結果），
+        /// 只有真的會改變難度值的東西才會。數字用 <c>"R"</c> 格式與 InvariantCulture 寫，換機器、換地區設定都一樣。
+        /// </summary>
+        /// <returns>例如 <c>3f9a0c1b7e2d</c>。</returns>
+        public string Fingerprint()
+        {
+            var builder = new System.Text.StringBuilder();
+            void Append(double value) =>
+                builder.Append(value.ToString("R", System.Globalization.CultureInfo.InvariantCulture)).Append('|');
+
+            Append(center);
+            Append(spread);
+            Append(weightedMean);
+            Append(weightedDeviation);
+
+            var sortedTerms = new List<DifficultyTermWeight>(terms);
+            sortedTerms.Sort((left, right) => string.CompareOrdinal(left.key, right.key));
+            foreach (DifficultyTermWeight term in sortedTerms)
+            {
+                builder.Append(term.key).Append('|');
+                Append(term.weight);
+                builder.Append(term.direction).Append('|');
+                Append(term.mean);
+                Append(term.deviation);
+            }
+
+            using (var hashAlgorithm = System.Security.Cryptography.SHA256.Create())
+            {
+                byte[] hash = hashAlgorithm.ComputeHash(System.Text.Encoding.UTF8.GetBytes(builder.ToString()));
+                var hexadecimal = new System.Text.StringBuilder(12);
+                for (int i = 0; i < 6; i++) hexadecimal.Append(hash[i].ToString("x2"));
+                return hexadecimal.ToString();
+            }
+        }
+
+        /// <summary>
         /// 找出這份設定的第一個問題。
         /// </summary>
         /// <returns>問題的說明；沒有問題時回 null。</returns>

@@ -126,3 +126,8 @@ InitTestScene*.unity*
 # ⚠️ Assets/Resources.meta 原本也在這裡（那時候這個資料夾只有上面那些垃圾檔）。
 # 2026-09-12 起 Resources/ 放了 DifficultyWeights.json（P2-6 的權重檔），
 # 資料夾的 .meta 要進版控——沒有它換一台機器 GUID 會重生。
+
+# 回饋收集的結果與暫存檔（2026-09-14）。
+# 不含姓名，但有受試者的年齡層，而 repo 在 GitHub 上——資料另外備份，不進版控。
+# Editor 裡測試也會寫到這裡，所以一定要擋。
+/[Tt]ools/[Ff]eedback/
