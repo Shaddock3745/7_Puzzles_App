@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using NUnit.Framework;
@@ -182,33 +181,14 @@ namespace Tangram.Data.Tests
         {
             string text = File.ReadAllText(RepositoryFiles.Find(RepositoryFiles.DifficultyWeightsRelativePath));
             DifficultyWeights weights = DifficultyWeights.FromJson(text);
+            const string label = "權重檔";
 
-            FieldInfo[] topFields = typeof(DifficultyWeights).GetFields(BindingFlags.Public | BindingFlags.Instance);
-            FieldInfo[] termFields = typeof(DifficultyTermWeight).GetFields(BindingFlags.Public | BindingFlags.Instance);
-
-            var knownNames = new HashSet<string>();
-            foreach (FieldInfo field in topFields) knownNames.Add(field.Name);
-            foreach (FieldInfo field in termFields) knownNames.Add(field.Name);
-
-            // 鍵 = 雙引號包起來、後面接冒號的字。值（例如 "perimeter"）後面接的是逗號或換行，不會被抓到
-            foreach (Match match in Regex.Matches(text, "\"(\\w+)\"\\s*:"))
-                Assert.IsTrue(knownNames.Contains(match.Groups[1].Value),
-                    $"權重檔裡有程式不認得的鍵「{match.Groups[1].Value}」——拼錯的話，它原本要填的欄位會被讀成 0");
+            JsonKeyAssertions.EveryKeyIsKnown(text, label, typeof(DifficultyWeights), typeof(DifficultyTermWeight));
 
             // 反過來：每個欄位都要出現，而且每一筆特徵都要有自己的一份
-            foreach (FieldInfo field in topFields)
-                Assert.AreEqual(1, CountKey(text, field.Name),
-                    $"權重檔裡「{field.Name}」應該剛好出現一次——少了會被讀成 0");
-            foreach (FieldInfo field in termFields)
-                Assert.AreEqual(weights.terms.Length, CountKey(text, field.Name),
-                    $"權重檔有 {weights.terms.Length} 筆特徵，「{field.Name}」卻不是每筆都有——少掉的會被讀成 0");
+            JsonKeyAssertions.EveryFieldAppears(text, label, typeof(DifficultyWeights), 1);
+            JsonKeyAssertions.EveryFieldAppears(text, label, typeof(DifficultyTermWeight), weights.terms.Length);
         }
-
-        /// <param name="text">JSON 文字。</param>
-        /// <param name="name">鍵名。</param>
-        /// <returns>這個鍵出現幾次。</returns>
-        private static int CountKey(string text, string name) =>
-            Regex.Matches(text, $"\"{Regex.Escape(name)}\"\\s*:").Count;
 
         /// <summary>
         /// 讀檔時的檢查：每一種壞法都要丟例外，訊息要說是哪一項。
@@ -220,17 +200,17 @@ namespace Tangram.Data.Tests
             string text = File.ReadAllText(RepositoryFiles.Find(RepositoryFiles.DifficultyWeightsRelativePath));
 
             AssertRejected("", "空的", "空字串");
-            AssertRejected(ReplaceFirstValue(text, "weightedDeviation", "0"), "weightedDeviation", "換算倍率是 0");
-            AssertRejected(ReplaceFirstValue(text, "spread", "0"), "spread", "間距是 0");
+            AssertRejected(JsonKeyAssertions.ReplaceFirstNumber(text, "weightedDeviation", "0"), "weightedDeviation", "換算倍率是 0");
+            AssertRejected(JsonKeyAssertions.ReplaceFirstNumber(text, "spread", "0"), "spread", "間距是 0");
 
             // 欄位名拼錯 → JsonUtility 讀成 0 → 被「必須大於 0」攔下來。這就是那條檢查存在的理由
             AssertRejected(Regex.Replace(text, "\"spread\"", "\"spreadd\""), "spread", "間距的鍵名拼錯");
 
             AssertRejected(ReplaceFirstKeyValue(text, "perimeter", "perimeterr"), "perimeterr", "不認得的特徵");
             AssertRejected(ReplaceFirstKeyValue(text, "cornerCount", "perimeter"), "兩次", "同一個特徵出現兩次");
-            AssertRejected(ReplaceFirstValue(text, "direction", "2"), "方向", "方向不是 ±1");
-            AssertRejected(ReplaceFirstValue(text, "weight", "-0.1"), "負的", "權重是負的");
-            AssertRejected(ReplaceFirstValue(text, "deviation", "0"), "標準差", "有權重的特徵標準差是 0");
+            AssertRejected(JsonKeyAssertions.ReplaceFirstNumber(text, "direction", "2"), "方向", "方向不是 ±1");
+            AssertRejected(JsonKeyAssertions.ReplaceFirstNumber(text, "weight", "-0.1"), "負的", "權重是負的");
+            AssertRejected(JsonKeyAssertions.ReplaceFirstNumber(text, "deviation", "0"), "標準差", "有權重的特徵標準差是 0");
         }
 
         /// <param name="json">要讀的內容。</param>
@@ -240,18 +220,6 @@ namespace Tangram.Data.Tests
         {
             var exception = Assert.Throws<ArgumentException>(() => DifficultyWeights.FromJson(json), label);
             StringAssert.Contains(expectedInMessage, exception.Message, $"{label}：訊息沒有說是哪一項");
-        }
-
-        /// <summary>把第一個 <c>"name": 數字</c> 的數字換掉。</summary>
-        /// <param name="text">JSON 文字。</param>
-        /// <param name="name">鍵名。</param>
-        /// <param name="newValue">新的值（原樣寫進去）。</param>
-        /// <returns>換過的文字。</returns>
-        private static string ReplaceFirstValue(string text, string name, string newValue)
-        {
-            var pattern = new Regex($"(\"{Regex.Escape(name)}\"\\s*:\\s*)-?[0-9.eE+-]+");
-            Assert.IsTrue(pattern.IsMatch(text), $"權重檔裡找不到「{name}」");
-            return pattern.Replace(text, match => match.Groups[1].Value + newValue, 1);
         }
 
         /// <summary>把第一個 <c>"key": "oldKey"</c> 換成 <c>"key": "newKey"</c>。</summary>

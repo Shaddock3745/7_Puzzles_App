@@ -36,9 +36,6 @@ public class LevelController : MonoBehaviour
     [Tooltip("固定種子，同一個值每次都生出同一串題目——看到怪東西才重現得出來。")]
     [SerializeField] private int generatorSeed = 20260910;
 
-    [Tooltip("開場第一關的目標難度。之後每一關的目標由呼叫端給（現在是完成彈窗上的輸入框）。")]
-    [SerializeField] private int startingTargetDifficulty = 1200;
-
     /// <summary>這一場。<b>別人請走 <c>LevelSession.Current</c>，不要跟這支要。</b></summary>
     private LevelSession session;
 
@@ -63,16 +60,12 @@ public class LevelController : MonoBehaviour
     /// </summary>
     private DifficultyWeights difficultyWeights;
 
-    /// <summary>
-    /// 上一次實際用過的目標難度（P2-13 搬過來的）。
-    ///
-    /// ⚠️ <b>這個值的真相只有一份，而且住在這裡</b>：過關彈窗與放棄彈窗都要「下一題要多難」，
-    /// 兩邊各記一份就是<b>兩個地方各自認定真相</b>——那正是 <c>PiecePreview</c> 那個教訓的形狀。
-    ///
-    /// ⭐ <b>記的是夾過的值</b>（<c>TargetedPuzzleGenerator.ClampTarget</c> 之後的），
-    /// 因為那才是「實際用過的目標」。
-    /// </summary>
-    private int lastTargetDifficulty;
+    /// <summary>ELO 設定檔在 <c>Resources</c> 裡的名字（不含副檔名）。</summary>
+    private const string SkillRatingSettingsResourceName = "SkillRatingSettings";
+
+    // ⚠️ 2026-09-13（P2-14）拿掉了 startingTargetDifficulty 與 lastTargetDifficulty。
+    // 「下一題要多難」的真相換成玩家的實力（LevelSession.Rating），起始值在 SkillRatingSettings.json。
+    // 場景裡 startingTargetDifficulty 的舊值會被 Unity 忽略，不用清。
 
     private void Awake()
     {
@@ -104,32 +97,48 @@ public class LevelController : MonoBehaviour
             Debug.LogError("LevelController 找不到 BoxView：盒子不會被畫出來。" +
                            "請在場景裡建一個掛 BoxView 的物件，或直接拖到這支的欄位上。", this);
 
-        difficultyWeights = LoadDifficultyWeights();
+        difficultyWeights = LoadJsonResource(DifficultyWeightsResourceName, DifficultyWeights.FromJson,
+                                             "沒有權重就算不出難度");
+
+        // 實力（P2-14）。設定讀不到就不建 tracker，EnterNextLevel() 看到 null 就不進關——
+        // 跟權重同一套規則：沒有預設值，讀不到就吵
+        SkillRatingSettings ratingSettings = LoadJsonResource(
+            SkillRatingSettingsResourceName, SkillRatingSettings.FromJson, "沒有 ELO 設定就不知道下一題要多難");
+        if (ratingSettings != null)
+        {
+            int? savedRating = LoadSavedRating();
+            session.Rating = new SkillRatingTracker(ratingSettings, savedRating ?? ratingSettings.initialRating);
+        }
     }
 
     /// <summary>
-    /// 從 <c>Assets/Resources/DifficultyWeights.json</c> 讀權重。
-    /// 檔案不在或內容不合法時<b>大聲報錯並回 null</b>（理由見 <see cref="difficultyWeights"/>）。
+    /// 從 <c>Assets/Resources/</c> 讀一個 JSON 設定檔。
+    /// 檔案不在或內容不合法時<b>大聲報錯並回 null</b>——兩個設定檔都沒有預設值，理由見 <see cref="difficultyWeights"/>。
     /// </summary>
-    /// <returns>檢查過的權重；讀不到時是 null。</returns>
-    private DifficultyWeights LoadDifficultyWeights()
+    /// <typeparam name="T">設定的型別。</typeparam>
+    /// <param name="resourceName">在 <c>Resources</c> 裡的名字（不含副檔名）。</param>
+    /// <param name="parse">解析並檢查的函數；內容不合法時丟 <see cref="System.ArgumentException"/>。</param>
+    /// <param name="consequence">讀不到的後果，寫進錯誤訊息。</param>
+    /// <returns>檢查過的設定；讀不到時是 null。</returns>
+    private T LoadJsonResource<T>(string resourceName, System.Func<string, T> parse, string consequence)
+        where T : class
     {
-        TextAsset asset = Resources.Load<TextAsset>(DifficultyWeightsResourceName);
+        TextAsset asset = Resources.Load<TextAsset>(resourceName);
         if (asset == null)
         {
-            Debug.LogError($"LevelController 讀不到 Resources/{DifficultyWeightsResourceName}.json：" +
-                           "沒有權重就算不出難度，所以不會進任何一關。檔案是不是被搬走或改名了？", this);
+            Debug.LogError($"LevelController 讀不到 Resources/{resourceName}.json：{consequence}，" +
+                           "所以不會進任何一關。檔案是不是被搬走或改名了？", this);
             return null;
         }
 
         try
         {
-            return DifficultyWeights.FromJson(asset.text);
+            return parse(asset.text);
         }
         catch (System.ArgumentException exception)
         {
             // FromJson 的訊息會說是哪一項不合法，原樣帶出來
-            Debug.LogError($"權重檔內容不合法，不會進任何一關。{exception.Message}", this);
+            Debug.LogError($"{resourceName}.json 內容不合法，不會進任何一關。{exception.Message}", this);
             return null;
         }
     }
@@ -139,6 +148,59 @@ public class LevelController : MonoBehaviour
         if (!loadFirstLevelOnStart) return;
         EnterNextLevel();
     }
+
+    /// <summary>
+    /// 每幀問一次「這一局要不要結算」（P2-14）。
+    ///
+    /// <b>為什麼每幀問，不讓 <c>TouchInputController</c> 通知</b>：過關與放棄的標記點都在它那裡，
+    /// 改成通知就多一條輸入層指向這支的線，而且之後每多一個結束的出口都要記得通知。
+    /// 每幀問是 <see cref="LevelResultPanels"/> 已經在用的模式；結算過之後只剩幾個欄位的判斷。
+    ///
+    /// ⚠️ <b>會晚一幀</b>：<c>Update</c> 之間的先後順序不固定，彈窗可能比結算早一幀出現，
+    /// 那一幀方向是空白——彈窗那邊處理「還沒有明細」。
+    /// </summary>
+    private void Update() => SettleIfNeeded();
+
+    /// <summary>
+    /// 需要的話就結算這一局，結算了就寫進度、印一行 log。
+    /// 每幀與換關前都叫這一支——守衛全在 <see cref="SkillRatingTracker.TrySettle"/> 裡，重複叫是安全的。
+    /// </summary>
+    private void SettleIfNeeded()
+    {
+        SkillRatingTracker rating = session?.Rating;
+        if (rating == null || !rating.TrySettle(session.Data, out RatingUpdate update)) return;
+
+        SaveRating(SkillRating.RoundRating(update.RatingAfter));
+
+        // 監控面板（P2-15）做好之前，實測時看這一行
+        string outcome = update.Outcome == LevelOutcome.Solved ? "過關" : "放棄";
+        Debug.Log($"第 {levelIndex} 關結算：{outcome}，難度 {update.Difficulty}，" +
+                  $"預期 {update.ExpectedPerformance:F2}、實際 {update.ActualPerformance:F2}" +
+                  $"（時間代價 {update.TimeCostSeconds:F1} 秒），K {update.EffectiveKFactor:0.##}，" +
+                  $"實力 {update.RatingBefore:F1} → {update.RatingAfter:F1}（{update.RatingChange:+0.0;-0.0;0.0}），" +
+                  $"下一題：{update.Trend}", this);
+    }
+
+    // ───────── 進度的讀寫（P2-14 只寫邏輯，P3 才真的落檔）─────────
+    //
+    // ⚠️ 刻意不為這兩支開介面：實作只有一個，接縫是方法名（同 EnterNextLevel 那段的標準）。
+    // P3 做 PlayerProgress.json 時只換這兩支的內容，外面一行都不用動。
+
+    /// <summary>
+    /// 讀存檔裡的實力。<b>現在永遠回 null</b>（P3 才做 <c>PlayerProgress.json</c>），
+    /// 所以每次開 App 都從 <see cref="SkillRatingSettings.initialRating"/> 開始。
+    /// </summary>
+    /// <returns>存檔裡的實力；沒有存檔時是 null。</returns>
+    private int? LoadSavedRating() => null;
+
+    /// <summary>
+    /// 把實力寫進存檔當備份。<b>現在什麼都不做</b>（P3 才落檔）。
+    ///
+    /// 傳進來的是<b>四捨五入後的整數</b>，記憶體裡的實力照樣留小數繼續算——
+    /// 所以重開 App 最多少掉 0.5 分，但玩同一場的時候不會累積誤差（2026-09-13 定）。
+    /// </summary>
+    /// <param name="rating">四捨五入後的實力。</param>
+    private void SaveRating(int rating) { }
 
     /// <summary>
     /// 進下一關。<b>開局與完成彈窗的「下一關」共用這一支。</b>
@@ -155,20 +217,30 @@ public class LevelController : MonoBehaviour
     /// 介面只會多一層轉接——接縫是「語意穩定的方法名」，不一定要是型別。
     /// （同一條標準讓 P1-6 決定不實作 <c>IInputSource</c>。）
     ///
-    /// <b>目前的實作</b>：用出題器照目標難度現生一題（P2-7）。
-    /// 沒有指定目標時用 <see cref="startingTargetDifficulty"/>——開場那一關走的就是這條。
+    /// <b>目前的實作</b>：照玩家的實力現生一題（P2-7 出題器 ＋ P2-14 實力）。
     ///
-    /// ⚠️ <b>刻意不讀檔</b>：讀檔得先做序列化、先決定存檔字串、先開 <c>StreamingAssets</c>，
-    /// 那三件事全是 P2-8 的工作。
+    /// ⭐ <b>第一步先補結算</b>：正常情況下每幀的 <c>Update</c> 已經結算過了，這一行是保險——
+    /// 萬一哪天結算搬到別的時機，玩家在彈窗上直接按下一關也不會丟掉剛打完的那一局。
+    /// 重複叫是安全的（一局只結算一次由 <c>LevelData</c> 保證）。
+    ///
+    /// ⚠️ <b>刻意不讀題庫檔</b>：讀檔得先做序列化、先決定存檔字串，那是 P2-8b 的工作。
     /// </summary>
-    public void EnterNextLevel() => EnterNextLevel(
-        lastTargetDifficulty > 0 ? lastTargetDifficulty : startingTargetDifficulty);
+    public void EnterNextLevel()
+    {
+        SettleIfNeeded();
+
+        // 設定讀不到時 Awake 已經報過錯了，這裡不再報一次
+        SkillRatingTracker rating = session?.Rating;
+        if (rating == null) return;
+
+        EnterNextLevel(rating.NextTargetDifficulty);
+    }
 
     /// <summary>
     /// 進下一關，<b>指定目標難度</b>（P2-7）。
     ///
-    /// ⚠️ <b>目標從哪來，是呼叫端的事。</b>現在是完成彈窗上的輸入框（手動、臨時），
-    /// P2-14 之後會換成玩家的 <c>SkillRating</c>——那時候要改的只有呼叫端，這一支不用動。
+    /// ⚠️ <b>遊玩迴圈不走這一支</b>（P2-14 起走無參數那支，目標是玩家的實力）。
+    /// 留著給工具與除錯用：指定一個難度看出題器生什麼。
     ///
     /// <b>三種下場都要處理</b>：
     /// <list type="bullet">
@@ -192,9 +264,6 @@ public class LevelController : MonoBehaviour
                 new PuzzleGenerator(generatorSeed, AestheticLimits.Default), difficultyWeights);
 
         TargetedGenerationResult result = generator.Generate(targetDifficulty);
-
-        // 記夾過的那個值，下一次沒指定目標時用它（P2-13：兩個彈窗共用同一份真相）
-        lastTargetDifficulty = result.TargetDifficulty;
 
         if (result.Outcome == TargetedGenerationOutcome.Failed)
         {

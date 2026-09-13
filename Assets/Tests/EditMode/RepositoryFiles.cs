@@ -17,6 +17,9 @@ namespace Tangram.Data.Tests
         /// </summary>
         public const string DifficultyWeightsRelativePath = "Assets/Resources/DifficultyWeights.json";
 
+        /// <summary>ELO 設定檔在 repo 裡的相對路徑（P2-14）。跟權重檔同一套規則：唯一的源頭。</summary>
+        public const string SkillRatingSettingsRelativePath = "Assets/Resources/SkillRatingSettings.json";
+
         /// <summary>從目前目錄與執行檔目錄往上找 repo 裡的檔案。找不到就讓測試失敗。</summary>
         /// <param name="relativePath">相對於專案根目錄的路徑。</param>
         /// <returns>完整路徑。</returns>
@@ -40,5 +43,10 @@ namespace Tangram.Data.Tests
         /// <returns>檢查過的權重。</returns>
         public static DifficultyWeights LoadDifficultyWeights() =>
             DifficultyWeights.FromJson(File.ReadAllText(Find(DifficultyWeightsRelativePath)));
+
+        /// <summary>讀 ELO 設定檔，每次讀一份新的（理由同 <see cref="LoadDifficultyWeights"/>）。</summary>
+        /// <returns>檢查過的設定。</returns>
+        public static SkillRatingSettings LoadSkillRatingSettings() =>
+            SkillRatingSettings.FromJson(File.ReadAllText(Find(SkillRatingSettingsRelativePath)));
     }
 }

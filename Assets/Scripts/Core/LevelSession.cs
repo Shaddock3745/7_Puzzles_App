@@ -149,6 +149,36 @@ namespace Tangram.Core
         /// </summary>
         public bool IsFinished => IsSolved || IsAbandoned;
 
+        /// <summary>
+        /// 拖曳或前景有沒有哪一個還在計時。
+        /// ⚠️ <b>結算前要確認它是 false</b>——<see cref="ForegroundSeconds"/> 只在停止時累加，還在跑就讀會少算。
+        /// </summary>
+        public bool IsTiming => dragStartedAt.HasValue || foregroundStartedAt.HasValue;
+
+        /// <summary>
+        /// 這一局的 ELO 結算明細（P2-14）。<b>沒有 = 還沒結算</b>。
+        ///
+        /// 放這裡是因為它每關一份、讀者不只一個（兩個彈窗讀方向、之後的監控面板讀全部）。
+        /// ⭐ 換關時整包換掉，<b>「還沒結算」就自動重置</b>，不必有人記得清。
+        /// </summary>
+        public RatingUpdate? Settlement { get; private set; }
+
+        /// <summary>
+        /// 記下這一局的結算。
+        ///
+        /// ⚠️ <b>兩道守衛在這一層</b>，跟 <see cref="MarkAbandoned"/> 同一個形狀——
+        /// 這一格的真相在這裡，所以「一局只結算一次」由這裡保證，不靠呼叫端小心：
+        /// 還沒結束不收（不然會有「結算了但還在玩」的一局）；已經記過不收（不然 ELO 會把同一局算兩遍）。
+        /// </summary>
+        /// <param name="update">結算明細。</param>
+        /// <returns>這一次有沒有真的記下來。</returns>
+        public bool RecordSettlement(RatingUpdate update)
+        {
+            if (!IsFinished || Settlement.HasValue) return false;
+            Settlement = update;
+            return true;
+        }
+
         /// <summary>這一段拖曳的開始時刻；<c>null</c> = 現在沒在計。</summary>
         private double? dragStartedAt;
 
@@ -647,6 +677,14 @@ namespace Tangram.Core
         /// 測試就是這樣用的，不要去碰這個靜態欄位。
         /// </summary>
         public static LevelSession Current { get; set; }
+
+        /// <summary>
+        /// 玩家的實力（P2-14）。由 <c>LevelController</c> 在 Awake 讀完設定之後建一次。
+        ///
+        /// <b>放外殼上不放 <see cref="LevelData"/></b>：實力跨關延續，而 <see cref="Data"/> 換關時整包換掉。
+        /// ⚠️ <b>可能是 null</b>——出題工具場景不給（那裡沒有題目、不結算），設定檔讀不到時也是 null。
+        /// </summary>
+        public SkillRatingTracker Rating { get; set; }
 
         /// <summary>
         /// 這一關的資料。還沒載入任何一關時是 <c>null</c>。

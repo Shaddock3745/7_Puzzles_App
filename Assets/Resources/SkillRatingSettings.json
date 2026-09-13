@@ -1,0 +1,9 @@
+{
+  "initialRating": 900,
+  "ratingScale": 400,
+  "dragWeightRatio": 0.5,
+  "referenceSeconds": 90,
+  "hintPenaltySeconds": 0,
+  "baseKFactor": 20,
+  "demonstrationMultiplier": 10
+}

@@ -1,3 +1,5 @@
+using Tangram.Core;
+using Tangram.Data;
 using TMPro;
 using UnityEngine;
 
@@ -33,14 +35,14 @@ using UnityEngine;
 /// <item>兩顆的 <c>onClick</c> 分別接到 <see cref="OnExitPressed"/> / <see cref="OnNextLevelPressed"/></item>
 /// <item>⚠️ <b>這支腳本掛在另一個物件上，不能掛在 Panel 身上</b>（理由見下）</item>
 /// <item>把 Panel 的 <c>GameObject</c> 填進 <see cref="completePanel"/></item>
-/// <item>⚠️ <b>P2-7 臨時的</b>：對話框上再放一個 <c>TMP_InputField</c>，拖進
-/// <see cref="targetDifficultyField"/>。那是下一關的目標難度（手動輸入）</item>
+/// <item>兩個對話框上各放一個 <c>TMP_Text</c>，拖進 <see cref="completeTrendText"/> /
+/// <see cref="abandonedTrendText"/>。那是「下一題會難一點／差不多／簡單一點」（P2-14）</item>
 /// </list>
 ///
-/// ⚠️ <b>輸入框那一段是臨時的，P2-14 接上 ELO 時整段拿掉。</b>
-/// 但<b>位置是對的、不會換</b>——「下一關要多難」本來就是在這一刻決定的
-/// （玩家剛打完一題、實力值剛更新完）。到時候只是把「讀輸入框」換成「讀 <c>SkillRating</c>」，
-/// 資料流一行都不用改。
+/// ⭐ <b>P2-14 起下一題的難度跟著實力走</b>，P2-7 那個臨時輸入框整段拿掉了。
+/// <b>玩家只看得到方向，看不到分數</b>（2026-09-13 定，A 案）：公式允許「解完了但比 T 慢」也扣分，
+/// 那是數學上對的，但對小孩顯示負號很傷。⚠️ <b>不能只藏負號</b>——正的有數字、負的沒有，玩家馬上推得出來。
+/// 完整的 E、S、ΔR 留給 P2-15 監控面板。
 ///
 /// ⚠️ <b>Panel 的 <c>RectTransform</c> 一定要滿版</b>，因為擋片區擋的就是它那塊矩形。
 /// 只做成中間一個小對話框的話，<b>對話框外面的盤面還是抓得到片</b>。
@@ -64,10 +66,14 @@ public class LevelResultPanels : MonoBehaviour
     [Tooltip("放棄彈窗的根物件（P2-13）。⚠️ 它的 RectTransform 也要滿版。")]
     [SerializeField] private GameObject abandonedPanel;
 
-    // ───────── 以下是 P2-7 的臨時接法，P2-14 接上 ELO 時整段拿掉 ─────────
+    [Tooltip("過關彈窗上的「下一題會難一點／差不多／簡單一點」（P2-14）。沒填也能跑，只是不顯示。")]
+    [SerializeField] private TMP_Text completeTrendText;
 
-    [Tooltip("⚠️ P2-7 臨時的。下一關的目標難度。留空或打錯字就沿用上一次用過的值。")]
-    [SerializeField] private TMP_InputField targetDifficultyField;
+    [Tooltip("放棄彈窗上的同一行（P2-14）。沒填也能跑，只是不顯示。")]
+    [SerializeField] private TMP_Text abandonedTrendText;
+
+    // ⚠️ 2026-09-13（P2-14）拿掉了 P2-7 的 targetDifficultyField。場景裡那個輸入框物件要手動刪掉，
+    // 不刪的話它還會顯示在彈窗上、打了數字也沒有作用
 
     private void Awake()
     {
@@ -142,6 +148,39 @@ public class LevelResultPanels : MonoBehaviour
         // 「已過關不能放棄、已放棄不能過關」，所以這裡各問各的就好
         SetShown(completePanel, inputController != null && inputController.IsLevelComplete);
         SetShown(abandonedPanel, inputController != null && inputController.IsLevelAbandoned);
+
+        // 方向。兩行都寫同一句——哪一個彈窗開著，看到的就是那一行
+        string trend = TrendTextOf(LevelSession.Current?.Data?.Settlement);
+        SetText(completeTrendText, trend);
+        SetText(abandonedTrendText, trend);
+    }
+
+    /// <summary>
+    /// 方向的文字。
+    /// ⚠️ <b>還沒有明細時是空字串</b>：彈窗可能比結算早一幀出現（兩支 <c>Update</c> 誰先跑不固定），
+    /// 那一幀留白，下一幀就補上。一直空白的話代表沒結算——看 <c>SkillRatingTracker.TrySettle</c> 的守衛。
+    /// </summary>
+    /// <param name="settlement">這一局的結算明細，可能沒有。</param>
+    /// <returns>要顯示的文字。</returns>
+    private static string TrendTextOf(RatingUpdate? settlement)
+    {
+        if (!settlement.HasValue) return string.Empty;
+
+        switch (settlement.Value.Trend)
+        {
+            case NextPuzzleTrend.Harder: return "下一題會難一點";
+            case NextPuzzleTrend.Easier: return "下一題會簡單一點";
+            default: return "下一題差不多";
+        }
+    }
+
+    /// <param name="label">文字元件，可以是 null。</param>
+    /// <param name="text">要顯示的文字。</param>
+    private static void SetText(TMP_Text label, string text)
+    {
+        if (label == null) return;
+        if (label.text == text) return;     // 免得每幀都讓 TMP 重排版
+        label.text = text;
     }
 
     /// <param name="panel">要顯示或隱藏的物件，可以是 null。</param>
@@ -175,9 +214,8 @@ public class LevelResultPanels : MonoBehaviour
     /// <summary>
     /// 「下一關」被按下。接在 Unity <c>Button.onClick</c> 上。
     ///
-    /// <b>下一關的難度來自 <see cref="targetDifficultyField"/></b>（P2-7）。
-    /// 換關本身走的還是 <see cref="LevelController.EnterNextLevel(int)"/>，
-    /// 而它內部走的還是那條已經實測過的五步順序。
+    /// <b>下一關的難度跟著玩家的實力走</b>（P2-14）——這裡不決定，<see cref="LevelController.EnterNextLevel()"/> 去問實力。
+    /// 換關本身走的還是那條已經實測過的五步順序。
     ///
     /// ⚠️ <b>按下去會凍住畫面零點幾到一點多秒</b>（Editor 裡目標 1500 約 1.2 ～ 1.7 秒）。
     /// 那是生成在跑，不是當掉。<b>刻意不做「生成中…」</b>——Unity 在同一幀改 UI 文字
@@ -185,23 +223,15 @@ public class LevelResultPanels : MonoBehaviour
     /// </summary>
     public void OnNextLevelPressed()
     {
-        if (levelController == null) return;
-
-        // ⚠️ 讀得到數字就傳值，讀不到就叫無參數那支——「上一次用過的目標」
-        // 的真相住在 LevelController，這裡刻意不留第二份（P2-13）
-        if (targetDifficultyField != null
-            && int.TryParse(targetDifficultyField.text, out int target))
-            levelController.EnterNextLevel(target);
-        else
-            levelController.EnterNextLevel();
+        if (levelController != null) levelController.EnterNextLevel();
     }
 
     /// <summary>
     /// 放棄彈窗的「下一題」被按下（P2-13）。接在 Unity <c>Button.onClick</c> 上。
     ///
-    /// <b>難度用上一次用過的那個</b>——放棄彈窗刻意不放輸入框。
-    /// ⭐ 而且這不是「送他一題簡單的」：下一題的難度本來就跟著實力值走，
-    /// 而放棄已經扣過分了（P2-14），所以<b>「用放棄刷簡單題」不是漏洞</b>
+    /// <b>難度跟著實力走</b>，跟過關彈窗那顆是同一條路。
+    /// ⭐ 這不是「送他一題簡單的」：放棄已經扣過分了（−K × E），
+    /// 所以<b>「用放棄刷簡單題」不是漏洞</b>
     /// ——題目確實變簡單，但他的實力值也真的變低了。
     /// </summary>
     public void OnNextAfterAbandonPressed()
