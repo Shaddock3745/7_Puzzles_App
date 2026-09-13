@@ -15,42 +15,18 @@ namespace Tangram.Data.Tests
     /// 「預設門檻收不收、被哪一條擋」、參考解一起寫成一個 JSON 檔；
     /// 縮圖牆頁面（<c>Tools/ThumbnailWall/</c>）把那個檔嵌進去發布。
     ///
-    /// <b>為什麼用全開的門檻生</b>：生成器對被審美門檻篩掉的形狀只回傳特徵、不回傳輪廓
-    /// （輪廓要付正規化那 16 次追邊才有），所以用預設門檻生的話，被擋掉的那些根本畫不出來。
-    /// 全開之後每個拼得起來的形狀都會走完正規化；「預設門檻收不收」再用
-    /// <see cref="AestheticLimits.Violations"/> 問一次——跟生成器用的是同一個判斷，
-    /// <c>PuzzleGeneratorTests.門檻_生成器的判定跟AestheticLimits一致</c> 釘住這件事。
+    /// 那 2000 個形狀就是<see cref="BaselineBatch">基準批次</see>，生法（為什麼用全開的門檻）寫在那裡。
     ///
-    /// ⚠️ 全開跑出來的序列跟預設門檻下不完全一樣（去重的集合不同：被擋掉的形狀也會進去重表），
-    /// 但實測一千題重複數是 0，實務上是同一批。
+    /// ⭐ <b>權重檔也一起塞進資料</b>（2026-09-13 起）：網頁上「暫定難度」的預設權重讀的是它，
+    /// 不再在 JS 裡另寫一份——那是權重的第三份拷貝。
     ///
     /// ⚠️ <b>掛 [Explicit]</b>：跑 2000 個形狀要數十秒，不進日常的 Run All。要跑：
     /// <c>dotnet test Tools/DotnetTests --filter "FullyQualifiedName~ThumbnailWallExportTests"</c>。
     /// </summary>
     public class ThumbnailWallExportTests
     {
-        /// <summary>固定種子，跟 P2-5 批次統計同一個。</summary>
-        private const int Seed = 20260910;
-
-        /// <summary>要拿滿幾個拼得起來的形狀（未篩選池的大小）。</summary>
-        private const int WantedShapeCount = 2000;
-
-        /// <summary>呼叫次數的硬上限。只防病態情況。</summary>
-        private const int MaximumAttempts = 20000;
-
         /// <summary>輸出檔名，放在系統暫存資料夾。</summary>
         private const string OutputFileName = "tangram_thumbnail_wall.json";
-
-        /// <summary>
-        /// 全開的門檻：什麼都收。
-        ///
-        /// ⚠️ <b>周長上限不能用 long 的最大值</b>。<see cref="Scalar"/> 比大小是相減之後看正負，
-        /// 極端大的值相減會溢位，而且不報錯——結果是「全開」變成「全關」之類的怪行為。
-        /// 一百萬遠大於任何可能的周長（七片排成一長串也不到 69），又絕對不會溢位。
-        /// 三個整數門檻是直接用 &gt; 比，int 的最大值沒有這個問題。
-        /// </summary>
-        private static readonly AestheticLimits WideOpenLimits = new AestheticLimits(
-            int.MaxValue, int.MaxValue, int.MaxValue, Scalar.FromInteger(1000000));
 
         /// <summary>
         /// 生 2000 個形狀，寫成縮圖牆要的 JSON。
@@ -62,28 +38,13 @@ namespace Tangram.Data.Tests
         [Test, Explicit("縮圖牆資料匯出：生 2000 個形狀要數十秒，不進日常的 Run All")]
         public void 縮圖牆_匯出兩千個形狀()
         {
-            var generator = new PuzzleGenerator(Seed, WideOpenLimits);
+            DifficultyWeights weights = RepositoryFiles.LoadDifficultyWeights();
             AestheticLimits defaultLimits = AestheticLimits.Default;
 
-            var shapes = new List<GenerationResult>(WantedShapeCount);
-            var outcomeCounts = new Dictionary<GenerationOutcome, int>();
-            int attempts = 0;
+            BaselineBatch batch = BaselineBatch.Generate();
+            List<GenerationResult> shapes = batch.Shapes;
 
-            while (shapes.Count < WantedShapeCount && attempts < MaximumAttempts)
-            {
-                GenerationResult result = generator.TryGenerate();
-                attempts++;
-                outcomeCounts.TryGetValue(result.Outcome, out int count);
-                outcomeCounts[result.Outcome] = count + 1;
-
-                if (result.Outcome == GenerationOutcome.Generated) shapes.Add(result);
-            }
-
-            Assert.AreEqual(WantedShapeCount, shapes.Count, $"呼叫了 {attempts} 次還沒拿滿");
-            outcomeCounts.TryGetValue(GenerationOutcome.RejectedByAesthetics, out int rejectedUnderWideOpen);
-            Assert.AreEqual(0, rejectedUnderWideOpen, "全開的門檻不應該擋掉任何形狀");
-
-            string json = BuildJson(shapes, defaultLimits);
+            string json = BuildJson(shapes, defaultLimits, weights);
             string path = Path.Combine(Path.GetTempPath(), OutputFileName);
             WriteChecked(path, json);
 
@@ -94,7 +55,7 @@ namespace Tangram.Data.Tests
             string pagePath = Path.Combine(Path.GetTempPath(), PageFileName);
             WriteChecked(pagePath, BuildPage(json));
 
-            ReportSummary(shapes, defaultLimits, attempts, outcomeCounts, path, json.Length);
+            ReportSummary(shapes, defaultLimits, batch.Attempts, batch.OutcomeCounts, path, json.Length);
             TestContext.WriteLine($"網頁寫到 {pagePath}");
         }
 
@@ -126,33 +87,11 @@ namespace Tangram.Data.Tests
         /// <returns>可以直接發布的網頁內容。</returns>
         private static string BuildPage(string json)
         {
-            string template = File.ReadAllText(FindTemplate(), new UTF8Encoding(false));
+            string template = File.ReadAllText(RepositoryFiles.Find(TemplateRelativePath), new UTF8Encoding(false));
             Assert.IsTrue(template.Contains(DataPlaceholder), $"範本裡找不到佔位字串 {DataPlaceholder}");
 
             // 資料放在 <script> 裡：把 "</" 跳脫掉，資料裡就算出現 </script> 也不會把標籤提早關掉
             return template.Replace(DataPlaceholder, json.Replace("</", "<\\/"));
-        }
-
-        /// <summary>
-        /// 找範本：從目前目錄與執行檔目錄往上找，直到看見 <c>Tools/ThumbnailWall/</c>。
-        ///
-        /// 兩種跑法的起點不一樣——Unity 的 Test Runner 目前目錄是專案根目錄，
-        /// <c>dotnet test</c> 的執行檔在 <c>Tools/DotnetTests/bin/...</c>——往上找兩邊都找得到。
-        /// </summary>
-        /// <returns>範本的完整路徑。</returns>
-        private static string FindTemplate()
-        {
-            foreach (string start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
-            {
-                for (DirectoryInfo directory = new DirectoryInfo(start); directory != null; directory = directory.Parent)
-                {
-                    string candidate = Path.Combine(directory.FullName, TemplateRelativePath);
-                    if (File.Exists(candidate)) return candidate;
-                }
-            }
-
-            Assert.Fail($"從 {Directory.GetCurrentDirectory()} 往上找不到 {TemplateRelativePath}");
-            return null;
         }
 
         // ─────────────────────────────────────────────────────────────
@@ -163,23 +102,39 @@ namespace Tangram.Data.Tests
 
         /// <param name="shapes">生出來的形狀。</param>
         /// <param name="defaultLimits">拿來判「收不收」的門檻。</param>
+        /// <param name="weights">權重檔，算正式難度用，也整份塞進資料給網頁當預設權重。</param>
         /// <returns>整份 JSON。</returns>
-        private static string BuildJson(List<GenerationResult> shapes, AestheticLimits defaultLimits)
+        private static string BuildJson(List<GenerationResult> shapes, AestheticLimits defaultLimits,
+                                        DifficultyWeights weights)
         {
             var text = new StringBuilder(shapes.Count * 900);
-            text.Append("{\"seed\":").Append(Seed)
+            text.Append("{\"seed\":").Append(BaselineBatch.Seed)
                 .Append(",\"shapeCount\":").Append(shapes.Count)
                 .Append(",\"defaultLimits\":{")
                 .Append("\"maximumHoleCount\":").Append(defaultLimits.MaximumHoleCount)
                 .Append(",\"maximumPinchPointCount\":").Append(defaultLimits.MaximumPinchPointCount)
                 .Append(",\"maximumConcaveAngleCount\":").Append(defaultLimits.MaximumConcaveAngleCount)
                 .Append(",\"maximumPerimeter\":").Append(Number(defaultLimits.MaximumPerimeter.ToDouble()))
-                .Append("},\"shapes\":[");
+                .Append('}');
 
+            // 權重檔：{ "perimeter": { "weight": 0.35, "direction": -1 }, ... }。
+            // 網頁只要權重與方向——平均與標準差它自己拿當下那一池現算（那是探索用的暫定難度，刻意如此）
+            text.Append(",\"difficultyWeights\":{");
+            for (int termIndex = 0; termIndex < weights.terms.Length; termIndex++)
+            {
+                DifficultyTermWeight term = weights.terms[termIndex];
+                if (termIndex > 0) text.Append(',');
+                text.Append('"').Append(term.key).Append("\":{\"weight\":")
+                    .Append(term.weight.ToString("R", CultureInfo.InvariantCulture))
+                    .Append(",\"direction\":").Append(term.direction).Append('}');
+            }
+            text.Append('}');
+
+            text.Append(",\"shapes\":[");
             for (int index = 0; index < shapes.Count; index++)
             {
                 if (index > 0) text.Append(',');
-                AppendShape(text, index, shapes[index], defaultLimits);
+                AppendShape(text, index, shapes[index], defaultLimits, weights);
             }
 
             text.Append("]}");
@@ -190,8 +145,9 @@ namespace Tangram.Data.Tests
         /// <param name="index">第幾個形狀（0 起算），牆上用來指認某一張。</param>
         /// <param name="shape">生成器的結果（必定是 Generated）。</param>
         /// <param name="defaultLimits">拿來判「收不收」的門檻。</param>
+        /// <param name="weights">權重檔，算正式難度用。</param>
         private static void AppendShape(StringBuilder text, int index, GenerationResult shape,
-                                        AestheticLimits defaultLimits)
+                                        AestheticLimits defaultLimits, DifficultyWeights weights)
         {
             DifficultyFeatures features = shape.Features;
             AestheticRules violations = defaultLimits.Violations(features);
@@ -237,7 +193,7 @@ namespace Tangram.Data.Tests
             // 正式的難度值（P2-6 的權重檔）。牆上那個可調權重的「暫定難度」是探索用的，兩者刻意並存：
             // 調權重要看得到「改成這樣會排成什麼樣子」，而這一欄是「現在真的會給玩家的數字」
             text.Append(",\"difficulty\":").Append(DifficultyEvaluator.Score(
-                features, forcedPieces.Count, solution));
+                features, forcedPieces.Count, solution, weights));
             Scalar longestEdge = LongestEdgeOf(shape.Puzzle.Walks);
             text.Append(",\"longestEdgeLength\":").Append(Number(longestEdge.ToDouble()))
                 .Append(",\"longestEdgeExact\":");
@@ -455,7 +411,7 @@ namespace Tangram.Data.Tests
             }
 
             TestContext.WriteLine("══════ 縮圖牆資料匯出 ══════");
-            TestContext.WriteLine($"種子 {Seed}，全開門檻叫了 {attempts} 次，拿到 {shapes.Count} 個拼得起來的形狀");
+            TestContext.WriteLine($"種子 {BaselineBatch.Seed}，全開門檻叫了 {attempts} 次，拿到 {shapes.Count} 個拼得起來的形狀");
             foreach (KeyValuePair<GenerationOutcome, int> entry in outcomeCounts)
                 TestContext.WriteLine($"  {entry.Key}：{entry.Value}");
             TestContext.WriteLine($"預設門檻會收的：{accepted}（{(double)accepted / shapes.Count:P1}）");

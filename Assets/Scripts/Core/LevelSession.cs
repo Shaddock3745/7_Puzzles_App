@@ -58,9 +58,13 @@ namespace Tangram.Core
 
         /// <summary>
         /// 這一關的難度值（P2-6）。1200 是基準批次的平均，一個標準差 200 分。
+        /// <b>沒有題目的空方框（出題工具）是 0。</b>
         ///
-        /// <b>在建構的時候算一次就存起來</b>：它只由題目與參考解決定，整關都不會變，
-        /// 而其中「被外框逼出來的片數」不便宜（每題約 0.2 ms），不適合每次要看都重算。
+        /// ⭐ <b>這一層不算，由出題的人算好傳進來</b>（2026-09-13 起）。
+        /// 原本建構子會自己再算一次，而出題器生題時已經算過——同一題算兩次，
+        /// 權重改成必填之後兩邊得各拿一份權重，<b>就有了「出題器說 1210、這裡說 1185」的可能</b>，
+        /// 而 ELO 用的是這裡的。只算一次，那件事就在結構上不可能發生；順便省掉
+        /// 「被外框逼出來的片數」那段重算（每題約 0.2 ms）。
         /// ⚠️ 同一題永遠要得到同一個數字（ELO 的前提），細節見 <see cref="DifficultyEvaluator"/>。
         /// </summary>
         public readonly int Difficulty;
@@ -155,9 +159,10 @@ namespace Tangram.Core
         /// <param name="boxOrigin">盒子原點。</param>
         /// <param name="boxRegion">盒子在盤面座標的區域。</param>
         /// <param name="referenceSolution">參考解，已平移到盤面座標。</param>
+        /// <param name="difficulty">這一題的難度值，由出題的人算好，見 <see cref="Difficulty"/>。</param>
         /// <param name="allowRoll">允不允許 roll 相機。</param>
         public LevelData(Puzzle puzzle, ExactVector2 boxOrigin, Region boxRegion,
-                         Placement[] referenceSolution, bool allowRoll)
+                         Placement[] referenceSolution, int difficulty, bool allowRoll)
         {
             Puzzle = puzzle;
             BoxOrigin = boxOrigin;
@@ -165,7 +170,7 @@ namespace Tangram.Core
             ReferenceSolution = referenceSolution;
             AllowRoll = allowRoll;
             Board = new BoardState();
-            Difficulty = DifficultyEvaluator.Score(puzzle, referenceSolution);
+            Difficulty = difficulty;
             HintsUsed = 0;
             IsSolved = false;
 
@@ -661,8 +666,12 @@ namespace Tangram.Core
         /// <param name="referenceSolution">
         /// 這個題目的一組解，**在題目自己的座標系**。這裡會平移到盤面座標再存起來。
         /// </param>
+        /// <param name="difficulty">
+        /// 這一題的難度值。⚠️ <b>由出題的人算好傳進來，這裡不重算</b>——
+        /// 照難度生的話就是 <c>TargetedGenerationResult.Difficulty</c>，理由見 <see cref="LevelData.Difficulty"/>。
+        /// </param>
         /// <param name="allowRoll">允不允許 roll 相機。精選題傳 false。</param>
-        public void Load(Puzzle puzzle, IReadOnlyList<Placement> referenceSolution, bool allowRoll)
+        public void Load(Puzzle puzzle, IReadOnlyList<Placement> referenceSolution, int difficulty, bool allowRoll)
         {
             ExactVector2 boxOrigin = BoxOriginFor(puzzle);
             Region boxRegion = Region.FromPuzzle(puzzle, boxOrigin);
@@ -673,7 +682,7 @@ namespace Tangram.Core
             for (int i = 0; i < referenceSolution.Count; i++)
                 translated[i] = referenceSolution[i].Translated(boxOrigin);
 
-            Data = new LevelData(puzzle, boxOrigin, boxRegion, translated, allowRoll);
+            Data = new LevelData(puzzle, boxOrigin, boxRegion, translated, difficulty, allowRoll);
         }
 
         /// <summary>
@@ -697,7 +706,8 @@ namespace Tangram.Core
         public void LoadBoxOnly(Region boxRegion)
         {
             // allowRoll 傳 false：作業區是正方形，轉相機只會讓「拼出來的圖形是正的嗎」難以判斷
-            Data = new LevelData(null, ExactVector2.Zero, boxRegion, null, allowRoll: false);
+            // 難度傳 0：沒有題目就沒有難度（見 LevelData.Difficulty）
+            Data = new LevelData(null, ExactVector2.Zero, boxRegion, null, difficulty: 0, allowRoll: false);
         }
 
         /// <summary>離開這一關。之後 <see cref="HasLevel"/> 回 false。</summary>

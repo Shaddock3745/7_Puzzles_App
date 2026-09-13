@@ -37,24 +37,17 @@ namespace Tangram.Data
         /// </summary>
         /// <param name="puzzle">題目。</param>
         /// <param name="referenceSolution">參考解。</param>
-        /// <param name="weights">權重；傳 null 用 <see cref="DifficultyWeights.Default"/>。</param>
-        /// <returns>
-        /// 難度值，1200 是基準批次的平均。
-        /// <b>題目或參考解是 null 時回 0</b>——那代表「還沒有題目」，見下面的說明。
-        /// </returns>
+        /// <param name="weights">權重，<b>必填</b>——從權重檔讀，見 <see cref="DifficultyWeights"/>。</param>
+        /// <returns>難度值，1200 是基準批次的平均。</returns>
+        /// <exception cref="ArgumentNullException">題目、參考解或權重是 null。</exception>
         public static int Score(Puzzle puzzle, IReadOnlyList<Placement> referenceSolution,
-                                DifficultyWeights weights = null)
+                                DifficultyWeights weights)
         {
-            // ⚠️ 這兩個 null 是給<b>出題工具</b>用的（把古典圖形拼出來存成題目的那個獨立場景）。
-            // 那個場景的「盒子」是一個空的大方框，既沒有題目也沒有參考解，但它仍然要建一份
-            // LevelData 才能沿用吸附、抽屜、旋轉翻面那一整套；而 LevelData 的建構子會算難度。
-            //
-            // 回 0 而不是丟例外的理由：0 落在正常難度值的範圍外（⚠️ 實測約 570 ～ 1950，
-            // 不是原本寫的 900 ～ 1600——那個範圍抄錯了，見 DifficultyWeights 的〈基準批次〉。
-            // 0 距離下界還有五百分以上，所以這個哨兵值仍然安全），
-            // 所以它讀起來就是「這不是一道題」，不會被誤認成很簡單的題目。
-            // 遊戲裡的每一關都一定有題目與參考解，所以這條路在遊玩迴圈中走不到。
-            if (puzzle == null || referenceSolution == null) return 0;
+            // ⚠️ 2026-09-13 以前這裡對 null 題目回 0，是給出題工具那個「沒有題目的空方框」用的——
+            // 當時 LevelData 的建構子會自己算難度。現在難度由出題的人算好傳進 LevelSession.Load，
+            // 空方框走 LoadBoxOnly、根本不會叫這裡，所以 null 一律是呼叫端弄錯，要響
+            if (puzzle == null) throw new ArgumentNullException(nameof(puzzle));
+            if (referenceSolution == null) throw new ArgumentNullException(nameof(referenceSolution));
 
             return Score(DifficultyFeatures.Measure(puzzle.Walks),
                          DifficultyFeatures.ForcedPieceCountOf(puzzle.Walks),
@@ -66,23 +59,25 @@ namespace Tangram.Data
         /// <param name="shapeFeatures">只看形狀的特徵。</param>
         /// <param name="forcedPieceCount">被外框逼出來的片數。</param>
         /// <param name="solutionFeatures">看參考解的特徵。</param>
-        /// <param name="weights">權重；傳 null 用 <see cref="DifficultyWeights.Default"/>。</param>
+        /// <param name="weights">權重，<b>必填</b>。</param>
         /// <returns>難度值。</returns>
+        /// <exception cref="ArgumentNullException">權重是 null。</exception>
         public static int Score(in DifficultyFeatures shapeFeatures, int forcedPieceCount,
-                                in SolutionFeatures solutionFeatures, DifficultyWeights weights = null)
+                                in SolutionFeatures solutionFeatures, DifficultyWeights weights)
         {
-            DifficultyWeights actualWeights = weights ?? DifficultyWeights.Default;
-            double weightedSum = WeightedSum(shapeFeatures, forcedPieceCount, solutionFeatures, actualWeights);
+            if (weights == null) throw new ArgumentNullException(nameof(weights));
+            double weightedSum = WeightedSum(shapeFeatures, forcedPieceCount, solutionFeatures, weights);
 
             // 標準差 0 代表這份權重是壞的（整批題目的加權和完全一樣）。默默回中心值會讓
-            // 「所有題目難度都一樣」看起來像正常運作，所以寧可丟例外
-            if (actualWeights.weightedDeviation <= 0.0)
+            // 「所有題目難度都一樣」看起來像正常運作，所以寧可丟例外。
+            // 讀檔時 DifficultyWeights.FromJson 已經擋過一次；這裡再擋是給「在記憶體裡改過的權重」
+            if (weights.weightedDeviation <= 0.0)
                 throw new InvalidOperationException(
-                    $"DifficultyWeights.weightedDeviation 是 {actualWeights.weightedDeviation}，" +
+                    $"DifficultyWeights.weightedDeviation 是 {weights.weightedDeviation}，" +
                     "必須大於 0——這份權重沒有尺度，算出來的難度沒有意義");
 
-            double score = actualWeights.center
-                + actualWeights.spread * (weightedSum - actualWeights.weightedMean) / actualWeights.weightedDeviation;
+            double score = weights.center
+                + weights.spread * (weightedSum - weights.weightedMean) / weights.weightedDeviation;
             return (int)Math.Round(score, MidpointRounding.AwayFromZero);
         }
 
@@ -93,16 +88,17 @@ namespace Tangram.Data
         /// <param name="shapeFeatures">只看形狀的特徵。</param>
         /// <param name="forcedPieceCount">被外框逼出來的片數。</param>
         /// <param name="solutionFeatures">看參考解的特徵。</param>
-        /// <param name="weights">權重；傳 null 用 <see cref="DifficultyWeights.Default"/>。</param>
+        /// <param name="weights">權重，<b>必填</b>。</param>
         /// <returns>加權和。</returns>
+        /// <exception cref="ArgumentNullException">權重是 null。</exception>
         /// <exception cref="InvalidOperationException">某個特徵的標準差 ≤ 0，或鍵不認得。</exception>
         public static double WeightedSum(in DifficultyFeatures shapeFeatures, int forcedPieceCount,
-                                         in SolutionFeatures solutionFeatures, DifficultyWeights weights = null)
+                                         in SolutionFeatures solutionFeatures, DifficultyWeights weights)
         {
-            DifficultyWeights actualWeights = weights ?? DifficultyWeights.Default;
+            if (weights == null) throw new ArgumentNullException(nameof(weights));
             double total = 0.0;
 
-            foreach (DifficultyTermWeight term in actualWeights.terms)
+            foreach (DifficultyTermWeight term in weights.terms)
             {
                 if (term.weight == 0.0) continue;   // 0 分的特徵連標準差都不必檢查
                 if (term.deviation <= 0.0)

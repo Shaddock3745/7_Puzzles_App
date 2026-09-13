@@ -17,7 +17,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             Placement[] solution = Fixtures.ClassicSquare();
-            session.Load(Puzzle.FromPlacements(solution), solution, allowRoll: true);
+            session.Load(Puzzle.FromPlacements(solution), solution, difficulty: 1200, allowRoll: true);
             return session.Data;
         }
 
@@ -261,7 +261,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             Placement[] solution = Fixtures.ClassicSquare();
-            session.Load(Puzzle.FromPlacements(solution), solution, allowRoll: true);
+            session.Load(Puzzle.FromPlacements(solution), solution, difficulty: 1200, allowRoll: true);
             LevelData level = session.Data;
 
             level.MarkAbandoned(1.0);
@@ -296,7 +296,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             Placement[] solution = Fixtures.ClassicSquare();
-            session.Load(Puzzle.FromPlacements(solution), solution, allowRoll: true);
+            session.Load(Puzzle.FromPlacements(solution), solution, difficulty: 1200, allowRoll: true);
 
             session.Data.StartForegroundTiming(0.0);
             session.Data.StartDragTiming(1.0);
@@ -304,7 +304,7 @@ namespace Tangram.Core.Tests
             session.Data.RecordClear();
             session.Data.MarkAbandoned(3.0);
 
-            session.Load(Puzzle.FromPlacements(solution), solution, allowRoll: true);
+            session.Load(Puzzle.FromPlacements(solution), solution, difficulty: 1200, allowRoll: true);
 
             Assert.AreEqual(0.0, session.Data.DragSeconds, 1e-9);
             Assert.AreEqual(0.0, session.Data.ForegroundSeconds, 1e-9);

@@ -39,7 +39,7 @@ namespace Tangram.Core.Tests
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
 
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             Assert.IsTrue(session.HasLevel);
             Assert.AreEqual(0, session.Data.Board.OnBoardCount, "剛載入的盤面必須是空的");
@@ -64,7 +64,7 @@ namespace Tangram.Core.Tests
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
 
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             for (int i = 0; i < solution.Length; i++)
                 Assert.AreEqual(solution[i].Translation, session.Data.ReferenceSolution[i].Translation);
@@ -81,7 +81,7 @@ namespace Tangram.Core.Tests
             var (puzzleA, solutionA) = ClassicLevel();
             var (puzzleB, solutionB) = TranslatedLevel(new ExactVector2(20, 20));
 
-            session.Load(puzzleA, solutionA, allowRoll: true);
+            session.Load(puzzleA, solutionA, difficulty: 1200, allowRoll: true);
             LevelData dataA = session.Data;
             BoardState boardA = dataA.Board;
 
@@ -94,7 +94,7 @@ namespace Tangram.Core.Tests
 
             Assert.AreEqual(2, session.Data.Board.OnBoardCount, "前置動作沒生效的話這個測試沒有意義");
 
-            session.Load(puzzleB, solutionB, allowRoll: false);
+            session.Load(puzzleB, solutionB, difficulty: 1200, allowRoll: false);
 
             Assert.AreNotSame(dataA, session.Data, "換關必須換掉整包，不是就地清空");
             Assert.AreNotSame(boardA, session.Data.Board, "盤面也在那一包裡，要跟著換");
@@ -114,10 +114,10 @@ namespace Tangram.Core.Tests
             var (puzzleA, solutionA) = ClassicLevel();
             var (puzzleB, solutionB) = TranslatedLevel(new ExactVector2(20, 20));
 
-            session.Load(puzzleA, solutionA, allowRoll: true);
+            session.Load(puzzleA, solutionA, difficulty: 1200, allowRoll: true);
             BoardState staleBoard = session.Data.Board;   // 這正是「不准存成欄位」在講的東西
 
-            session.Load(puzzleB, solutionB, allowRoll: true);
+            session.Load(puzzleB, solutionB, difficulty: 1200, allowRoll: true);
             staleBoard.Place(0, solutionA[0]);
 
             Assert.AreEqual(0, session.Data.Board.OnBoardCount,
@@ -130,7 +130,7 @@ namespace Tangram.Core.Tests
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
 
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
             session.Unload();
 
             Assert.IsFalse(session.HasLevel);
@@ -147,7 +147,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
                 Assert.IsTrue(session.Data.IsInTray(slotIndex), $"第 {slotIndex} 槽應該在待用區");
@@ -160,7 +160,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             session.Data.SetInTray(3, false);
             Assert.IsFalse(session.Data.IsInTray(3));
@@ -176,7 +176,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             session.Data.SetInTray(0, false);
             session.Data.Board.Place(0, solution[0]);
@@ -198,7 +198,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             var (puzzleA, solutionA) = ClassicLevel();
-            session.Load(puzzleA, solutionA, allowRoll: true);
+            session.Load(puzzleA, solutionA, difficulty: 1200, allowRoll: true);
 
             // 這一關把四片拿出來，其中兩片放上盤面
             for (int slotIndex = 0; slotIndex < 4; slotIndex++) session.Data.SetInTray(slotIndex, false);
@@ -207,7 +207,7 @@ namespace Tangram.Core.Tests
             Assert.AreEqual(4, session.Data.OutOfTrayCount);
 
             var (puzzleB, solutionB) = TranslatedLevel(new ExactVector2(6, 0));
-            session.Load(puzzleB, solutionB, allowRoll: true);
+            session.Load(puzzleB, solutionB, difficulty: 1200, allowRoll: true);
 
             // 換關是整包換掉，所以待用區不必另外重置——這條測試就是釘住那件事。
             // 之後往 LevelData 新增 per-關 欄位時，這個性質也要跟著成立
@@ -237,7 +237,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             Assert.IsFalse(session.Data.CanUndo);
             Assert.IsFalse(session.Data.TryUndo(out var restored));
@@ -249,7 +249,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             PlaceFromTray(session, 0, solution[0]);
             Assert.IsTrue(session.Data.CanUndo);
@@ -268,7 +268,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             Placement positionA = solution[0];
             Placement positionB = solution[0].Translated(new ExactVector2(3, 3));
@@ -296,7 +296,7 @@ namespace Tangram.Core.Tests
             // 但過關判定認為盒子裡有它」，而且完全不報錯。
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             Placement positionA = solution[0];
             Placement positionB = solution[0].Translated(new ExactVector2(3, 3));
@@ -321,7 +321,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
                 PlaceFromTray(session, slotIndex, solution[slotIndex]);
@@ -356,7 +356,7 @@ namespace Tangram.Core.Tests
             // 片可能已經不在當初的地方了，但每一筆自己就帶著完整答案
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             Placement positionA = solution[0];
             Placement positionB = solution[0].Translated(new ExactVector2(3, 3));
@@ -380,7 +380,7 @@ namespace Tangram.Core.Tests
             // 「這一步的中間狀態」各算一次，而那些狀態在遊戲裡從來不存在
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
                 PlaceFromTray(session, slotIndex, solution[slotIndex]);
@@ -408,13 +408,13 @@ namespace Tangram.Core.Tests
             // 堆疊放 LevelData（換關整包換掉）就不可能忘記——這條釘住那件事
             var session = new LevelSession();
             var (puzzleA, solutionA) = ClassicLevel();
-            session.Load(puzzleA, solutionA, allowRoll: true);
+            session.Load(puzzleA, solutionA, difficulty: 1200, allowRoll: true);
 
             PlaceFromTray(session, 0, solutionA[0]);
             Assert.IsTrue(session.Data.CanUndo);
 
             var (puzzleB, solutionB) = TranslatedLevel(new ExactVector2(6, 0));
-            session.Load(puzzleB, solutionB, allowRoll: true);
+            session.Load(puzzleB, solutionB, difficulty: 1200, allowRoll: true);
 
             Assert.IsFalse(session.Data.CanUndo, "新的一關不該退得回上一關");
         }
@@ -430,7 +430,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             PlaceFromTray(session, 0, solution[0]);
             PlaceFromTray(session, 1, solution[1]);
@@ -452,7 +452,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
             session.Data.SetInTray(3, false);           // 只有一片暫放，盤上是空的
 
             Assert.IsFalse(session.Data.TryClearBoardToTray(out var cleared));
@@ -467,7 +467,7 @@ namespace Tangram.Core.Tests
             // 不是「大致上回來了」。這一條就是那個設計選擇的價值
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             for (int slotIndex = 0; slotIndex < 3; slotIndex++)
                 PlaceFromTray(session, slotIndex, solution[slotIndex]);
@@ -493,7 +493,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
             for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
                 PlaceFromTray(session, slotIndex, solution[slotIndex]);
 
@@ -515,7 +515,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             for (int slotIndex = 0; slotIndex < BoardState.PieceCount - 1; slotIndex++)
             {
@@ -534,7 +534,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             Assert.IsFalse(session.Data.IsSolved);
             Assert.IsFalse(session.Data.MarkSolvedIfAllOnBoard());
@@ -548,7 +548,7 @@ namespace Tangram.Core.Tests
             // 之後要是加了「關掉彈窗繼續看」，這條會紅，提醒你回來重想
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
                 PlaceFromTray(session, slotIndex, solution[slotIndex]);
@@ -567,14 +567,14 @@ namespace Tangram.Core.Tests
             // → 彈窗下一幀自己消失
             var session = new LevelSession();
             var (puzzleA, solutionA) = ClassicLevel();
-            session.Load(puzzleA, solutionA, allowRoll: true);
+            session.Load(puzzleA, solutionA, difficulty: 1200, allowRoll: true);
 
             for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
                 PlaceFromTray(session, slotIndex, solutionA[slotIndex]);
             Assert.IsTrue(session.Data.MarkSolvedIfAllOnBoard());
 
             var (puzzleB, solutionB) = TranslatedLevel(new ExactVector2(6, 0));
-            session.Load(puzzleB, solutionB, allowRoll: true);
+            session.Load(puzzleB, solutionB, difficulty: 1200, allowRoll: true);
 
             Assert.IsFalse(session.Data.IsSolved, "新的一關不該一開始就是過關狀態");
         }
@@ -584,7 +584,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
 
             for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
                 session.Data.Board.Place(slotIndex, solution[slotIndex]);
@@ -696,7 +696,7 @@ namespace Tangram.Core.Tests
         {
             var session = new LevelSession();
             var (puzzle, solution) = ClassicLevel();
-            session.Load(puzzle, solution, allowRoll: true);
+            session.Load(puzzle, solution, difficulty: 1200, allowRoll: true);
             return session;
         }
 

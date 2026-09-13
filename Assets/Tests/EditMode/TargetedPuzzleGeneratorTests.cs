@@ -20,7 +20,7 @@ namespace Tangram.Data.Tests
                                 maximumConcaveAngleCount: 0, maximumPerimeter: Scalar.FromInteger(1));
 
         private static TargetedPuzzleGenerator MakeGenerator(int seed, AestheticLimits? limits = null) =>
-            new TargetedPuzzleGenerator(new PuzzleGenerator(seed, limits));
+            new TargetedPuzzleGenerator(new PuzzleGenerator(seed, limits), RepositoryFiles.LoadDifficultyWeights());
 
         // ─────────────────────────────────────────────────────────────
         // 一、卡片的完成定義
@@ -128,7 +128,8 @@ namespace Tangram.Data.Tests
             TargetedGenerationResult result = MakeGenerator(20260912).Generate(1300);
 
             Assert.AreNotEqual(TargetedGenerationOutcome.Failed, result.Outcome);
-            Assert.AreEqual(DifficultyEvaluator.Score(result.Puzzle, result.ReferenceSolution),
+            Assert.AreEqual(DifficultyEvaluator.Score(result.Puzzle, result.ReferenceSolution,
+                                                      RepositoryFiles.LoadDifficultyWeights()),
                             result.Difficulty);
         }
 
@@ -234,7 +235,12 @@ namespace Tangram.Data.Tests
 
             Assert.Throws<ArgumentOutOfRangeException>(() => generator.Generate(1200, tolerance: -1));
             Assert.Throws<ArgumentOutOfRangeException>(() => generator.Generate(1200, attemptBudget: 0));
-            Assert.Throws<ArgumentNullException>(() => new TargetedPuzzleGenerator(null));
+            Assert.Throws<ArgumentNullException>(() =>
+                new TargetedPuzzleGenerator(null, RepositoryFiles.LoadDifficultyWeights()));
+
+            // 權重必填（2026-09-13 起沒有預設值）：傳 null 要響，不能默默用一組舊數字
+            Assert.Throws<ArgumentNullException>(() =>
+                new TargetedPuzzleGenerator(new PuzzleGenerator(20260912), null));
         }
     }
 }

@@ -87,7 +87,7 @@ namespace Tangram.Data
     ///    P2-5 的批次統計要量的就是「試幾次中一題」。同一個類別裡再放一支會重試的方法，
     ///    這個類別就有兩種契約；<b>它不會馬上壞，它會在半年後壞</b>（有人看到兩支很像就順手統一，
     ///    而批次統計會安靜地量到錯的數字）。
-    /// ② <b>權重是可替換的資料</b>（P2-12 會改 <c>DifficultyWeights.json</c>）。
+    /// ② <b>權重是可替換的資料</b>（P2-12 會改 <c>DifficultyWeights.json</c>，改完要跑重算工具）。
     ///    混進出題器之後，改權重就等於改出題器的行為，而批次統計要的正是不受權重影響的原始分布。
     /// ③ 包在外面<b>不需要在出題器上加任何新 API</b>——<see cref="GenerationResult"/> 已經帶回
     ///    題目、參考解與形狀特徵，其餘兩個是靜態函數。
@@ -103,6 +103,11 @@ namespace Tangram.Data
         /// <summary>
         /// 目標難度的下限。生成器實際到得了的範圍是量出來的
         /// （種子 20260910 的兩千題批次，p1 ～ p99 = 760 ～ 1710），不是猜的。
+        ///
+        /// ⚠️ <b>這兩個數字是在「目前的尺」上量的</b>——權重一改就會過期，跟換算倍率是同一種問題。
+        /// 所以重算工具（<c>DifficultyEvaluatorTests.尺度_權重改過之後重算換算倍率</c>）會順便
+        /// 算出新的 p1 ～ p99 並印出來，差太多時警告。常數刻意先留在程式裡（2026-09-13 定），
+        /// 看到警告就回來改這裡。
         ///
         /// ⚠️ <b>夾的是「要求的目標值」，不是難度值本身</b>——
         /// <see cref="DifficultyEvaluator.Score"/> 維持沒有上下限。
@@ -135,12 +140,16 @@ namespace Tangram.Data
         /// 出題器。<b>由呼叫端持有</b>——去重（<c>seenKeys</c>）與亂數是跨呼叫的狀態，
         /// 每次請求新開一個的話，同一題會一直重複出現。
         /// </param>
-        /// <param name="weights">難度權重；傳 null 用 <see cref="DifficultyWeights.Default"/>。</param>
-        /// <exception cref="ArgumentNullException">沒有給出題器。</exception>
-        public TargetedPuzzleGenerator(PuzzleGenerator generator, DifficultyWeights weights = null)
+        /// <param name="weights">
+        /// 難度權重，<b>必填</b>。⚠️ 要跟 <c>LevelSession.Load</c> 收到的難度出自同一份——
+        /// 現在的做法是<b>直接把這裡算出來的 <see cref="TargetedGenerationResult.Difficulty"/> 傳過去</b>，
+        /// 同一題只算一次，兩邊就不可能對不上。
+        /// </param>
+        /// <exception cref="ArgumentNullException">沒有給出題器或權重。</exception>
+        public TargetedPuzzleGenerator(PuzzleGenerator generator, DifficultyWeights weights)
         {
             this.generator = generator ?? throw new ArgumentNullException(nameof(generator));
-            this.weights = weights ?? DifficultyWeights.Default;
+            this.weights = weights ?? throw new ArgumentNullException(nameof(weights));
         }
 
         /// <summary>把目標難度夾進生成器實際到得了的範圍。</summary>

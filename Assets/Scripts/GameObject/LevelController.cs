@@ -51,6 +51,18 @@ public class LevelController : MonoBehaviour
     /// <summary>這一場玩到第幾關（從 0 開始）。只拿來寫 log。</summary>
     private int levelIndex;
 
+    /// <summary>權重檔在 <c>Resources</c> 裡的名字（不含副檔名）。</summary>
+    private const string DifficultyWeightsResourceName = "DifficultyWeights";
+
+    /// <summary>
+    /// 難度權重，Awake 讀一次、整場共用。<b>讀不到是 null，那時候不進任何一關</b>。
+    ///
+    /// ⚠️ <b>這是權重唯一的來源</b>（2026-09-13 起程式裡沒有預設值，見 <see cref="DifficultyWeights"/>）。
+    /// 讀不到時刻意不找退路：<c>Resources</c> 是打包進 build 的，讀不到一定是開發時弄錯
+    /// （檔案被搬走、改名、內容寫壞），那應該在第一次按 Play 就吵起來，而不是用一組舊數字安靜地跑。
+    /// </summary>
+    private DifficultyWeights difficultyWeights;
+
     /// <summary>
     /// 上一次實際用過的目標難度（P2-13 搬過來的）。
     ///
@@ -91,6 +103,35 @@ public class LevelController : MonoBehaviour
         if (boxView == null)
             Debug.LogError("LevelController 找不到 BoxView：盒子不會被畫出來。" +
                            "請在場景裡建一個掛 BoxView 的物件，或直接拖到這支的欄位上。", this);
+
+        difficultyWeights = LoadDifficultyWeights();
+    }
+
+    /// <summary>
+    /// 從 <c>Assets/Resources/DifficultyWeights.json</c> 讀權重。
+    /// 檔案不在或內容不合法時<b>大聲報錯並回 null</b>（理由見 <see cref="difficultyWeights"/>）。
+    /// </summary>
+    /// <returns>檢查過的權重；讀不到時是 null。</returns>
+    private DifficultyWeights LoadDifficultyWeights()
+    {
+        TextAsset asset = Resources.Load<TextAsset>(DifficultyWeightsResourceName);
+        if (asset == null)
+        {
+            Debug.LogError($"LevelController 讀不到 Resources/{DifficultyWeightsResourceName}.json：" +
+                           "沒有權重就算不出難度，所以不會進任何一關。檔案是不是被搬走或改名了？", this);
+            return null;
+        }
+
+        try
+        {
+            return DifficultyWeights.FromJson(asset.text);
+        }
+        catch (System.ArgumentException exception)
+        {
+            // FromJson 的訊息會說是哪一項不合法，原樣帶出來
+            Debug.LogError($"權重檔內容不合法，不會進任何一關。{exception.Message}", this);
+            return null;
+        }
     }
 
     private void Start()
@@ -141,11 +182,14 @@ public class LevelController : MonoBehaviour
     /// <param name="targetDifficulty">目標難度；超出範圍會被 <c>TargetedPuzzleGenerator</c> 夾住。</param>
     public void EnterNextLevel(int targetDifficulty)
     {
+        // 讀檔失敗時 Awake 已經報過錯了。這裡不再報一次，免得每按一次「下一關」就洗一行
+        if (difficultyWeights == null) return;
+
         levelIndex++;
 
         if (generator == null)
             generator = new TargetedPuzzleGenerator(
-                new PuzzleGenerator(generatorSeed, AestheticLimits.Default));
+                new PuzzleGenerator(generatorSeed, AestheticLimits.Default), difficultyWeights);
 
         TargetedGenerationResult result = generator.Generate(targetDifficulty);
 
@@ -158,8 +202,13 @@ public class LevelController : MonoBehaviour
                 $"第 {levelIndex} 關：目標 {result.TargetDifficulty} 叫了 {result.AttemptCount} 次" +
                 "都沒生出題目，退回經典大正方形。審美門檻可能收太緊了。", this);
 
+            // 退路那一題沒有經過出題器，難度要自己算。
+            // 💡 大正方形是 2261 分——比生成池最高分還高，那不是算錯，見 DifficultyEvaluator 的說明
             Placement[] fallback = Fixtures.ClassicSquare();
-            EnterLevel(Puzzle.FromPlacements(fallback), fallback, allowRoll: true);
+            Puzzle fallbackPuzzle = Puzzle.FromPlacements(fallback);
+            EnterLevel(fallbackPuzzle, fallback,
+                       DifficultyEvaluator.Score(fallbackPuzzle, fallback, difficultyWeights),
+                       allowRoll: true);
             return;
         }
 
@@ -172,8 +221,9 @@ public class LevelController : MonoBehaviour
                   $"{hit}，叫了 {result.AttemptCount} 次", this);
 
         // ⚠️ allowRoll 傳 false：生成題要看的是「存進去的那個角度好不好看」，
-        // 讓相機轉會看不到真實情況。P2-8 接上題庫時這條要重新決定
-        EnterLevel(result.Puzzle, result.ReferenceSolution, allowRoll: false);
+        // 讓相機轉會看不到真實情況。P2-8 接上題庫時這條要重新決定。
+        // ⭐ 難度直接用出題器算好的那個，不重算——同一題只算一次，見 LevelData.Difficulty
+        EnterLevel(result.Puzzle, result.ReferenceSolution, result.Difficulty, allowRoll: false);
     }
 
     /// <summary>
@@ -181,14 +231,15 @@ public class LevelController : MonoBehaviour
     /// </summary>
     /// <param name="puzzle">題目。</param>
     /// <param name="referenceSolution">這個題目的一組解，在題目自己的座標系。</param>
+    /// <param name="difficulty">這一題的難度值，由出題的人算好（見 <c>LevelData.Difficulty</c>）。</param>
     /// <param name="allowRoll">
     /// 允不允許 roll 相機。精選題傳 false（互動設計 §2.6）。
     /// 目前 <c>Puzzle</c> 還沒有「是不是精選題」的欄位，所以由呼叫端決定，等 P3 題庫做好再改。
     /// </param>
-    public void EnterLevel(Puzzle puzzle, IReadOnlyList<Placement> referenceSolution, bool allowRoll)
+    public void EnterLevel(Puzzle puzzle, IReadOnlyList<Placement> referenceSolution, int difficulty, bool allowRoll)
     {
         // 1. 載入：算原點、建 Region、換掉整包資料
-        session.Load(puzzle, referenceSolution, allowRoll);
+        session.Load(puzzle, referenceSolution, difficulty, allowRoll);
         LevelData level = session.Data;
 
         // 2. 設盒子 → 相機這時候才算得出來。**一定要排在第 3、4 步之前**

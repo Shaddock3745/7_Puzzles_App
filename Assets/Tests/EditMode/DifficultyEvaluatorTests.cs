@@ -1,6 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using Tangram.Data;
 
@@ -19,9 +23,6 @@ namespace Tangram.Data.Tests
     /// </summary>
     public class DifficultyEvaluatorTests
     {
-        /// <summary>權重檔在 repo 裡的相對路徑。</summary>
-        private const string WeightsRelativePath = "Assets/Resources/DifficultyWeights.json";
-
         /// <summary>把生成器跑到拿滿指定題數為止。</summary>
         /// <param name="seed">種子。</param>
         /// <param name="wanted">要幾題。</param>
@@ -37,25 +38,6 @@ namespace Tangram.Data.Tests
             }
             Assert.AreEqual(wanted, puzzles.Count, "沒能在上限內生滿");
             return puzzles;
-        }
-
-        /// <summary>
-        /// 從目前目錄與執行檔目錄往上找 repo 裡的檔案。
-        /// Unity 的 Test Runner 從專案根目錄跑，<c>dotnet test</c> 從 <c>Tools/DotnetTests/bin/...</c> 跑。
-        /// </summary>
-        /// <param name="relativePath">相對於專案根目錄的路徑。</param>
-        /// <returns>完整路徑。</returns>
-        private static string FindRepoFile(string relativePath)
-        {
-            foreach (string start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
-                for (var directory = new DirectoryInfo(start); directory != null; directory = directory.Parent)
-                {
-                    string candidate = Path.Combine(directory.FullName, relativePath);
-                    if (File.Exists(candidate)) return candidate;
-                }
-
-            Assert.Fail($"從 {Directory.GetCurrentDirectory()} 往上找不到 {relativePath}");
-            return null;
         }
 
         // ─────────────────────────────────────────────────────────────
@@ -113,10 +95,11 @@ namespace Tangram.Data.Tests
         [Test]
         public void 難度_同一題永遠得到同一個值()
         {
+            DifficultyWeights weights = RepositoryFiles.LoadDifficultyWeights();
             foreach (GenerationResult result in Collect(seed: 31337, wanted: 5))
             {
-                int first = DifficultyEvaluator.Score(result.Puzzle, result.ReferenceSolution);
-                int second = DifficultyEvaluator.Score(result.Puzzle, result.ReferenceSolution);
+                int first = DifficultyEvaluator.Score(result.Puzzle, result.ReferenceSolution, weights);
+                int second = DifficultyEvaluator.Score(result.Puzzle, result.ReferenceSolution, weights);
                 Assert.AreEqual(first, second, "同一題算兩次不一樣");
 
                 foreach ((int rotation, bool flipped) in Symmetry.GlobalTransforms)
@@ -127,7 +110,7 @@ namespace Tangram.Data.Tests
 
                     var transformedPuzzle = Puzzle.FromPlacements(transformedSolution);
                     Assert.AreEqual(first,
-                        DifficultyEvaluator.Score(transformedPuzzle, transformedSolution),
+                        DifficultyEvaluator.Score(transformedPuzzle, transformedSolution, weights),
                         $"轉過去之後分數變了：rotation={rotation} flipped={flipped}");
                 }
             }
@@ -149,9 +132,10 @@ namespace Tangram.Data.Tests
         [Test]
         public void 難度_一批題目的分數要有高有低()
         {
+            DifficultyWeights weights = RepositoryFiles.LoadDifficultyWeights();
             var scores = new List<int>();
             foreach (GenerationResult result in Collect(seed: 20260910, wanted: 60))
-                scores.Add(DifficultyEvaluator.Score(result.Puzzle, result.ReferenceSolution));
+                scores.Add(DifficultyEvaluator.Score(result.Puzzle, result.ReferenceSolution, weights));
 
             scores.Sort();
             int lowest = scores[0], highest = scores[scores.Count - 1];
@@ -169,49 +153,146 @@ namespace Tangram.Data.Tests
         // ─────────────────────────────────────────────────────────────
 
         /// <summary>
-        /// ⭐ <b><c>Assets/Resources/DifficultyWeights.json</c> 與 <see cref="DifficultyWeights.Default"/>
-        /// 必須是同一份數字。</b>
+        /// ⭐ <b>權重檔讀得出來，而且通過讀檔時的檢查。</b>
         ///
-        /// 兩份的理由：<c>Data</c> 層不認識 Unity 的 <c>Resources</c>，<c>dotnet</c> 測試也沒有 Unity，
-        /// 所以程式裡留一份；而「換權重是改檔案不是改程式」要成立，檔案又得是給人改的那一份。
-        /// ⚠️ 沒有這條測試的話，改了檔案忘了改程式（或反過來）<b>不會有任何症狀</b>——
-        /// 遊戲讀檔、測試讀常數，兩邊各自算出不同的難度值。
+        /// 2026-09-13 起權重檔是唯一的源頭（程式裡沒有預設值），遊戲讀不到就不進關。
+        /// 所以檔案被改壞要在日常的 Run All 就紅，不要等到按 Play 才發現。
+        /// 順便釘住尺的中心與間距——那兩個數字是凍結的，改了等於換一把尺。
         /// </summary>
         [Test]
-        public void 權重_檔案與程式裡的預設值一致()
+        public void 權重檔_讀得出來而且通過檢查()
         {
-            DifficultyWeights fromFile = DifficultyWeights.FromJson(
-                File.ReadAllText(FindRepoFile(WeightsRelativePath)));
-            DifficultyWeights fromCode = DifficultyWeights.Default;
+            DifficultyWeights weights = RepositoryFiles.LoadDifficultyWeights();
 
-            Assert.AreEqual(fromCode.center, fromFile.center, 1e-9, "center");
-            Assert.AreEqual(fromCode.spread, fromFile.spread, 1e-9, "spread");
-            Assert.AreEqual(fromCode.weightedMean, fromFile.weightedMean, 1e-9, "weightedMean");
-            Assert.AreEqual(fromCode.weightedDeviation, fromFile.weightedDeviation, 1e-9, "weightedDeviation");
-            Assert.AreEqual(fromCode.terms.Length, fromFile.terms.Length, "特徵數量");
+            Assert.AreEqual(1200.0, weights.center, "尺的中心被改了——那是凍結的");
+            Assert.AreEqual(200.0, weights.spread, "尺的間距被改了——那是凍結的");
+            Assert.Greater(weights.terms.Length, 0);
+        }
 
-            foreach (DifficultyTermWeight expected in fromCode.terms)
-            {
-                DifficultyTermWeight actual = null;
-                foreach (DifficultyTermWeight candidate in fromFile.terms)
-                    if (candidate.key == expected.key) actual = candidate;
+        /// <summary>
+        /// ⭐ <b>權重檔的鍵名跟類別的欄位一一對上。</b>
+        ///
+        /// ⚠️ <c>JsonUtility</c> 碰到拼錯的欄位名<b>不會吭聲</b>：檔案裡的 <c>"weigth"</c> 被忽略，
+        /// 類別裡的 <c>weight</c> 讀成 0——那個特徵就安靜地不算分了。
+        /// 讀檔時的檢查攔得住「0 一定是錯」的欄位（倍率、間距、有權重的標準差），
+        /// 但<b>權重本身的 0 是合法的</b>，只有比對鍵名攔得住。
+        /// </summary>
+        [Test]
+        public void 權重檔_鍵名跟類別的欄位一一對上()
+        {
+            string text = File.ReadAllText(RepositoryFiles.Find(RepositoryFiles.DifficultyWeightsRelativePath));
+            DifficultyWeights weights = DifficultyWeights.FromJson(text);
 
-                Assert.IsNotNull(actual, $"檔案裡沒有特徵 {expected.key}");
-                Assert.AreEqual(expected.weight, actual.weight, 1e-9, $"{expected.key} 的權重");
-                Assert.AreEqual(expected.direction, actual.direction, $"{expected.key} 的方向");
-                Assert.AreEqual(expected.mean, actual.mean, 1e-9, $"{expected.key} 的平均");
-                Assert.AreEqual(expected.deviation, actual.deviation, 1e-9, $"{expected.key} 的標準差");
-            }
+            FieldInfo[] topFields = typeof(DifficultyWeights).GetFields(BindingFlags.Public | BindingFlags.Instance);
+            FieldInfo[] termFields = typeof(DifficultyTermWeight).GetFields(BindingFlags.Public | BindingFlags.Instance);
+
+            var knownNames = new HashSet<string>();
+            foreach (FieldInfo field in topFields) knownNames.Add(field.Name);
+            foreach (FieldInfo field in termFields) knownNames.Add(field.Name);
+
+            // 鍵 = 雙引號包起來、後面接冒號的字。值（例如 "perimeter"）後面接的是逗號或換行，不會被抓到
+            foreach (Match match in Regex.Matches(text, "\"(\\w+)\"\\s*:"))
+                Assert.IsTrue(knownNames.Contains(match.Groups[1].Value),
+                    $"權重檔裡有程式不認得的鍵「{match.Groups[1].Value}」——拼錯的話，它原本要填的欄位會被讀成 0");
+
+            // 反過來：每個欄位都要出現，而且每一筆特徵都要有自己的一份
+            foreach (FieldInfo field in topFields)
+                Assert.AreEqual(1, CountKey(text, field.Name),
+                    $"權重檔裡「{field.Name}」應該剛好出現一次——少了會被讀成 0");
+            foreach (FieldInfo field in termFields)
+                Assert.AreEqual(weights.terms.Length, CountKey(text, field.Name),
+                    $"權重檔有 {weights.terms.Length} 筆特徵，「{field.Name}」卻不是每筆都有——少掉的會被讀成 0");
+        }
+
+        /// <param name="text">JSON 文字。</param>
+        /// <param name="name">鍵名。</param>
+        /// <returns>這個鍵出現幾次。</returns>
+        private static int CountKey(string text, string name) =>
+            Regex.Matches(text, $"\"{Regex.Escape(name)}\"\\s*:").Count;
+
+        /// <summary>
+        /// 讀檔時的檢查：每一種壞法都要丟例外，訊息要說是哪一項。
+        /// 從真的權重檔出發，一次只弄壞一個地方——這樣證明的是「就是這一處讓它失敗」。
+        /// </summary>
+        [Test]
+        public void 權重檔_壞掉的內容讀檔時就丟例外()
+        {
+            string text = File.ReadAllText(RepositoryFiles.Find(RepositoryFiles.DifficultyWeightsRelativePath));
+
+            AssertRejected("", "空的", "空字串");
+            AssertRejected(ReplaceFirstValue(text, "weightedDeviation", "0"), "weightedDeviation", "換算倍率是 0");
+            AssertRejected(ReplaceFirstValue(text, "spread", "0"), "spread", "間距是 0");
+
+            // 欄位名拼錯 → JsonUtility 讀成 0 → 被「必須大於 0」攔下來。這就是那條檢查存在的理由
+            AssertRejected(Regex.Replace(text, "\"spread\"", "\"spreadd\""), "spread", "間距的鍵名拼錯");
+
+            AssertRejected(ReplaceFirstKeyValue(text, "perimeter", "perimeterr"), "perimeterr", "不認得的特徵");
+            AssertRejected(ReplaceFirstKeyValue(text, "cornerCount", "perimeter"), "兩次", "同一個特徵出現兩次");
+            AssertRejected(ReplaceFirstValue(text, "direction", "2"), "方向", "方向不是 ±1");
+            AssertRejected(ReplaceFirstValue(text, "weight", "-0.1"), "負的", "權重是負的");
+            AssertRejected(ReplaceFirstValue(text, "deviation", "0"), "標準差", "有權重的特徵標準差是 0");
+        }
+
+        /// <param name="json">要讀的內容。</param>
+        /// <param name="expectedInMessage">例外訊息裡必須提到的字（證明訊息有說是哪一項）。</param>
+        /// <param name="label">這一種壞法的名字。</param>
+        private static void AssertRejected(string json, string expectedInMessage, string label)
+        {
+            var exception = Assert.Throws<ArgumentException>(() => DifficultyWeights.FromJson(json), label);
+            StringAssert.Contains(expectedInMessage, exception.Message, $"{label}：訊息沒有說是哪一項");
+        }
+
+        /// <summary>把第一個 <c>"name": 數字</c> 的數字換掉。</summary>
+        /// <param name="text">JSON 文字。</param>
+        /// <param name="name">鍵名。</param>
+        /// <param name="newValue">新的值（原樣寫進去）。</param>
+        /// <returns>換過的文字。</returns>
+        private static string ReplaceFirstValue(string text, string name, string newValue)
+        {
+            var pattern = new Regex($"(\"{Regex.Escape(name)}\"\\s*:\\s*)-?[0-9.eE+-]+");
+            Assert.IsTrue(pattern.IsMatch(text), $"權重檔裡找不到「{name}」");
+            return pattern.Replace(text, match => match.Groups[1].Value + newValue, 1);
+        }
+
+        /// <summary>把第一個 <c>"key": "oldKey"</c> 換成 <c>"key": "newKey"</c>。</summary>
+        /// <param name="text">JSON 文字。</param>
+        /// <param name="oldKey">原本的特徵鍵。</param>
+        /// <param name="newKey">換成什麼。</param>
+        /// <returns>換過的文字。</returns>
+        private static string ReplaceFirstKeyValue(string text, string oldKey, string newKey)
+        {
+            var pattern = new Regex($"(\"key\"\\s*:\\s*)\"{Regex.Escape(oldKey)}\"");
+            Assert.IsTrue(pattern.IsMatch(text), $"權重檔裡找不到特徵「{oldKey}」");
+            return pattern.Replace(text, match => match.Groups[1].Value + $"\"{newKey}\"", 1);
+        }
+
+        /// <summary>
+        /// 權重與題目都是必填（2026-09-13 起）。傳 null 要響——
+        /// 原本權重傳 null 會安靜地退回程式裡的預設值，那正是這次拿掉的東西。
+        /// </summary>
+        [Test]
+        public void 難度_權重與題目都是必填()
+        {
+            DifficultyWeights weights = RepositoryFiles.LoadDifficultyWeights();
+            GenerationResult result = Collect(seed: 5, wanted: 1)[0];
+
+            Assert.Throws<ArgumentNullException>(() =>
+                DifficultyEvaluator.Score(result.Puzzle, result.ReferenceSolution, null));
+            Assert.Throws<ArgumentNullException>(() =>
+                DifficultyEvaluator.Score(null, result.ReferenceSolution, weights));
+            Assert.Throws<ArgumentNullException>(() =>
+                DifficultyEvaluator.Score(result.Puzzle, null, weights));
         }
 
         /// <summary>
         /// 鍵打錯字要丟例外，不能默默當成 0。
         /// 默默當成 0 的話症狀是「某個特徵完全不影響難度」，而且不會有人發現。
+        /// 這一條走的是「在記憶體裡改過的權重」——讀檔那條路已經在讀檔時攔下了。
         /// </summary>
         [Test]
         public void 權重_不認得的鍵要丟例外()
         {
-            DifficultyWeights weights = DifficultyWeights.Default;
+            DifficultyWeights weights = RepositoryFiles.LoadDifficultyWeights();
             weights.terms[0].key = "perimeterr";
 
             GenerationResult result = Collect(seed: 5, wanted: 1)[0];
@@ -225,7 +306,8 @@ namespace Tangram.Data.Tests
         {
             GenerationResult result = Collect(seed: 808, wanted: 1)[0];
 
-            DifficultyWeights withZero = DifficultyWeights.Default;
+            DifficultyWeights original = RepositoryFiles.LoadDifficultyWeights();
+            DifficultyWeights withZero = RepositoryFiles.LoadDifficultyWeights();
             var terms = new List<DifficultyTermWeight>(withZero.terms);
             terms.Add(new DifficultyTermWeight
             {
@@ -234,28 +316,239 @@ namespace Tangram.Data.Tests
             });
             withZero.terms = terms.ToArray();
 
-            Assert.AreEqual(DifficultyEvaluator.Score(result.Puzzle, result.ReferenceSolution),
+            Assert.AreEqual(DifficultyEvaluator.Score(result.Puzzle, result.ReferenceSolution, original),
                             DifficultyEvaluator.Score(result.Puzzle, result.ReferenceSolution, withZero));
         }
 
         // ─────────────────────────────────────────────────────────────
-        // 四、[Explicit] 產生權重檔
+        // 四、[Explicit] 重算工具：權重改過之後重算換算倍率
         // ─────────────────────────────────────────────────────────────
 
         /// <summary>
-        /// <b>把 <see cref="DifficultyWeights.Default"/> 寫成 <c>Assets/Resources/DifficultyWeights.json</c>。</b>
-        /// 改了程式裡的預設值之後跑這一支，不要手抄——
-        /// 〈權重_檔案與程式裡的預設值一致〉會在兩邊分家時變紅，跑這支就是它的修法。
+        /// 「同一批」的比對容許這麼多的差。<b>是推出來的，不是試出來的</b>：
+        ///
+        /// ⚠️ 檔案裡的平均與標準差是<b>對照牆的 JS</b> 算的，而縮圖牆匯出把周長<b>四捨五入到小數四位</b>
+        /// 才寫進資料——每個值最多差 5e-5，所以平均與標準差最多也差 5e-5。
+        /// C# 這邊用的是精確的周長，第一次跑就撞到了：周長的平均差 1.1e-5（2026-09-13）。
+        /// 其他特徵都是整數，只剩存到小數第六位的四捨五入。
+        ///
+        /// <b>這個容許值抓不抓得到「真的換了一批」</b>：845 個裡只要換掉一個形狀，
+        /// 整數特徵差 1 就讓平均移動 1 ÷ 845 ≈ 1.2e-3，比容許值大十倍以上。
         /// </summary>
-        [Test]
-        [Explicit("產生權重檔，不是驗證")]
-        public void 匯出_把預設權重寫成檔案()
-        {
-            string path = FindRepoFile(WeightsRelativePath);
-            File.WriteAllText(path, DifficultyWeights.Default.ToJson(pretty: true));
+        private const double StoredStatisticTolerance = 1e-4;
 
-            TestContext.WriteLine($"寫好了：{path}");
-            Assert.IsTrue(new FileInfo(path).Length > 0, "寫出來是空的");
+        /// <summary>
+        /// 新算出來的換算倍率跟檔案差不到這麼多就不寫檔——那只是四捨五入的雜訊。
+        /// 權重沒改的時候跑這個工具，應該走到「一致，不寫」那條路。
+        ///
+        /// 雜訊的來源跟 <see cref="StoredStatisticTolerance"/> 同一個（周長在對照牆資料裡只有小數四位），
+        /// 傳到倍率上最多約 6e-6。差 2e-5 對難度的影響不到 0.03 分，四捨五入成整數之後完全看不到。
+        /// </summary>
+        private const double WeightedDeviationUnchangedTolerance = 2e-5;
+
+        /// <summary>新的 p1／p99 跟夾住範圍的常數差超過這麼多就警告（容許範圍 ±50 的一半）。</summary>
+        private const int TargetRangeWarningDistance = 25;
+
+        /// <summary>
+        /// ⭐ <b>重算工具：改了權重檔的權重之後跑這一支。</b>
+        ///
+        /// <b>白話</b>：難度 = 1200 + 原始分 × 換算倍率。換算倍率讓基準批次那 845 題攤開在
+        /// 大約 800 ～ 1600。權重一改，原始分整體變大或變小，<b>倍率不跟著改的話尺就被拉長或壓扁</b>，
+        /// 同一題的難度會變，出題器的夾住範圍、±50、ELO 全部跟著歪，而且不報錯。
+        /// 這支拿同一批 845 題、用新權重重算，把倍率調到讓它們又落回原本的範圍。
+        ///
+        /// <b>五步</b>：
+        /// ① 讀權重檔 ② 生<see cref="BaselineBatch">基準批次</see>、篩完必須剛好 845 個
+        /// ③ ⚠️ <b>確認是同一批題目</b>：每個特徵在這一批的平均與標準差要跟檔案裡的一樣。
+        ///    對不上代表出題器或特徵函數被改過——拿不一樣的題目校正尺，等於默默把整把尺搬走，
+        ///    所以<b>直接失敗，什麼都不寫</b>。平均與標準差本身是凍結的，這支只驗、不改
+        /// ④ 用新權重算這一批的原始分，量出新的換算倍率（<c>weightedDeviation</c>）
+        /// ⑤ <b>只把那一個數字寫回檔案</b>，其他文字一個字都不動（用文字取代，不整份重新序列化）
+        ///
+        /// 順便印出新尺上的 p1 ～ p99，跟出題器夾住的 760 ～ 1710 比，差太多時警告
+        /// （常數刻意先留在程式裡，2026-09-13 定）。
+        ///
+        /// ⭐ <b>權重沒改的時候跑，應該算回檔案裡那個值</b>。那個值原本是對照牆的 JS 算的，
+        /// C# 算出一樣的數字就證明兩邊的定義一致。
+        ///
+        /// 要跑：<c>dotnet test Tools/DotnetTests --filter "FullyQualifiedName~尺度_權重改過之後重算換算倍率"</c>
+        /// </summary>
+        [Test, Explicit("重算工具：生基準批次要數十秒，而且會寫權重檔")]
+        public void 尺度_權重改過之後重算換算倍率()
+        {
+            // ① 讀
+            string path = RepositoryFiles.Find(RepositoryFiles.DifficultyWeightsRelativePath);
+            string fileText = File.ReadAllText(path, new UTF8Encoding(false));
+            DifficultyWeights oldWeights = DifficultyWeights.FromJson(fileText);
+
+            // ② 基準批次
+            BaselineBatch batch = BaselineBatch.Generate();
+            List<GenerationResult> accepted = batch.AcceptedByDefault();
+            Assert.AreEqual(BaselineBatch.ExpectedAcceptedCount, accepted.Count,
+                "基準批次篩完的數量不對——出題器或審美門檻被改過，這已經不是當初定尺的那一批。什麼都沒寫。");
+
+            List<MeasuredShape> acceptedShapes = Measure(accepted);
+
+            // ③ 確認是同一批
+            var mismatches = new List<string>();
+            foreach (DifficultyTermWeight term in oldWeights.terms)
+            {
+                var values = new List<double>(acceptedShapes.Count);
+                foreach (MeasuredShape shape in acceptedShapes)
+                    values.Add(DifficultyEvaluator.RawValueOf(term.key, shape.ShapeFeatures,
+                                                              shape.ForcedPieceCount, shape.SolutionFeatures));
+
+                (double mean, double deviation) = MeanAndPopulationDeviation(values);
+                if (Math.Abs(mean - term.mean) > StoredStatisticTolerance
+                    || Math.Abs(deviation - term.deviation) > StoredStatisticTolerance)
+                    mismatches.Add($"  {term.key}：檔案 平均 {term.mean}／標準差 {term.deviation}，" +
+                                   $"這一批算出來 {mean:F6}／{deviation:F6}");
+            }
+            if (mismatches.Count > 0)
+                Assert.Fail("各特徵的平均與標準差跟檔案對不上——出題器或特徵函數被改過，" +
+                            "拿這一批校正會把整把尺搬走。什麼都沒寫。\n" + string.Join("\n", mismatches));
+
+            // ④ 新的換算倍率。平均與標準差用檔案裡凍結的那份（WeightedSum 就是這樣算的）
+            var weightedSums = new List<double>(acceptedShapes.Count);
+            foreach (MeasuredShape shape in acceptedShapes)
+                weightedSums.Add(DifficultyEvaluator.WeightedSum(shape.ShapeFeatures, shape.ForcedPieceCount,
+                                                                 shape.SolutionFeatures, oldWeights));
+            (double weightedMean, double measuredDeviation) = MeanAndPopulationDeviation(weightedSums);
+            double newDeviation = Math.Round(measuredDeviation, 6, MidpointRounding.AwayFromZero);
+
+            DifficultyWeights newWeights = DifficultyWeights.FromJson(fileText);
+            newWeights.weightedDeviation = newDeviation;
+
+            ReportRescale(oldWeights, newWeights, weightedMean, acceptedShapes, Measure(batch.Shapes));
+
+            // ⑤ 寫回。只動 weightedDeviation 那一個數字
+            if (Math.Abs(newDeviation - oldWeights.weightedDeviation) <= WeightedDeviationUnchangedTolerance)
+            {
+                TestContext.WriteLine("");
+                TestContext.WriteLine($"✅ 換算倍率跟檔案一致（{oldWeights.weightedDeviation} → {newDeviation}），不寫檔。");
+                return;
+            }
+
+            var pattern = new Regex("(\"weightedDeviation\"\\s*:\\s*)-?[0-9.eE+-]+");
+            Assert.AreEqual(1, pattern.Matches(fileText).Count, "權重檔裡的 weightedDeviation 不是剛好一個，不敢改");
+            string newText = pattern.Replace(fileText, match =>
+                match.Groups[1].Value + newDeviation.ToString("0.######", CultureInfo.InvariantCulture), 1);
+
+            File.WriteAllText(path, newText, new UTF8Encoding(false));
+
+            // 寫完回頭讀一次，證明真的寫進去了、而且還讀得回來
+            DifficultyWeights reread = DifficultyWeights.FromJson(File.ReadAllText(path));
+            Assert.AreEqual(newDeviation, reread.weightedDeviation, 1e-12, "寫回去的值讀回來不一樣");
+
+            TestContext.WriteLine("");
+            TestContext.WriteLine($"✏️ 寫好了：{path}");
+            TestContext.WriteLine("   接下來：① 切回 Unity 讓它重新匯入 ② 重跑縮圖牆匯出、重發布對照牆 " +
+                                  "③ 上面如果有夾住範圍的警告，回去改 TargetedPuzzleGenerator 的兩個常數");
         }
+
+        /// <summary>一個形狀算難度要的三樣東西，量一次就好（被外框逼出來的片數不便宜）。</summary>
+        private readonly struct MeasuredShape
+        {
+            public readonly DifficultyFeatures ShapeFeatures;
+            public readonly int ForcedPieceCount;
+            public readonly SolutionFeatures SolutionFeatures;
+
+            public MeasuredShape(GenerationResult shape)
+            {
+                ShapeFeatures = shape.Features;
+                ForcedPieceCount = DifficultyFeatures.ForcedPieceCountOf(shape.Puzzle.Walks);
+                SolutionFeatures = SolutionFeatures.Measure(shape.ReferenceSolution);
+            }
+        }
+
+        /// <param name="shapes">生成器的結果。</param>
+        /// <returns>每個形狀量好的特徵，順序不變。</returns>
+        private static List<MeasuredShape> Measure(List<GenerationResult> shapes)
+        {
+            var measured = new List<MeasuredShape>(shapes.Count);
+            foreach (GenerationResult shape in shapes) measured.Add(new MeasuredShape(shape));
+            return measured;
+        }
+
+        /// <summary>
+        /// 平均與<b>母體</b>標準差（除以 n）——跟對照牆 JS 的 <c>meanAndDeviation</c> 同一個定義，
+        /// 檔案裡的數字就是那樣算出來的。改成樣本標準差（除以 n − 1）的話，第 ③ 步永遠對不上。
+        /// </summary>
+        /// <param name="values">數字。</param>
+        /// <returns>平均與標準差。</returns>
+        private static (double mean, double deviation) MeanAndPopulationDeviation(List<double> values)
+        {
+            double sum = 0.0;
+            foreach (double value in values) sum += value;
+            double mean = sum / values.Count;
+
+            double squaredSum = 0.0;
+            foreach (double value in values) squaredSum += (value - mean) * (value - mean);
+            return (mean, Math.Sqrt(squaredSum / values.Count));
+        }
+
+        /// <summary>印出重算的摘要：倍率變多少、尺被拉了多少、五題的新舊難度、夾住範圍要不要改。</summary>
+        /// <param name="oldWeights">檔案裡原本的。</param>
+        /// <param name="newWeights">換上新換算倍率的。</param>
+        /// <param name="weightedMean">這一批原始分的平均（理論上是 0）。</param>
+        /// <param name="acceptedShapes">基準批次篩過的那 845 個。</param>
+        /// <param name="allShapes">基準批次全部 2000 個。</param>
+        private static void ReportRescale(DifficultyWeights oldWeights, DifficultyWeights newWeights,
+                                          double weightedMean, List<MeasuredShape> acceptedShapes,
+                                          List<MeasuredShape> allShapes)
+        {
+            TestContext.WriteLine("══════ 重算換算倍率 ══════");
+            TestContext.WriteLine($"基準批次：種子 {BaselineBatch.Seed}，{allShapes.Count} 個形狀，預設門檻收 {acceptedShapes.Count} 個");
+            TestContext.WriteLine("✅ 各特徵的平均與標準差跟檔案一致（是同一批題目）");
+            TestContext.WriteLine($"原始分的平均 {weightedMean:F6}（理論上是 0，檔案裡存 {oldWeights.weightedMean}）");
+            TestContext.WriteLine($"換算倍率 weightedDeviation：檔案 {oldWeights.weightedDeviation} → 算出來 {newWeights.weightedDeviation}");
+            TestContext.WriteLine($"沒重算的話，每題離 1200 的距離會是正確值的 " +
+                                  $"{newWeights.weightedDeviation / oldWeights.weightedDeviation:F3} 倍");
+
+            // 五題：照新難度排，挑最低、四分之一、中位、四分之三、最高
+            var byNewDifficulty = new List<(int oldDifficulty, int newDifficulty)>(acceptedShapes.Count);
+            foreach (MeasuredShape shape in acceptedShapes)
+                byNewDifficulty.Add((ScoreOf(shape, oldWeights), ScoreOf(shape, newWeights)));
+            byNewDifficulty.Sort((left, right) => left.newDifficulty.CompareTo(right.newDifficulty));
+
+            TestContext.WriteLine("五題的難度（舊倍率 → 新倍率）：");
+            foreach (double fraction in new[] { 0.0, 0.25, 0.5, 0.75, 1.0 })
+            {
+                (int oldDifficulty, int newDifficulty) = byNewDifficulty[(int)Math.Round(fraction * (byNewDifficulty.Count - 1))];
+                TestContext.WriteLine($"  第 {fraction * 100,3:F0} 百分位：{oldDifficulty} → {newDifficulty}");
+            }
+
+            // 夾住範圍。⚠️ 文件寫「兩千題批次的 p1 ～ p99」，但出題器只會回傳篩過的那些，兩群算出來不一樣——
+            // 兩個都印，看哪一群對得上 760 ～ 1710 就知道當初用的是哪一群
+            TestContext.WriteLine($"新尺上的 p1 ～ p99（出題器夾在 {TargetedPuzzleGenerator.MinimumTargetDifficulty} ～ " +
+                                  $"{TargetedPuzzleGenerator.MaximumTargetDifficulty}）：");
+            ReportPercentiles("預設門檻收的", acceptedShapes, newWeights);
+            ReportPercentiles("全部兩千個", allShapes, newWeights);
+        }
+
+        /// <param name="label">這一群叫什麼。</param>
+        /// <param name="shapes">形狀。</param>
+        /// <param name="weights">用哪一份權重算。</param>
+        private static void ReportPercentiles(string label, List<MeasuredShape> shapes, DifficultyWeights weights)
+        {
+            var difficulties = new List<int>(shapes.Count);
+            foreach (MeasuredShape shape in shapes) difficulties.Add(ScoreOf(shape, weights));
+            difficulties.Sort();
+
+            // 最近排名法：第 p 百分位 = 排序後第 round(p × (n − 1)) 個
+            int lowest = difficulties[(int)Math.Round(0.01 * (difficulties.Count - 1))];
+            int highest = difficulties[(int)Math.Round(0.99 * (difficulties.Count - 1))];
+
+            bool drifted = Math.Abs(lowest - TargetedPuzzleGenerator.MinimumTargetDifficulty) > TargetRangeWarningDistance
+                        || Math.Abs(highest - TargetedPuzzleGenerator.MaximumTargetDifficulty) > TargetRangeWarningDistance;
+            TestContext.WriteLine($"  {label}：{lowest} ～ {highest}" +
+                                  (drifted ? $"　⚠️ 跟夾住範圍差超過 {TargetRangeWarningDistance}" : "　✅"));
+        }
+
+        /// <param name="shape">量好的形狀。</param>
+        /// <param name="weights">權重。</param>
+        /// <returns>難度值。</returns>
+        private static int ScoreOf(in MeasuredShape shape, DifficultyWeights weights) =>
+            DifficultyEvaluator.Score(shape.ShapeFeatures, shape.ForcedPieceCount, shape.SolutionFeatures, weights);
     }
 }

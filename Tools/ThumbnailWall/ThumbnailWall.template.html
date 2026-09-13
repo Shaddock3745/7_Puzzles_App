@@ -368,18 +368,31 @@
   // 2026-09-11 第二版（使用者看過第一版之後）：
   // · 凸包填滿率本身的影響不明顯，但拿「≥ 0.65」當門檻，其他因素會更有感 → 改成門檻，權重預設 0（還留著可以調回來）
   // · 「藏起的頂點總數」改成「三片裡有幾片只露出一個頂點」
+  // ⭐ 2026-09-13 起：預設權重與方向讀資料裡的權重檔（wallData.difficultyWeights），不再寫在這裡——
+  //    原本這裡是權重的第三份拷貝，改了 DifficultyWeights.json 之後牆上的預設值不會跟著變。
+  //    權重檔裡沒有的特徵（凸包填滿率）才用這裡寫的方向，預設權重是 0。見 applyWeightFile()
   const difficultyTerms = [
-    // 預設值是使用者 2026-09-11 在牆上掃過、覺得有鑑別度的那一組（每項亂抖 ±0.05 排序幾乎不變，小數不用再調）
-    { key: 'keyPiecesExposingOneVertex', label: '只露一個頂點的片數', direction: 1, defaultWeight: 0.15 },
-    { key: 'perimeter', label: '周長', direction: -1, defaultWeight: 0.35 },
-    { key: 'cornerCount', label: '轉角數', direction: -1, defaultWeight: 0.25 },
-    { key: 'staggeredEdgeContactCount', label: '錯開的接觸', direction: -1, defaultWeight: 0.10 },
-    { key: 'convexHullFillRatio', label: '凸包填滿率', direction: 1, defaultWeight: 0 },
+    { key: 'keyPiecesExposingOneVertex', label: '只露一個頂點的片數' },
+    { key: 'perimeter', label: '周長' },
+    { key: 'cornerCount', label: '轉角數' },
+    { key: 'staggeredEdgeContactCount', label: '錯開的接觸' },
+    // 不在權重檔裡：它在遊戲裡是門檻不是權重（2026-09-11 第二版），這裡留著可以調回來看
+    { key: 'convexHullFillRatio', label: '凸包填滿率', direction: 1 },
     // 越多越簡單：外框上有塊只放得進小三角的凸出，那片一眼就知道
-    { key: 'forcedPieceCount', label: '被外框逼出來的片數', direction: -1, defaultWeight: 0.15 },
-    // 拼成一塊 → 簡單。0.15 是 2026-09-12 使用者定的：合體題的平均回到整池平均附近（0 時高估約 170 分）
-    { key: 'largeTrianglesJoined', label: '兩片大三角拼成一塊', direction: -1, defaultWeight: 0.15 },
+    { key: 'forcedPieceCount', label: '被外框逼出來的片數' },
+    { key: 'largeTrianglesJoined', label: '兩片大三角拼成一塊' },
   ];
+
+  // 把權重檔的權重與方向填進 difficultyTerms。一定要在第一次 computeDifficulty 之前
+  function applyWeightFile() {
+    const file = wallData.difficultyWeights;
+    for (const term of difficultyTerms) {
+      const stored = file ? file[term.key] : undefined;
+      term.defaultWeight = stored ? stored.weight : 0;
+      if (stored) term.direction = stored.direction;
+      else if (term.direction === undefined) term.direction = 1;
+    }
+  }
 
   // 凸包填滿率門檻：跟預設的四個審美門檻同一個角色——低於它的不出題。
   // ⚠️ 它同時決定「難度的母體」：各特徵的平均與標準差只拿過了所有門檻的形狀算，
@@ -994,7 +1007,9 @@
     document.getElementById('provenance').innerHTML =
       `出題器種子 <b>${wallData.seed}</b> · <b>${wallData.shapeCount}</b> 個拼得起來的形狀 · ` +
       `預設門檻（洞 ≤ ${limits.maximumHoleCount}、捏點 ≤ ${limits.maximumPinchPointCount}、凹角 ≤ ${limits.maximumConcaveAngleCount}、周長 ≤ ${limits.maximumPerimeter}）收 <b>${accepted}</b> 個` +
-      (gate === null ? '' : ` · 再加凸包填滿率 ≥ ${gate} 剩 <b>${playable}</b> 個`);
+      (gate === null ? '' : ` · 再加凸包填滿率 ≥ ${gate} 剩 <b>${playable}</b> 個`) +
+      // 舊的資料檔沒有權重檔：暫定難度的預設權重會全部是 0，那個畫面看起來正常但完全不對，所以要講
+      (wallData.difficultyWeights ? '' : ' · ⚠️ <b>資料裡沒有權重檔，暫定難度的預設權重全是 0——請重跑匯出</b>');
   }
 
   // 檢視窗用：三片各露出幾個頂點（照參考解的槽順序，大三角、大三角、平行四邊形不一定照這個次序）
@@ -1020,6 +1035,7 @@
     for (const shape of wallData.shapes) {
       exactLabelByLongestEdge.set(distinctKeyOf(shape.longestEdgeLength), formatExact(shape.longestEdgeExact));
     }
+    applyWeightFile();                    // 一定要在 computeDifficulty 之前：它要用權重檔的預設權重
     computeDifficulty(wallData.shapes);   // 一定要在第一次 render 之前：分列與鎖定都會讀 provisionalDifficulty
     renderProvenance();
     wireControls();
