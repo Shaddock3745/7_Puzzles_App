@@ -21,7 +21,7 @@ namespace Tangram.Data.Tests
     /// 不再在 JS 裡另寫一份——那是權重的第三份拷貝。
     ///
     /// ⚠️ <b>掛 [Explicit]</b>：跑 2000 個形狀要數十秒，不進日常的 Run All。要跑：
-    /// <c>dotnet test Tools/DotnetTests --filter "FullyQualifiedName~ThumbnailWallExportTests"</c>。
+    /// <c>dotnet test Tools/DotnetTests -- "NUnit.Where=name == ExportThumbnailWall"</c>（⚠️ 不能用 <c>--filter</c>，見 <c>CLAUDE.md</c>〈怎麼跑測試〉）。
     /// </summary>
     public class ThumbnailWallExportTests
     {

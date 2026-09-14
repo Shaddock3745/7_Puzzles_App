@@ -211,6 +211,16 @@ namespace Tangram.Data.Tests
             AssertRejected(JsonKeyAssertions.ReplaceFirstNumber(text, "direction", "2"), "方向", "方向不是 ±1");
             AssertRejected(JsonKeyAssertions.ReplaceFirstNumber(text, "weight", "-0.1"), "負的", "權重是負的");
             AssertRejected(JsonKeyAssertions.ReplaceFirstNumber(text, "deviation", "0"), "標準差", "有權重的特徵標準差是 0");
+
+            // 目標難度範圍（2026-09-14 搬進來）。0 就是「欄位名拼錯被讀成 0」的樣子
+            AssertRejected(JsonKeyAssertions.ReplaceFirstNumber(text, "minimumTargetDifficulty", "0"),
+                           "minimumTargetDifficulty", "範圍下限是 0");
+            AssertRejected(JsonKeyAssertions.ReplaceFirstNumber(text, "maximumTargetDifficulty", "0"),
+                           "maximumTargetDifficulty", "範圍上限是 0");
+            AssertRejected(JsonKeyAssertions.ReplaceFirstNumber(
+                               JsonKeyAssertions.ReplaceFirstNumber(text, "minimumTargetDifficulty", "1660"),
+                               "maximumTargetDifficulty", "744"),
+                           "maximumTargetDifficulty", "範圍上下限寫反");
         }
 
         /// <param name="json">要讀的內容。</param>
@@ -314,9 +324,6 @@ namespace Tangram.Data.Tests
         /// </summary>
         private const double WeightedDeviationUnchangedTolerance = 2e-5;
 
-        /// <summary>新的 p1／p99 跟夾住範圍的常數差超過這麼多就警告（容許範圍 ±50 的一半）。</summary>
-        private const int TargetRangeWarningDistance = 25;
-
         /// <summary>
         /// ⭐ <b>重算工具：改了權重檔的權重之後跑這一支。</b>
         ///
@@ -331,15 +338,17 @@ namespace Tangram.Data.Tests
         ///    對不上代表出題器或特徵函數被改過——拿不一樣的題目校正尺，等於默默把整把尺搬走，
         ///    所以<b>直接失敗，什麼都不寫</b>。平均與標準差本身是凍結的，這支只驗、不改
         /// ④ 用新權重算這一批的原始分，量出新的換算倍率（<c>weightedDeviation</c>）
-        /// ⑤ <b>只把那一個數字寫回檔案</b>，其他文字一個字都不動（用文字取代，不整份重新序列化）
+        /// ⑤ ⭐ 在新尺上量<b>出題器的目標難度範圍</b>：這一批 845 題的第 1 與第 99 百分位
+        ///    （<c>minimumTargetDifficulty</c> ／ <c>maximumTargetDifficulty</c>，2026-09-14 從程式常數搬進權重檔）
+        /// ⑥ <b>只把有變的數字寫回檔案</b>（最多三個），其他文字一個字都不動（用文字取代，不整份重新序列化）
         ///
-        /// 順便印出新尺上的 p1 ～ p99，跟出題器夾住的 760 ～ 1710 比，差太多時警告
-        /// （常數刻意先留在程式裡，2026-09-13 定）。
+        /// 「全部兩千個」那一群的百分位照印，但<b>只當參考、不比</b>——出題器只交出篩過的形狀。
+        /// 原本兩群都拿去比、差太多就警告，範圍改成量篩過的那一群之後，另一群會永遠亮警告，等於沒有警告。
         ///
         /// ⭐ <b>權重沒改的時候跑，應該算回檔案裡那個值</b>。那個值原本是對照牆的 JS 算的，
         /// C# 算出一樣的數字就證明兩邊的定義一致。
         ///
-        /// 要跑：<c>dotnet test Tools/DotnetTests --filter "FullyQualifiedName~尺度_權重改過之後重算換算倍率"</c>
+        /// 要跑：<c>dotnet test Tools/DotnetTests -- "NUnit.Where=name == RescaleDifficultyWeights"</c>（⚠️ 不能用 <c>--filter</c>，它選不到 <c>[Explicit]</c>，見 <c>CLAUDE.md</c>〈怎麼跑測試〉）
         /// </summary>
         [Test, Explicit("重算工具：生基準批次要數十秒，而且會寫權重檔")]
         public void 尺度_權重改過之後重算換算倍率()
@@ -383,35 +392,64 @@ namespace Tangram.Data.Tests
                                                                  shape.SolutionFeatures, oldWeights));
             (double weightedMean, double measuredDeviation) = MeanAndPopulationDeviation(weightedSums);
             double newDeviation = Math.Round(measuredDeviation, 6, MidpointRounding.AwayFromZero);
+            bool deviationChanged = Math.Abs(newDeviation - oldWeights.weightedDeviation) > WeightedDeviationUnchangedTolerance;
 
+            // ⚠️ 倍率沒變就沿用檔案裡那個，不換成剛算的：兩者差的是四捨五入的雜訊，
+            // 但那一點點可能讓某一題的難度跨過整數，第 ⑤ 步量到的範圍就會被寫動 1 分——權重明明沒改
             DifficultyWeights newWeights = DifficultyWeights.FromJson(fileText);
-            newWeights.weightedDeviation = newDeviation;
+            if (deviationChanged) newWeights.weightedDeviation = newDeviation;
 
-            ReportRescale(oldWeights, newWeights, weightedMean, acceptedShapes, Measure(batch.Shapes));
+            // ⑤ 新尺上的目標難度範圍
+            (int newMinimum, int newMaximum) = PercentileRange(acceptedShapes, newWeights);
+            newWeights.minimumTargetDifficulty = newMinimum;
+            newWeights.maximumTargetDifficulty = newMaximum;
 
-            // ⑤ 寫回。只動 weightedDeviation 那一個數字
-            if (Math.Abs(newDeviation - oldWeights.weightedDeviation) <= WeightedDeviationUnchangedTolerance)
+            ReportRescale(oldWeights, newWeights, newDeviation, weightedMean, acceptedShapes, Measure(batch.Shapes));
+
+            // ⑥ 寫回。只動有變的數字
+            var changes = new List<(string key, string value)>();
+            if (deviationChanged)
+                changes.Add(("weightedDeviation", newDeviation.ToString("0.######", CultureInfo.InvariantCulture)));
+            if (newMinimum != oldWeights.minimumTargetDifficulty)
+                changes.Add(("minimumTargetDifficulty", newMinimum.ToString(CultureInfo.InvariantCulture)));
+            if (newMaximum != oldWeights.maximumTargetDifficulty)
+                changes.Add(("maximumTargetDifficulty", newMaximum.ToString(CultureInfo.InvariantCulture)));
+
+            if (changes.Count == 0)
             {
                 TestContext.WriteLine("");
-                TestContext.WriteLine($"✅ 換算倍率跟檔案一致（{oldWeights.weightedDeviation} → {newDeviation}），不寫檔。");
+                TestContext.WriteLine("✅ 換算倍率與目標難度範圍都跟檔案一致，不寫檔。");
                 return;
             }
 
-            var pattern = new Regex("(\"weightedDeviation\"\\s*:\\s*)-?[0-9.eE+-]+");
-            Assert.AreEqual(1, pattern.Matches(fileText).Count, "權重檔裡的 weightedDeviation 不是剛好一個，不敢改");
-            string newText = pattern.Replace(fileText, match =>
-                match.Groups[1].Value + newDeviation.ToString("0.######", CultureInfo.InvariantCulture), 1);
+            string newText = fileText;
+            foreach ((string key, string value) in changes) newText = ReplaceSingleNumber(newText, key, value);
 
             File.WriteAllText(path, newText, new UTF8Encoding(false));
 
-            // 寫完回頭讀一次，證明真的寫進去了、而且還讀得回來
+            // 寫完回頭讀一次，證明真的寫進去了、而且還讀得回來（讀檔的檢查也會再跑一次）
             DifficultyWeights reread = DifficultyWeights.FromJson(File.ReadAllText(path));
-            Assert.AreEqual(newDeviation, reread.weightedDeviation, 1e-12, "寫回去的值讀回來不一樣");
+            Assert.AreEqual(newWeights.weightedDeviation, reread.weightedDeviation, 1e-12, "換算倍率讀回來不一樣");
+            Assert.AreEqual(newMinimum, reread.minimumTargetDifficulty, "範圍下限讀回來不一樣");
+            Assert.AreEqual(newMaximum, reread.maximumTargetDifficulty, "範圍上限讀回來不一樣");
 
             TestContext.WriteLine("");
             TestContext.WriteLine($"✏️ 寫好了：{path}");
+            foreach ((string key, string value) in changes) TestContext.WriteLine($"   {key} → {value}");
             TestContext.WriteLine("   接下來：① 切回 Unity 讓它重新匯入 ② 重跑縮圖牆匯出、重發布對照牆 " +
-                                  "③ 上面如果有夾住範圍的警告，回去改 TargetedPuzzleGenerator 的兩個常數");
+                                  "③ 範圍有變的話，重跑 TargetedPuzzleGeneratorTests.生成時間_幾個目標各生一百題");
+        }
+
+        /// <summary>把檔案裡 <c>"key": 數字</c> 的數字換掉。<b>那個鍵必須剛好出現一次</b>，否則不敢改。</summary>
+        /// <param name="text">權重檔的文字。</param>
+        /// <param name="key">鍵名。</param>
+        /// <param name="value">新的值（原樣寫進去）。</param>
+        /// <returns>換過的文字。</returns>
+        private static string ReplaceSingleNumber(string text, string key, string value)
+        {
+            var pattern = new Regex($"(\"{Regex.Escape(key)}\"\\s*:\\s*)-?[0-9.eE+-]+");
+            Assert.AreEqual(1, pattern.Matches(text).Count, $"權重檔裡的 {key} 不是剛好一個，不敢改");
+            return pattern.Replace(text, match => match.Groups[1].Value + value, 1);
         }
 
         /// <summary>一個形狀算難度要的三樣東西，量一次就好（被外框逼出來的片數不便宜）。</summary>
@@ -455,21 +493,22 @@ namespace Tangram.Data.Tests
             return (mean, Math.Sqrt(squaredSum / values.Count));
         }
 
-        /// <summary>印出重算的摘要：倍率變多少、尺被拉了多少、五題的新舊難度、夾住範圍要不要改。</summary>
+        /// <summary>印出重算的摘要：倍率變多少、尺被拉了多少、五題的新舊難度、目標難度範圍變多少。</summary>
         /// <param name="oldWeights">檔案裡原本的。</param>
-        /// <param name="newWeights">換上新換算倍率的。</param>
+        /// <param name="newWeights">換上新換算倍率與新範圍的（倍率沒變時沿用檔案的）。</param>
+        /// <param name="measuredDeviation">剛算出來的換算倍率（四捨五入到小數第六位）。</param>
         /// <param name="weightedMean">這一批原始分的平均（理論上是 0）。</param>
         /// <param name="acceptedShapes">基準批次篩過的那 845 個。</param>
         /// <param name="allShapes">基準批次全部 2000 個。</param>
         private static void ReportRescale(DifficultyWeights oldWeights, DifficultyWeights newWeights,
-                                          double weightedMean, List<MeasuredShape> acceptedShapes,
-                                          List<MeasuredShape> allShapes)
+                                          double measuredDeviation, double weightedMean,
+                                          List<MeasuredShape> acceptedShapes, List<MeasuredShape> allShapes)
         {
             TestContext.WriteLine("══════ 重算換算倍率 ══════");
             TestContext.WriteLine($"基準批次：種子 {BaselineBatch.Seed}，{allShapes.Count} 個形狀，預設門檻收 {acceptedShapes.Count} 個");
             TestContext.WriteLine("✅ 各特徵的平均與標準差跟檔案一致（是同一批題目）");
             TestContext.WriteLine($"原始分的平均 {weightedMean:F6}（理論上是 0，檔案裡存 {oldWeights.weightedMean}）");
-            TestContext.WriteLine($"換算倍率 weightedDeviation：檔案 {oldWeights.weightedDeviation} → 算出來 {newWeights.weightedDeviation}");
+            TestContext.WriteLine($"換算倍率 weightedDeviation：檔案 {oldWeights.weightedDeviation} → 算出來 {measuredDeviation}");
             TestContext.WriteLine($"沒重算的話，每題離 1200 的距離會是正確值的 " +
                                   $"{newWeights.weightedDeviation / oldWeights.weightedDeviation:F3} 倍");
 
@@ -486,31 +525,32 @@ namespace Tangram.Data.Tests
                 TestContext.WriteLine($"  第 {fraction * 100,3:F0} 百分位：{oldDifficulty} → {newDifficulty}");
             }
 
-            // 夾住範圍。⚠️ 文件寫「兩千題批次的 p1 ～ p99」，但出題器只會回傳篩過的那些，兩群算出來不一樣——
-            // 兩個都印，看哪一群對得上 760 ～ 1710 就知道當初用的是哪一群
-            TestContext.WriteLine($"新尺上的 p1 ～ p99（出題器夾在 {TargetedPuzzleGenerator.MinimumTargetDifficulty} ～ " +
-                                  $"{TargetedPuzzleGenerator.MaximumTargetDifficulty}）：");
-            ReportPercentiles("預設門檻收的", acceptedShapes, newWeights);
-            ReportPercentiles("全部兩千個", allShapes, newWeights);
+            // 目標難度範圍
+            bool rangeUnchanged = newWeights.minimumTargetDifficulty == oldWeights.minimumTargetDifficulty
+                               && newWeights.maximumTargetDifficulty == oldWeights.maximumTargetDifficulty;
+            TestContext.WriteLine($"目標難度範圍（出題器夾目標用）：檔案 {oldWeights.minimumTargetDifficulty} ～ " +
+                                  $"{oldWeights.maximumTargetDifficulty} → 新尺上 {newWeights.minimumTargetDifficulty} ～ " +
+                                  $"{newWeights.maximumTargetDifficulty}" + (rangeUnchanged ? "　✅ 一致" : "　✏️ 會寫回"));
+            TestContext.WriteLine($"  取法：預設門檻收的 {acceptedShapes.Count} 個，第 1 與第 99 百分位（最近排名法）");
+
+            (int allMinimum, int allMaximum) = PercentileRange(allShapes, newWeights);
+            TestContext.WriteLine($"  參考，不比：全部 {allShapes.Count} 個是 {allMinimum} ～ {allMaximum}" +
+                                  "（出題器只交出篩過的形狀，所以範圍不用這一群）");
         }
 
-        /// <param name="label">這一群叫什麼。</param>
+        /// <summary>一群形狀在某把尺上的第 1 與第 99 百分位。</summary>
         /// <param name="shapes">形狀。</param>
         /// <param name="weights">用哪一份權重算。</param>
-        private static void ReportPercentiles(string label, List<MeasuredShape> shapes, DifficultyWeights weights)
+        /// <returns>第 1 與第 99 百分位的難度。</returns>
+        private static (int lowest, int highest) PercentileRange(List<MeasuredShape> shapes, DifficultyWeights weights)
         {
             var difficulties = new List<int>(shapes.Count);
             foreach (MeasuredShape shape in shapes) difficulties.Add(ScoreOf(shape, weights));
             difficulties.Sort();
 
             // 最近排名法：第 p 百分位 = 排序後第 round(p × (n − 1)) 個
-            int lowest = difficulties[(int)Math.Round(0.01 * (difficulties.Count - 1))];
-            int highest = difficulties[(int)Math.Round(0.99 * (difficulties.Count - 1))];
-
-            bool drifted = Math.Abs(lowest - TargetedPuzzleGenerator.MinimumTargetDifficulty) > TargetRangeWarningDistance
-                        || Math.Abs(highest - TargetedPuzzleGenerator.MaximumTargetDifficulty) > TargetRangeWarningDistance;
-            TestContext.WriteLine($"  {label}：{lowest} ～ {highest}" +
-                                  (drifted ? $"　⚠️ 跟夾住範圍差超過 {TargetRangeWarningDistance}" : "　✅"));
+            return (difficulties[(int)Math.Round(0.01 * (difficulties.Count - 1))],
+                    difficulties[(int)Math.Round(0.99 * (difficulties.Count - 1))]);
         }
 
         /// <param name="shape">量好的形狀。</param>

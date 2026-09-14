@@ -73,15 +73,26 @@ namespace Tangram.Core
         public readonly double ForegroundSecondsSoFar;
 
         /// <summary>
-        /// 下一題的目標難度，<b>已經夾進出題器的範圍</b>——跟 <see cref="RatingUpdate.Trend"/> 比的是同一個數字。
-        /// 沒有實力紀錄時是 null。
+        /// 下一題的目標難度，<b>已經夾進出題器的範圍</b>。
+        ///
+        /// <b>兩個來源，照順序</b>（2026-09-14 改）：
+        /// ① 這一關<b>結算過了</b> → 直接讀明細的 <see cref="RatingUpdate.NextTargetDifficulty"/>，
+        ///    跟 <see cref="RatingUpdate.Trend"/> 比的是<b>同一個欄位</b>，不是另外算一個碰巧相等的數字
+        /// ② 還沒結算 → 用 <see cref="TargetRange"/> 夾目前的實力
+        ///
+        /// 沒有實力紀錄時是 null；還沒結算而且沒有範圍（沒有權重）時也是 null。
         /// </summary>
         public readonly int? NextTargetDifficulty;
 
+        /// <summary>這一場的目標難度範圍（跟出題用的同一份權重）。沒有權重時是 null。</summary>
+        public readonly TargetDifficultyRange TargetRange;
+
         private LevelMonitorReport(MonitorState state, LevelData level, DifficultyBreakdown breakdown,
                                    SkillRatingTracker rating, double? previewExpectedPerformance,
-                                   double foregroundSecondsSoFar, int? nextTargetDifficulty)
+                                   double foregroundSecondsSoFar, int? nextTargetDifficulty,
+                                   TargetDifficultyRange targetRange)
         {
+            TargetRange = targetRange;
             State = state;
             Level = level;
             Breakdown = breakdown;
@@ -116,27 +127,27 @@ namespace Tangram.Core
         /// </summary>
         /// <param name="session">這一場；沒在 Play 就傳 null。</param>
         /// <param name="breakdown">這一關的難度拆解；沒有就傳 null。由 <see cref="LevelMonitor"/> 快取，換關才重算。</param>
+        /// <param name="targetRange">這一場的目標難度範圍；沒有權重就傳 null。</param>
         /// <param name="nowSeconds">現在的時刻（秒），跟局內統計用同一個時鐘。</param>
         /// <returns>報告。</returns>
-        public static LevelMonitorReport Build(LevelSession session, DifficultyBreakdown breakdown, double nowSeconds)
+        public static LevelMonitorReport Build(LevelSession session, DifficultyBreakdown breakdown,
+                                               TargetDifficultyRange targetRange, double nowSeconds)
         {
             if (session == null)
-                return new LevelMonitorReport(MonitorState.NoSession, null, null, null, null, 0.0, null);
+                return new LevelMonitorReport(MonitorState.NoSession, null, null, null, null, 0.0, null, targetRange);
 
             SkillRatingTracker rating = session.Rating;
-            int? nextTarget = rating != null
-                ? TargetedPuzzleGenerator.ClampTarget(rating.NextTargetDifficulty)
-                : (int?)null;
-
             LevelData level = session.Data;
+            int? nextTarget = NextTargetOf(rating, level, targetRange);
+
             if (level == null)
-                return new LevelMonitorReport(MonitorState.NoLevel, null, null, rating, null, 0.0, nextTarget);
+                return new LevelMonitorReport(MonitorState.NoLevel, null, null, rating, null, 0.0, nextTarget, targetRange);
 
             double foreground = level.ForegroundSecondsAt(nowSeconds);
 
             // 沒有題目就沒有難度可以拆（出題工具的空方框難度是 0），傳進來的拆解也不收
             if (level.Puzzle == null)
-                return new LevelMonitorReport(MonitorState.NoPuzzle, level, null, rating, null, foreground, nextTarget);
+                return new LevelMonitorReport(MonitorState.NoPuzzle, level, null, rating, null, foreground, nextTarget, targetRange);
 
             MonitorState state = !level.IsFinished ? MonitorState.Playing
                 : !level.Settlement.HasValue ? MonitorState.AwaitingSettlement
@@ -146,7 +157,19 @@ namespace Tangram.Core
                 ? SkillRating.ExpectedPerformance(rating.CurrentRating, level.Difficulty, rating.Settings.ratingScale)
                 : (double?)null;
 
-            return new LevelMonitorReport(state, level, breakdown, rating, preview, foreground, nextTarget);
+            return new LevelMonitorReport(state, level, breakdown, rating, preview, foreground, nextTarget, targetRange);
+        }
+
+        /// <summary>下一題目標的兩個來源，見 <see cref="NextTargetDifficulty"/>。</summary>
+        /// <param name="rating">實力紀錄，可以是 null。</param>
+        /// <param name="level">這一關，可以是 null。</param>
+        /// <param name="targetRange">範圍，可以是 null。</param>
+        /// <returns>夾過的下一題目標；算不出來時是 null。</returns>
+        private static int? NextTargetOf(SkillRatingTracker rating, LevelData level, TargetDifficultyRange targetRange)
+        {
+            if (rating == null) return null;
+            if (level != null && level.Settlement.HasValue) return level.Settlement.Value.NextTargetDifficulty;
+            return targetRange?.Clamp(rating.NextTargetDifficulty);
         }
     }
 
@@ -181,7 +204,7 @@ namespace Tangram.Core
         public LevelMonitorReport Build(LevelSession session, DifficultyWeights weights, double nowSeconds)
         {
             LevelData level = session?.Data;
-            return LevelMonitorReport.Build(session, BreakdownFor(level, weights), nowSeconds);
+            return LevelMonitorReport.Build(session, BreakdownFor(level, weights), weights?.TargetRange, nowSeconds);
         }
 
         /// <param name="level">這一關。</param>

@@ -186,6 +186,22 @@ namespace Tangram.Core.Tests
         }
 
         /// <summary>
+        /// ⚠️ <b>目標難度範圍不算進指紋</b>（2026-09-14）：它不改變任何一題的難度值。
+        /// 算進去的話，加欄位那一天指紋就變了，之前收的回饋資料會被當成另一把尺量的。
+        /// </summary>
+        [Test]
+        public void 指紋_目標難度範圍不影響()
+        {
+            DifficultyWeights original = RepositoryFiles.LoadDifficultyWeights();
+
+            DifficultyWeights changedRange = RepositoryFiles.LoadDifficultyWeights();
+            changedRange.minimumTargetDifficulty -= 100;
+            changedRange.maximumTargetDifficulty += 100;
+
+            Assert.AreEqual(original.Fingerprint(), changedRange.Fingerprint(), "改了夾住範圍指紋就變了");
+        }
+
+        /// <summary>
         /// 指紋只看數字：特徵的先後順序、檔案的排版都不影響（公式是加總，順序本來就不影響難度）。
         /// 否則重新排版一次權重檔，就會被當成換了一把尺。
         /// </summary>

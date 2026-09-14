@@ -176,7 +176,11 @@ public class LevelController : MonoBehaviour
     private void SettleIfNeeded()
     {
         SkillRatingTracker rating = session?.Rating;
-        if (rating == null || !rating.TrySettle(session.Data, out RatingUpdate update)) return;
+
+        // 權重讀不到時 Awake 已經報過錯，而且那樣根本進不了任何一關，沒有東西要結算。
+        // 這一行不能省：TrySettle 沒拿到範圍會丟例外，那在這裡就是每幀一次
+        if (rating == null || difficultyWeights == null) return;
+        if (!rating.TrySettle(session.Data, difficultyWeights.TargetRange, out RatingUpdate update)) return;
 
         SaveRating(SkillRating.RoundRating(update.RatingAfter));
 

@@ -3,6 +3,8 @@
   "spread": 200,
   "weightedMean": 0,
   "weightedDeviation": 0.628725,
+  "minimumTargetDifficulty": 744,
+  "maximumTargetDifficulty": 1660,
   "terms": [
     {
       "key": "perimeter",

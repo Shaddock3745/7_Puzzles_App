@@ -74,6 +74,15 @@ namespace Tangram.Data
         /// <summary>結算時用了幾次提示。</summary>
         public readonly int HintsUsed;
 
+        /// <summary>
+        /// ⭐ <b>下一題的目標難度，已經夾進出題器的範圍</b>（2026-09-14 加）。<see cref="Trend"/> 比的就是它。
+        ///
+        /// <b>為什麼在結算的當下算好記下來</b>：範圍住在權重檔，而讀方向的人（彈窗）拿不到權重。
+        /// 原本是方向與監控面板<b>各夾一次</b>、靠兩邊碰巧用同一組常數維持一致；記在這裡之後只剩一份。
+        /// 順帶一個好處：它記的是「<b>當時</b>拿來判斷方向的目標」，之後換過權重，舊的明細也不會被重新解讀。
+        /// </summary>
+        public readonly int NextTargetDifficulty;
+
         /// <param name="outcome">結局。</param>
         /// <param name="difficulty">題目難度。</param>
         /// <param name="ratingBefore">結算前的實力。</param>
@@ -85,11 +94,14 @@ namespace Tangram.Data
         /// <param name="foregroundSeconds">前景秒數。⚠️ 三個輸入刻意放最後：前面已經一串 double，插在中間的話舊的呼叫端位置錯開也編得過。</param>
         /// <param name="dragSeconds">拖曳秒數。</param>
         /// <param name="hintsUsed">提示次數。</param>
+        /// <param name="nextTargetDifficulty">下一題的目標難度，<b>已經夾過</b>。</param>
         public RatingUpdate(LevelOutcome outcome, int difficulty, double ratingBefore,
                             double expectedPerformance, double timeCostSeconds, double actualPerformance,
                             double effectiveKFactor, double ratingChange,
-                            double foregroundSeconds, double dragSeconds, int hintsUsed)
+                            double foregroundSeconds, double dragSeconds, int hintsUsed,
+                            int nextTargetDifficulty)
         {
+            NextTargetDifficulty = nextTargetDifficulty;
             Outcome = outcome;
             Difficulty = difficulty;
             RatingBefore = ratingBefore;
@@ -109,9 +121,10 @@ namespace Tangram.Data
         /// <summary>
         /// 下一題會比這一題難還是簡單。
         ///
-        /// 比的是「<b>下一題實際會拿去出題的目標</b> − 這一題的難度」，不是 ΔR 的正負——玩家問的是下一題。
-        /// ⚠️ 目標要先<b>夾進出題器的範圍</b>：實力 1800 的玩家目標會被夾到 1710，
-        /// 不夾的話這一題 1705 也會顯示「會難一點」，但下一題其實一樣難。
+        /// 比的是「<b>下一題實際會拿去出題的目標</b>（<see cref="NextTargetDifficulty"/>）− 這一題的難度」，
+        /// 不是 ΔR 的正負——玩家問的是下一題。
+        /// ⚠️ 目標是<b>夾過的</b>：實力 1800 的玩家目標會被夾到上限（1660），
+        /// 不夾的話這一題 1655 也會顯示「會難一點」，但下一題其實一樣難。
         ///
         /// 門檻直接沿用出題器的容許範圍 ±50，不多一個參數：落在範圍內時下一題真的可能跟這一題一樣難。
         /// ⚠️ 正式版 K 小，大部分時候會是「差不多」——那是真的，不是 bug。
@@ -120,8 +133,7 @@ namespace Tangram.Data
         {
             get
             {
-                int nextTarget = TargetedPuzzleGenerator.ClampTarget(SkillRating.RoundRating(RatingAfter));
-                int gap = nextTarget - Difficulty;
+                int gap = NextTargetDifficulty - Difficulty;
                 if (gap > TargetedPuzzleGenerator.DefaultTolerance) return NextPuzzleTrend.Harder;
                 if (gap < -TargetedPuzzleGenerator.DefaultTolerance) return NextPuzzleTrend.Easier;
                 return NextPuzzleTrend.Similar;
@@ -164,17 +176,22 @@ namespace Tangram.Data
         /// <param name="dragSeconds">拖曳累積秒數（已經套過單次上限）。</param>
         /// <param name="hintsUsed">用了幾次提示。</param>
         /// <param name="settings">參數。</param>
+        /// <param name="targetRange">
+        /// 出題器的目標難度範圍（權重檔的 <see cref="DifficultyWeights.TargetRange"/>），<b>只用來算明細裡的下一題目標</b>，
+        /// 實力變化完全不看它。刻意只收範圍、不收整份權重：ELO 不依賴難度公式。
+        /// </param>
         /// <returns>結算明細。</returns>
-        /// <exception cref="ArgumentNullException">沒有給參數。</exception>
+        /// <exception cref="ArgumentNullException">沒有給參數或範圍。</exception>
         /// <exception cref="ArgumentException">
         /// 秒數或提示次數是負的，或<b>拖曳比前景長</b>——那違反 P2-13 的不變式（背景時不可能拖曳），
         /// 代表某個計時的呼叫點接錯了。不擋的話時間代價會變成負的、實際表現超過 1，<b>實力安靜地虛漲</b>。
         /// </exception>
         public static RatingUpdate Settle(double ratingBefore, int difficulty, LevelOutcome outcome,
                                           double foregroundSeconds, double dragSeconds, int hintsUsed,
-                                          SkillRatingSettings settings)
+                                          SkillRatingSettings settings, TargetDifficultyRange targetRange)
         {
             if (settings == null) throw new ArgumentNullException(nameof(settings));
+            if (targetRange == null) throw new ArgumentNullException(nameof(targetRange));
             if (!(foregroundSeconds >= 0.0) || !(dragSeconds >= 0.0) || hintsUsed < 0)
                 throw new ArgumentException(
                     $"SkillRating.Settle：前景 {foregroundSeconds}、拖曳 {dragSeconds}、提示 {hintsUsed} 次，不能是負的");
@@ -195,9 +212,14 @@ namespace Tangram.Data
                 : 0.0;
 
             double kFactor = settings.EffectiveKFactor;
+            double change = kFactor * (actual - expected);
+
+            // 下一題目標 = 結算後實力四捨五入、再夾。跟 LevelController 真的拿去出題的是同一條路
+            int nextTarget = targetRange.Clamp(RoundRating(ratingBefore + change));
+
             return new RatingUpdate(outcome, difficulty, ratingBefore, expected, timeCost, actual,
-                                    kFactor, kFactor * (actual - expected),
-                                    foregroundSeconds, dragSeconds, hintsUsed);
+                                    kFactor, change,
+                                    foregroundSeconds, dragSeconds, hintsUsed, nextTarget);
         }
 
         /// <summary>預期表現 E = 1 ÷ (1 + 10^((D − R) ÷ 尺度))。實力等於難度時是 0.5。</summary>

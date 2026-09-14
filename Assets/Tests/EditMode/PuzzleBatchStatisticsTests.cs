@@ -28,7 +28,7 @@ namespace Tangram.Data.Tests
     /// 而「動到 Data 層一定要重跑全部測試」是這個專案的紀律——
     /// 每次 Run All 都多等半分鐘會讓人開始跳過測試，那個代價比這份報告大。
     /// 要跑：Unity 測試視窗裡單獨點它，或
-    /// <c>dotnet test Tools/DotnetTests --filter "FullyQualifiedName~PuzzleBatchStatisticsTests"</c>。
+    /// <c>dotnet test Tools/DotnetTests -- "NUnit.Where=name == BatchStatistics"</c>（⚠️ 不能用 <c>--filter</c>，見 <c>CLAUDE.md</c>〈怎麼跑測試〉）。
     /// </summary>
     public class PuzzleBatchStatisticsTests
     {

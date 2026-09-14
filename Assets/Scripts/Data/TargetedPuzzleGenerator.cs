@@ -21,6 +21,55 @@ namespace Tangram.Data
         Failed,
     }
 
+    /// <summary>
+    /// <b>出題器實際到得了的目標難度範圍</b>（2026-09-14 從常數搬進權重檔）。要求生成時的目標先夾進這裡。
+    ///
+    /// <b>數字怎麼量的</b>：基準批次（種子 20260910）裡<b>預設門檻收的那 845 題</b>，
+    /// 在目前的尺上取第 1 與第 99 百分位（最近排名法）。只量篩過的那一群，因為出題器只會交出篩過的形狀。
+    ///
+    /// ⚠️ <b>為什麼住在權重檔，不是程式常數</b>：它是在「目前的尺」上量的，權重一改就過期，
+    /// 跟換算倍率是同一種東西。放在權重檔，重算工具（<c>DifficultyEvaluatorTests.尺度_權重改過之後重算換算倍率</c>）
+    /// 就能一起算、一起寫回；放程式裡的話要記得手動回來改，而忘了的症狀是「高實力玩家常拿到將就的題」，不報錯。
+    /// 原本的 760 ～ 1710 查不到是怎麼量的，重算工具量不回來，9/14 換成量得回來的 744 ～ 1660。
+    ///
+    /// ⚠️ <b>夾的是「要求的目標值」，不是難度值本身</b>——<see cref="DifficultyEvaluator.Score"/> 維持沒有上下限。
+    /// 硬截難度值會讓「古典大正方形 2261 分」這種<b>有用的警訊</b>消失。
+    ///
+    /// <b>是 class 不是 struct</b>：struct 的預設值是 [0, 0]，會安靜地把所有目標夾成 0；
+    /// class 的話「沒給」就是 null，而建構子擋掉不合法的範圍，所以<b>拿得到的範圍一定是合法的</b>。
+    /// </summary>
+    public sealed class TargetDifficultyRange
+    {
+        /// <summary>下限，大於 0。</summary>
+        public readonly int Minimum;
+
+        /// <summary>上限，大於下限。</summary>
+        public readonly int Maximum;
+
+        /// <param name="minimum">下限。</param>
+        /// <param name="maximum">上限。</param>
+        /// <exception cref="ArgumentException">下限不是正數，或上限沒有大於下限。</exception>
+        public TargetDifficultyRange(int minimum, int maximum)
+        {
+            if (minimum <= 0)
+                throw new ArgumentException($"目標難度範圍的下限是 {minimum}，必須大於 0", nameof(minimum));
+            if (maximum <= minimum)
+                throw new ArgumentException($"目標難度範圍是 {minimum} ～ {maximum}，上限必須大於下限", nameof(maximum));
+            Minimum = minimum;
+            Maximum = maximum;
+        }
+
+        /// <summary>把目標難度夾進這個範圍。<b>全專案只有這裡在夾</b>。</summary>
+        /// <param name="targetDifficulty">要的目標難度。</param>
+        /// <returns>夾過的值。</returns>
+        public int Clamp(int targetDifficulty)
+        {
+            if (targetDifficulty < Minimum) return Minimum;
+            if (targetDifficulty > Maximum) return Maximum;
+            return targetDifficulty;
+        }
+    }
+
     /// <summary>照難度出題的結果。</summary>
     public readonly struct TargetedGenerationResult
     {
@@ -40,14 +89,13 @@ namespace Tangram.Data
         /// ⚠️ <b>實際拿到那一題的難度值</b>，不是要求的目標值。失敗時是 0。
         ///
         /// <b>ELO 只能用這個。</b>拿 <see cref="TargetDifficulty"/> 去算的話，
-        /// 實力 1900 的玩家（目標被夾到 1710）每一場都在對一個不存在的對手算分，
+        /// 實力 1900 的玩家（目標被夾到上限 1660）每一場都在對一個不存在的對手算分，
         /// 實力會一路虛漲<b>而且不報錯</b>。
         /// </summary>
         public readonly int Difficulty;
 
         /// <summary>
-        /// 這次實際使用的目標難度，<b>已經夾進 [<see cref="TargetedPuzzleGenerator.MinimumTargetDifficulty"/>,
-        /// <see cref="TargetedPuzzleGenerator.MaximumTargetDifficulty"/>]</b>。
+        /// 這次實際使用的目標難度，<b>已經夾進權重檔的 <see cref="DifficultyWeights.TargetRange"/></b>。
         /// 要的值超出範圍時，這裡跟傳進去的會不一樣——那不是錯誤，是設計。
         /// </summary>
         public readonly int TargetDifficulty;
@@ -101,24 +149,6 @@ namespace Tangram.Data
     public sealed class TargetedPuzzleGenerator
     {
         /// <summary>
-        /// 目標難度的下限。生成器實際到得了的範圍是量出來的
-        /// （種子 20260910 的兩千題批次，p1 ～ p99 = 760 ～ 1710），不是猜的。
-        ///
-        /// ⚠️ <b>這兩個數字是在「目前的尺」上量的</b>——權重一改就會過期，跟換算倍率是同一種問題。
-        /// 所以重算工具（<c>DifficultyEvaluatorTests.尺度_權重改過之後重算換算倍率</c>）會順便
-        /// 算出新的 p1 ～ p99 並印出來，差太多時警告。常數刻意先留在程式裡（2026-09-13 定），
-        /// 看到警告就回來改這裡。
-        ///
-        /// ⚠️ <b>夾的是「要求的目標值」，不是難度值本身</b>——
-        /// <see cref="DifficultyEvaluator.Score"/> 維持沒有上下限。
-        /// 硬截難度值會讓「古典大正方形 2261 分」這種<b>有用的警訊</b>消失。
-        /// </summary>
-        public const int MinimumTargetDifficulty = 760;
-
-        /// <summary>目標難度的上限，理由同 <see cref="MinimumTargetDifficulty"/>。</summary>
-        public const int MaximumTargetDifficulty = 1710;
-
-        /// <summary>
         /// 預設的容許範圍（目標 ±50）。
         /// 100 分寬的帶子玩起來分得出來，而且這個寬度下的生成時間量過：
         /// Debug 建置目標 1200 約 260 ms、1500 約 350 ms、1600 跳到 1.4 秒。
@@ -152,16 +182,6 @@ namespace Tangram.Data
             this.weights = weights ?? throw new ArgumentNullException(nameof(weights));
         }
 
-        /// <summary>把目標難度夾進生成器實際到得了的範圍。</summary>
-        /// <param name="targetDifficulty">要的目標難度。</param>
-        /// <returns>夾過的值。</returns>
-        public static int ClampTarget(int targetDifficulty)
-        {
-            if (targetDifficulty < MinimumTargetDifficulty) return MinimumTargetDifficulty;
-            if (targetDifficulty > MaximumTargetDifficulty) return MaximumTargetDifficulty;
-            return targetDifficulty;
-        }
-
         /// <summary>
         /// 生一題，目標難度 <paramref name="targetDifficulty"/>。
         ///
@@ -177,7 +197,7 @@ namespace Tangram.Data
         /// 目標 1600 跑 84 輪等於多 17 ms，可接受，<b>先不要為了它把邏輯弄複雜</b>。
         /// 真的嫌慢時的做法是先用周長與轉角數粗篩（那兩項佔分數變異約 77%），差太遠就不算後面的。
         /// </summary>
-        /// <param name="targetDifficulty">要的目標難度；超出範圍會被 <see cref="ClampTarget"/> 夾住。</param>
+        /// <param name="targetDifficulty">要的目標難度；超出範圍會被權重檔的 <see cref="DifficultyWeights.TargetRange"/> 夾住。</param>
         /// <param name="tolerance">容許範圍（目標 ±這個值）。</param>
         /// <param name="attemptBudget">最多叫幾次出題器；<b>生失敗的那幾次也算</b>。</param>
         /// <returns>這次的結果，含實際難度值與花掉的次數。</returns>
@@ -193,7 +213,7 @@ namespace Tangram.Data
                 throw new ArgumentOutOfRangeException(nameof(attemptBudget), attemptBudget,
                     "預算必須是正數——0 次代表一題都不生，回傳的失敗會看起來像生成器壞了");
 
-            int target = ClampTarget(targetDifficulty);
+            int target = weights.TargetRange.Clamp(targetDifficulty);
 
             // 「目前最接近的」要連它的難度值一起記住。只記題目、最後再算一次的話，
             // 那一次重算會再付一遍 ForcedPieceCountOf 的錢，而且多一個會不一致的地方

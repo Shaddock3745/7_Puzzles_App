@@ -27,6 +27,10 @@ namespace Tangram.Core.Tests
             demonstrationMultiplier = 10.0,
         };
 
+        /// <summary>跟 <c>SkillRatingTests</c> 同一個範圍，刻意不讀權重檔（理由見那邊）。</summary>
+        /// <returns>744 ～ 1660。</returns>
+        private static TargetDifficultyRange TestRange() => new TargetDifficultyRange(744, 1660);
+
         /// <summary>把生成器跑到拿滿指定題數為止。</summary>
         /// <param name="seed">種子。</param>
         /// <param name="wanted">要幾題。</param>
@@ -258,7 +262,7 @@ namespace Tangram.Core.Tests
             SkillRatingSettings settings = AgreedSettings();
             settings.hintPenaltySeconds = 30.0;
 
-            RatingUpdate update = SkillRating.Settle(1100.0, 1250, LevelOutcome.Solved, 95.0, 41.0, 2, settings);
+            RatingUpdate update = SkillRating.Settle(1100.0, 1250, LevelOutcome.Solved, 95.0, 41.0, 2, settings, TestRange());
 
             Assert.AreEqual(95.0, update.ForegroundSeconds);
             Assert.AreEqual(41.0, update.DragSeconds);
@@ -283,12 +287,12 @@ namespace Tangram.Core.Tests
             LevelData level = session.Data;
 
             level.StartForegroundTiming(0.0);
-            session.Rating.TrySettle(level, out _);
+            session.Rating.TrySettle(level, TestRange(), out _);
             Assert.AreEqual(0, session.Rating.History.Count, "還在玩");
 
             PlaceAllPieces(level);
             level.MarkSolvedIfAllOnBoard();
-            session.Rating.TrySettle(level, out _);
+            session.Rating.TrySettle(level, TestRange(), out _);
             Assert.AreEqual(0, session.Rating.History.Count, "計時還在跑");
         }
 
@@ -301,7 +305,7 @@ namespace Tangram.Core.Tests
             session.Data.StartForegroundTiming(0.0);
             session.Data.MarkAbandoned(40.0);
 
-            for (int frame = 0; frame < 10; frame++) session.Rating.TrySettle(session.Data, out _);
+            for (int frame = 0; frame < 10; frame++) session.Rating.TrySettle(session.Data, TestRange(), out _);
 
             Assert.AreEqual(1, session.Rating.History.Count);
         }
@@ -327,7 +331,7 @@ namespace Tangram.Core.Tests
                     session.Data.StartForegroundTiming(0.0);
                     session.Data.MarkAbandoned(60.0);
                 }
-                Assert.IsTrue(session.Rating.TrySettle(session.Data, out _), $"第 {i + 1} 局應該要結算");
+                Assert.IsTrue(session.Rating.TrySettle(session.Data, TestRange(), out _), $"第 {i + 1} 局應該要結算");
             }
 
             IReadOnlyList<SettlementRecord> history = session.Rating.History;
@@ -353,11 +357,11 @@ namespace Tangram.Core.Tests
 
             LoadClassicSquare(session, 1610, record);
             SolveIn(session.Data, 50.0);
-            session.Rating.TrySettle(session.Data, out _);
+            session.Rating.TrySettle(session.Data, TestRange(), out _);
 
             LoadClassicSquare(session);   // 換關，而且新的一關沒給紀錄
             SolveIn(session.Data, 50.0);
-            session.Rating.TrySettle(session.Data, out _);
+            session.Rating.TrySettle(session.Data, TestRange(), out _);
 
             Assert.AreEqual(TargetedGenerationOutcome.SettledForNearest, session.Rating.History[0].Generation.Value.Outcome);
             Assert.AreEqual(1610, session.Rating.History[0].Generation.Value.GeneratedDifficulty);
@@ -385,31 +389,31 @@ namespace Tangram.Core.Tests
         [Test]
         public void 報告_六種狀態()
         {
-            Assert.AreEqual(MonitorState.NoSession, LevelMonitorReport.Build(null, null, 0.0).State);
+            Assert.AreEqual(MonitorState.NoSession, LevelMonitorReport.Build(null, null, null, 0.0).State);
 
             var session = new LevelSession { Rating = new SkillRatingTracker(AgreedSettings(), 1200.0) };
-            Assert.AreEqual(MonitorState.NoLevel, LevelMonitorReport.Build(session, null, 0.0).State);
+            Assert.AreEqual(MonitorState.NoLevel, LevelMonitorReport.Build(session, null, null, 0.0).State);
 
             session.LoadBoxOnly(Region.FromPolygon(new[]
             {
                 new ExactVector2(0, 0), new ExactVector2(12, 0), new ExactVector2(12, 12), new ExactVector2(0, 12),
             }));
-            Assert.AreEqual(MonitorState.NoPuzzle, LevelMonitorReport.Build(session, null, 0.0).State);
+            Assert.AreEqual(MonitorState.NoPuzzle, LevelMonitorReport.Build(session, null, null, 0.0).State);
 
             LoadClassicSquare(session);
             LevelData level = session.Data;
             level.StartForegroundTiming(0.0);
-            Assert.AreEqual(MonitorState.Playing, LevelMonitorReport.Build(session, null, 1.0).State);
+            Assert.AreEqual(MonitorState.Playing, LevelMonitorReport.Build(session, null, null, 1.0).State);
 
             // 過關但計時沒停 → 守衛擋下，停在「結算中」
             PlaceAllPieces(level);
             level.MarkSolvedIfAllOnBoard();
-            session.Rating.TrySettle(level, out _);
-            Assert.AreEqual(MonitorState.AwaitingSettlement, LevelMonitorReport.Build(session, null, 2.0).State);
+            session.Rating.TrySettle(level, TestRange(), out _);
+            Assert.AreEqual(MonitorState.AwaitingSettlement, LevelMonitorReport.Build(session, null, null, 2.0).State);
 
             level.StopAllTiming(2.0);
-            session.Rating.TrySettle(level, out _);
-            LevelMonitorReport settled = LevelMonitorReport.Build(session, null, 3.0);
+            session.Rating.TrySettle(level, TestRange(), out _);
+            LevelMonitorReport settled = LevelMonitorReport.Build(session, null, null, 3.0);
             Assert.AreEqual(MonitorState.Settled, settled.State);
             Assert.IsTrue(settled.Settlement.HasValue);
         }
@@ -425,17 +429,17 @@ namespace Tangram.Core.Tests
             LoadClassicSquare(session, 1300);
             session.Data.StartForegroundTiming(0.0);
 
-            LevelMonitorReport playing = LevelMonitorReport.Build(session, null, 5.0);
+            LevelMonitorReport playing = LevelMonitorReport.Build(session, null, null, 5.0);
             Assert.AreEqual(SkillRating.ExpectedPerformance(1100.0, 1300, 400.0), playing.PreviewExpectedPerformance.Value, 1e-12);
 
             session.Data.MarkAbandoned(10.0);
-            session.Rating.TrySettle(session.Data, out _);
-            Assert.IsFalse(LevelMonitorReport.Build(session, null, 11.0).PreviewExpectedPerformance.HasValue, "結算之後");
+            session.Rating.TrySettle(session.Data, TestRange(), out _);
+            Assert.IsFalse(LevelMonitorReport.Build(session, null, null, 11.0).PreviewExpectedPerformance.HasValue, "結算之後");
 
             var withoutRating = new LevelSession();
             LoadClassicSquare(withoutRating);
-            Assert.IsFalse(LevelMonitorReport.Build(withoutRating, null, 0.0).PreviewExpectedPerformance.HasValue, "沒有實力紀錄");
-            Assert.AreEqual(0, LevelMonitorReport.Build(withoutRating, null, 0.0).History.Count, "沒有實力紀錄時走勢是空的，不是 null");
+            Assert.IsFalse(LevelMonitorReport.Build(withoutRating, null, null, 0.0).PreviewExpectedPerformance.HasValue, "沒有實力紀錄");
+            Assert.AreEqual(0, LevelMonitorReport.Build(withoutRating, null, null, 0.0).History.Count, "沒有實力紀錄時走勢是空的，不是 null");
         }
 
         /// <summary>前景要含還在跑的那一段——用 <c>ForegroundSeconds</c> 的話玩的時候一直是 0，看了會以為計時壞了。</summary>
@@ -446,16 +450,36 @@ namespace Tangram.Core.Tests
             LoadClassicSquare(session);
             session.Data.StartForegroundTiming(10.0);
 
-            Assert.AreEqual(25.0, LevelMonitorReport.Build(session, null, 35.0).ForegroundSecondsSoFar, 1e-12);
+            Assert.AreEqual(25.0, LevelMonitorReport.Build(session, null, null, 35.0).ForegroundSecondsSoFar, 1e-12);
         }
 
-        /// <summary>下一題目標跟方向比的是同一個數字：夾過之後的。</summary>
+        /// <summary>還沒結算時，下一題目標是用報告拿到的範圍夾目前的實力；沒有範圍就是 null。</summary>
         [Test]
-        public void 報告_下一題目標是夾過的()
+        public void 報告_還沒結算時下一題目標用範圍夾()
         {
             var session = new LevelSession { Rating = new SkillRatingTracker(AgreedSettings(), 2000.0) };
-            Assert.AreEqual(TargetedPuzzleGenerator.MaximumTargetDifficulty,
-                            LevelMonitorReport.Build(session, null, 0.0).NextTargetDifficulty);
+            Assert.AreEqual(1660, LevelMonitorReport.Build(session, null, TestRange(), 0.0).NextTargetDifficulty);
+            Assert.IsNull(LevelMonitorReport.Build(session, null, null, 0.0).NextTargetDifficulty, "沒有範圍");
+        }
+
+        /// <summary>
+        /// ⭐ <b>結算過了就讀明細裡記下的那個</b>——跟彈窗上的方向比的是同一個欄位。
+        /// 故意傳一個不一樣的範圍進報告：如果報告偷偷又自己夾一次，這條會紅。
+        /// </summary>
+        [Test]
+        public void 報告_結算過了下一題目標讀明細()
+        {
+            var session = new LevelSession { Rating = new SkillRatingTracker(AgreedSettings(), 2000.0) };
+            LoadClassicSquare(session, 1600);
+            session.Data.StartForegroundTiming(0.0);
+            session.Data.MarkAbandoned(10.0);
+            Assert.IsTrue(session.Rating.TrySettle(session.Data, TestRange(), out RatingUpdate update));
+
+            var differentRange = new TargetDifficultyRange(500, 1000);
+            LevelMonitorReport report = LevelMonitorReport.Build(session, null, differentRange, 11.0);
+
+            Assert.AreEqual(1660, update.NextTargetDifficulty, "放棄之後實力仍然高於上限，明細應該記上限");
+            Assert.AreEqual(update.NextTargetDifficulty, report.NextTargetDifficulty);
         }
 
         /// <summary>展示倍率不是 1 時旗標要亮；是 1 時不亮；沒有設定時不亮。</summary>
@@ -463,14 +487,14 @@ namespace Tangram.Core.Tests
         public void 報告_展示倍率不是1時旗標要亮()
         {
             var demonstration = new LevelSession { Rating = new SkillRatingTracker(AgreedSettings(), 1200.0) };
-            Assert.IsTrue(LevelMonitorReport.Build(demonstration, null, 0.0).IsDemonstrationMultiplierActive);
+            Assert.IsTrue(LevelMonitorReport.Build(demonstration, null, null, 0.0).IsDemonstrationMultiplierActive);
 
             SkillRatingSettings formal = AgreedSettings();
             formal.demonstrationMultiplier = 1.0;
             var production = new LevelSession { Rating = new SkillRatingTracker(formal, 1200.0) };
-            Assert.IsFalse(LevelMonitorReport.Build(production, null, 0.0).IsDemonstrationMultiplierActive);
+            Assert.IsFalse(LevelMonitorReport.Build(production, null, null, 0.0).IsDemonstrationMultiplierActive);
 
-            Assert.IsFalse(LevelMonitorReport.Build(new LevelSession(), null, 0.0).IsDemonstrationMultiplierActive);
+            Assert.IsFalse(LevelMonitorReport.Build(new LevelSession(), null, null, 0.0).IsDemonstrationMultiplierActive);
         }
 
         /// <summary>

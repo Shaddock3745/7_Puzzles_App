@@ -17,7 +17,7 @@ namespace Tangram.Data
     public static class FeedbackPlan
     {
         /// <summary>
-        /// 五個目標難度，涵蓋整條尺。⚠️ 800 沒量過生成時間，可能拿到「將就」的題——
+        /// 五個目標難度，涵蓋整條尺。⚠️ 兩端會拿到「將就」的題：2026-09-14 量過，800 是 4%、1600 是 11%（各一百題，Debug）——
         /// 那不影響資料，因為每一行存的是<b>實際難度</b>，不是這裡的目標值。
         /// </summary>
         public static readonly IReadOnlyList<int> TargetDifficulties = new[] { 800, 1000, 1200, 1400, 1600 };

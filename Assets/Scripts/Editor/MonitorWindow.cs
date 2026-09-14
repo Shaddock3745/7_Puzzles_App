@@ -366,7 +366,7 @@ public class MonitorWindow : EditorWindow
                 break;
 
             case MonitorState.Settled:
-                DrawSettlement(level.Settlement.Value, settings, report.NextTargetDifficulty);
+                DrawSettlement(level.Settlement.Value, settings, report.TargetRange);
                 break;
         }
     }
@@ -376,8 +376,8 @@ public class MonitorWindow : EditorWindow
     /// </summary>
     /// <param name="update">結算明細。</param>
     /// <param name="settings">ELO 參數。</param>
-    /// <param name="nextTarget">夾過之後的下一題目標。</param>
-    private static void DrawSettlement(RatingUpdate update, SkillRatingSettings settings, int? nextTarget)
+    /// <param name="targetRange">這一場的目標難度範圍，只拿來顯示「夾進 X～Y」；沒有權重時是 null。</param>
+    private static void DrawSettlement(RatingUpdate update, SkillRatingSettings settings, TargetDifficultyRange targetRange)
     {
         bool solved = update.Outcome == LevelOutcome.Solved;
         EditorGUILayout.LabelField("結局", solved ? "過關" : "放棄");
@@ -406,14 +406,12 @@ public class MonitorWindow : EditorWindow
 
         EditorGUILayout.LabelField("實力", $"{update.RatingBefore:F1} → {update.RatingAfter:F1}");
 
-        if (nextTarget.HasValue)
-        {
-            int gap = nextTarget.Value - update.Difficulty;
-            EditorGUILayout.LabelField("下一題",
-                $"目標 {nextTarget.Value}（實力四捨五入、夾進 {TargetedPuzzleGenerator.MinimumTargetDifficulty}～" +
-                $"{TargetedPuzzleGenerator.MaximumTargetDifficulty}）− 這一題 {update.Difficulty} ＝ {gap:+0;-0;0}，" +
-                $"門檻 ±{TargetedPuzzleGenerator.DefaultTolerance} → {TrendTextOf(update.Trend)}");
-        }
+        // 目標讀明細裡記下的那個——方向比的就是它，這裡不另外算
+        string rangeText = targetRange != null ? $"夾進 {targetRange.Minimum}～{targetRange.Maximum}" : "夾進出題範圍";
+        int gap = update.NextTargetDifficulty - update.Difficulty;
+        EditorGUILayout.LabelField("下一題",
+            $"目標 {update.NextTargetDifficulty}（實力四捨五入、{rangeText}）− 這一題 {update.Difficulty} ＝ {gap:+0;-0;0}，" +
+            $"門檻 ±{TargetedPuzzleGenerator.DefaultTolerance} → {TrendTextOf(update.Trend)}");
     }
 
     /// <param name="label">左邊的名字。</param>

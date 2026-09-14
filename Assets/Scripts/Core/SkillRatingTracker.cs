@@ -59,7 +59,10 @@ namespace Tangram.Core
         /// </summary>
         public double CurrentRating { get; private set; }
 
-        /// <summary>下一題的目標難度 = 目前實力四捨五入。夾進出題器範圍是出題器自己的事。</summary>
+        /// <summary>
+        /// 下一題的目標難度 = 目前實力四捨五入。<b>刻意不夾</b>：夾進出題器範圍是出題器自己的事。
+        /// 要顯示「夾過的」請讀結算明細的 <see cref="RatingUpdate.NextTargetDifficulty"/>。
+        /// </summary>
         public int NextTargetDifficulty => SkillRating.RoundRating(CurrentRating);
 
         /// <param name="settings">參數。建構時會再檢查一次，不合法的設定進不了結算。</param>
@@ -119,10 +122,19 @@ namespace Tangram.Core
         /// </list>
         /// </summary>
         /// <param name="level">這一關。</param>
+        /// <param name="targetRange">
+        /// 出題器的目標難度範圍，拿去算明細裡的下一題目標（見 <see cref="RatingUpdate.NextTargetDifficulty"/>）。
+        /// 遊戲裡跟出題用的是同一份權重的 <see cref="DifficultyWeights.TargetRange"/>。
+        /// </param>
         /// <param name="update">結算了的話是明細；沒結算時是預設值，不要讀。</param>
         /// <returns>這一次有沒有真的結算。</returns>
-        public bool TrySettle(LevelData level, out RatingUpdate update)
+        /// <exception cref="ArgumentNullException">
+        /// 沒有給範圍。⚠️ <b>不在守衛之後才檢查</b>：那是接線錯了，要在每一格都響，不是等到第一次結算才響。
+        /// </exception>
+        public bool TrySettle(LevelData level, TargetDifficultyRange targetRange, out RatingUpdate update)
         {
+            if (targetRange == null) throw new ArgumentNullException(nameof(targetRange));
+
             update = default;
             if (level == null || level.Puzzle == null) return false;
             if (!level.IsFinished || level.Settlement.HasValue || level.IsTiming) return false;
@@ -134,7 +146,8 @@ namespace Tangram.Core
                 level.ForegroundSeconds,
                 level.DragSeconds,
                 level.HintsUsed,
-                Settings);
+                Settings,
+                targetRange);
 
             // 真相的守衛在 LevelData（它才是那一格的擁有者），這裡照它的回傳值走
             if (!level.RecordSettlement(update)) return false;

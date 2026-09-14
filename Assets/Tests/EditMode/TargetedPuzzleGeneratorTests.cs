@@ -100,26 +100,49 @@ namespace Tangram.Data.Tests
         }
 
         /// <summary>
-        /// 目標值會被夾進生成器實際到得了的範圍，而且<b>夾過的值要回報出來</b>——
-        /// 面板要能顯示「你要 1900，實際上是照 1710 找的」。
+        /// 目標值會被夾進<b>權重檔的範圍</b>，而且<b>夾過的值要回報出來</b>——
+        /// 面板要能顯示「你要 1900，實際上是照上限找的」。兩端都驗，證明出題器讀的真的是權重檔。
         /// </summary>
         [Test]
-        public void 照難度生_目標值會被夾進範圍()
+        public void 照難度生_目標值會被夾進權重檔的範圍()
         {
-            Assert.AreEqual(TargetedPuzzleGenerator.MinimumTargetDifficulty,
-                            TargetedPuzzleGenerator.ClampTarget(100));
-            Assert.AreEqual(TargetedPuzzleGenerator.MaximumTargetDifficulty,
-                            TargetedPuzzleGenerator.ClampTarget(9999));
-            Assert.AreEqual(1200, TargetedPuzzleGenerator.ClampTarget(1200));
+            TargetDifficultyRange range = RepositoryFiles.LoadDifficultyWeights().TargetRange;
 
-            TargetedGenerationResult result = MakeGenerator(20260912).Generate(9999, attemptBudget: 1);
-            Assert.AreEqual(TargetedPuzzleGenerator.MaximumTargetDifficulty, result.TargetDifficulty);
+            Assert.AreEqual(range.Maximum, MakeGenerator(20260912).Generate(9999, attemptBudget: 1).TargetDifficulty);
+            Assert.AreEqual(range.Minimum, MakeGenerator(20260912).Generate(100, attemptBudget: 1).TargetDifficulty);
+            Assert.AreEqual(1200, MakeGenerator(20260912).Generate(1200, attemptBudget: 1).TargetDifficulty);
+        }
+
+        /// <summary>範圍本身：兩端夾住、中間不動、邊界值不動。</summary>
+        [Test]
+        public void 範圍_夾住兩端而且邊界值不動()
+        {
+            var range = new TargetDifficultyRange(744, 1660);
+
+            Assert.AreEqual(744, range.Clamp(100), "低於下限");
+            Assert.AreEqual(1660, range.Clamp(9999), "高於上限");
+            Assert.AreEqual(1200, range.Clamp(1200), "在範圍內");
+            Assert.AreEqual(744, range.Clamp(744), "剛好下限");
+            Assert.AreEqual(1660, range.Clamp(1660), "剛好上限");
+        }
+
+        /// <summary>
+        /// 不合法的範圍建不出來。⭐ 這就是它是 class 的理由：拿得到的範圍一定合法，
+        /// 不會有 struct 預設值 [0, 0] 那種「安靜地把所有目標夾成 0」。
+        /// </summary>
+        [Test]
+        public void 範圍_不合法的建不出來()
+        {
+            Assert.Throws<ArgumentException>(() => new TargetDifficultyRange(0, 1660), "下限是 0");
+            Assert.Throws<ArgumentException>(() => new TargetDifficultyRange(-5, 1660), "下限是負的");
+            Assert.Throws<ArgumentException>(() => new TargetDifficultyRange(1660, 744), "上下限寫反");
+            Assert.Throws<ArgumentException>(() => new TargetDifficultyRange(1200, 1200), "上下限一樣");
         }
 
         /// <summary>
         /// ⚠️ <b>回報的難度是「這一題的難度」，不是目標值。</b>
         /// 這條是 ELO 的地基：拿目標值去算的話，實力 1900 的玩家
-        /// （目標被夾到 1710）每一場都在對一個不存在的對手算分，而且不報錯。
+        /// （目標被夾到上限）每一場都在對一個不存在的對手算分，而且不報錯。
         /// 驗法是拿回傳的題目與參考解<b>獨立再算一次</b>，兩邊必須一樣。
         /// </summary>
         [Test]
@@ -174,16 +197,22 @@ namespace Tangram.Data.Tests
         ///
         /// ⚠️ <b>掛 [Explicit] 是刻意的</b>：十個目標各一百題，最慢那幾格要跑好幾分鐘，
         /// 不進日常的 Run All（跟 <c>PuzzleBatchStatisticsTests</c> 同一個處理）。
-        /// 要跑：<c>dotnet test Tools/DotnetTests --filter "FullyQualifiedName~生成時間"</c>
+        /// 要跑：<c>dotnet test Tools/DotnetTests -- "NUnit.Where=name == GenerationTimeTable"</c>（⚠️ 不能用 <c>--filter</c>，見 <c>CLAUDE.md</c>〈怎麼跑測試〉）
         ///
         /// ⚠️ <b>用 <c>dotnet test</c> 跑出來的是 Debug 建置的數字</b>，那是 Unity Editor 的<b>下界</b>
         /// ——Editor 跑 Mono，通常還要再慢 2 ～ 3 倍。實機接近 Release 建置。
         /// </summary>
-        [Test, Explicit("P2-7 生成時間：十個目標各一百題要跑好幾分鐘，不進日常的 Run All")]
+        [Test, Explicit("P2-7 生成時間：十幾個目標各一百題要跑好幾分鐘，不進日常的 Run All")]
         public void 生成時間_幾個目標各生一百題()
         {
             const int PuzzlesPerTarget = 100;
-            int[] targets = { 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700 };
+
+            // ⭐ 2026-09-14：兩端改讀權重檔的範圍（範圍改了這張表會跟著量新的兩端），另外加 800——
+            // 那是回饋收集題單的最低題，FeedbackPlan 自己註明「沒量過」。
+            // 1700 拿掉：它會被夾到上限，量出來跟最後一列一樣。
+            // 中間 900 ～ 1600 的種子（20260912 + 目標）沒變，所以那幾列可以直接跟 9/12 的舊表比
+            TargetDifficultyRange range = RepositoryFiles.LoadDifficultyWeights().TargetRange;
+            int[] targets = { range.Minimum, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, range.Maximum };
 
             TestContext.WriteLine("══════ P2-7 生成時間 ══════");
             TestContext.WriteLine($"容許範圍 ±{TargetedPuzzleGenerator.DefaultTolerance}　"

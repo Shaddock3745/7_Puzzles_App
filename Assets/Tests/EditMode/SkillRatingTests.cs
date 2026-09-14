@@ -32,6 +32,13 @@ namespace Tangram.Core.Tests
             demonstrationMultiplier = 10.0,
         };
 
+        /// <summary>
+        /// 出題器的目標難度範圍。⚠️ <b>刻意不讀權重檔</b>，理由跟設定一樣：重算工具改了範圍，
+        /// 不該讓「ELO 有沒有算對」的測試變紅。數字抄的是 2026-09-14 權重檔裡的值，只是為了讀起來眼熟。
+        /// </summary>
+        /// <returns>744 ～ 1660。</returns>
+        private static TargetDifficultyRange TestRange() => new TargetDifficultyRange(744, 1660);
+
         /// <param name="rating">實力。</param>
         /// <param name="difficulty">難度。</param>
         /// <param name="outcome">結局。</param>
@@ -44,7 +51,7 @@ namespace Tangram.Core.Tests
                                        double foregroundSeconds, double dragSeconds, int hintsUsed = 0,
                                        SkillRatingSettings settings = null) =>
             SkillRating.Settle(rating, difficulty, outcome, foregroundSeconds, dragSeconds, hintsUsed,
-                               settings ?? AgreedSettings()).RatingChange;
+                               settings ?? AgreedSettings(), TestRange()).RatingChange;
 
         // ─────────────────────────────────────────────────────────────
         // 一、公式
@@ -79,7 +86,7 @@ namespace Tangram.Core.Tests
 
             foreach (SkillRatingSettings settings in new[] { AgreedSettings(), withHintCost })
             foreach (double rating in new[] { 300.0, 900.0, 1200.0, 2000.0 })
-            foreach (int difficulty in new[] { 760, 1200, 1710, 2261 })
+            foreach (int difficulty in new[] { 744, 1200, 1660, 2261 })
             foreach (double foreground in new[] { 0.0, 10.0, 90.0, 1000.0, 100000.0 })
             foreach (double dragShare in new[] { 0.0, 0.5, 1.0 })
             foreach (int hints in new[] { 0, 3 })
@@ -152,8 +159,8 @@ namespace Tangram.Core.Tests
             SkillRatingSettings settings = AgreedSettings();
             settings.hintPenaltySeconds = 30.0;
 
-            RatingUpdate withoutHints = SkillRating.Settle(1200.0, 1200, LevelOutcome.Solved, 90.0, 40.0, 0, settings);
-            RatingUpdate withTwoHints = SkillRating.Settle(1200.0, 1200, LevelOutcome.Solved, 90.0, 40.0, 2, settings);
+            RatingUpdate withoutHints = SkillRating.Settle(1200.0, 1200, LevelOutcome.Solved, 90.0, 40.0, 0, settings, TestRange());
+            RatingUpdate withTwoHints = SkillRating.Settle(1200.0, 1200, LevelOutcome.Solved, 90.0, 40.0, 2, settings, TestRange());
 
             Assert.AreEqual(withoutHints.TimeCostSeconds + 60.0, withTwoHints.TimeCostSeconds, 1e-9);
         }
@@ -168,13 +175,15 @@ namespace Tangram.Core.Tests
             SkillRatingSettings settings = AgreedSettings();
 
             Assert.Throws<ArgumentException>(() =>
-                SkillRating.Settle(1200.0, 1200, LevelOutcome.Solved, 10.0, 20.0, 0, settings), "拖曳比前景長");
+                SkillRating.Settle(1200.0, 1200, LevelOutcome.Solved, 10.0, 20.0, 0, settings, TestRange()), "拖曳比前景長");
             Assert.Throws<ArgumentException>(() =>
-                SkillRating.Settle(1200.0, 1200, LevelOutcome.Solved, -1.0, 0.0, 0, settings), "前景是負的");
+                SkillRating.Settle(1200.0, 1200, LevelOutcome.Solved, -1.0, 0.0, 0, settings, TestRange()), "前景是負的");
             Assert.Throws<ArgumentException>(() =>
-                SkillRating.Settle(1200.0, 1200, LevelOutcome.Solved, 10.0, 0.0, -1, settings), "提示次數是負的");
+                SkillRating.Settle(1200.0, 1200, LevelOutcome.Solved, 10.0, 0.0, -1, settings, TestRange()), "提示次數是負的");
             Assert.Throws<ArgumentNullException>(() =>
-                SkillRating.Settle(1200.0, 1200, LevelOutcome.Solved, 10.0, 0.0, 0, null), "沒有設定");
+                SkillRating.Settle(1200.0, 1200, LevelOutcome.Solved, 10.0, 0.0, 0, null, TestRange()), "沒有設定");
+            Assert.Throws<ArgumentNullException>(() =>
+                SkillRating.Settle(1200.0, 1200, LevelOutcome.Solved, 10.0, 0.0, 0, settings, null), "沒有範圍");
         }
 
         // ─────────────────────────────────────────────────────────────
@@ -194,21 +203,40 @@ namespace Tangram.Core.Tests
         }
 
         /// <summary>
-        /// 方向比的是「<b>夾過之後的下一題目標</b> − 這一題的難度」，門檻是出題器的容許範圍 ±50。
-        /// ⚠️ 後兩格是夾住的情況：實力 1800 的下一題會被夾到 1710，跟 1705 的這一題其實一樣難。
+        /// 方向比的是明細裡記下的「<b>下一題目標</b> − 這一題的難度」，門檻是出題器的容許範圍 ±50。
+        /// ⭐ 2026-09-14 起目標直接給，不再靠「實力 1800 會被夾到哪」繞一圈——夾不夾是下一條測試的事。
         /// </summary>
-        [TestCase(1200, 1200.0, 51.0, NextPuzzleTrend.Harder)]
-        [TestCase(1200, 1200.0, 50.0, NextPuzzleTrend.Similar)]
-        [TestCase(1200, 1200.0, -50.0, NextPuzzleTrend.Similar)]
-        [TestCase(1200, 1200.0, -51.0, NextPuzzleTrend.Easier)]
-        [TestCase(1705, 1700.0, 100.0, NextPuzzleTrend.Similar)]
-        [TestCase(2261, 2250.0, 50.0, NextPuzzleTrend.Easier)]
-        public void 方向_用夾過的下一題目標跟這一題比(int difficulty, double ratingBefore, double change,
-                                                      NextPuzzleTrend expected)
+        [TestCase(1200, 1251, NextPuzzleTrend.Harder)]
+        [TestCase(1200, 1250, NextPuzzleTrend.Similar)]
+        [TestCase(1200, 1150, NextPuzzleTrend.Similar)]
+        [TestCase(1200, 1149, NextPuzzleTrend.Easier)]
+        public void 方向_用明細裡的下一題目標跟這一題比(int difficulty, int nextTarget, NextPuzzleTrend expected)
         {
-            var update = new RatingUpdate(LevelOutcome.Solved, difficulty, ratingBefore, 0.5, 90.0, 0.5, 200.0, change,
-                                          90.0, 0.0, 0);
+            // ⚠️ 實力變化故意給 +500：方向如果偷偷改回去看 ΔR 或結算後實力，這幾格會全部變成「會難一點」
+            var update = new RatingUpdate(LevelOutcome.Solved, difficulty, 1200.0, 0.5, 90.0, 0.5, 200.0, 500.0,
+                                          90.0, 0.0, 0, nextTarget);
             Assert.AreEqual(expected, update.Trend);
+        }
+
+        /// <summary>
+        /// ⭐ <b>結算時就把下一題目標夾好記下來</b>：結算後實力四捨五入、再夾進範圍。
+        /// 後兩格是夾住的情況——實力衝過上限，下一題目標停在上限，所以這一題 1655 顯示「差不多」是對的。
+        /// </summary>
+        [TestCase(1200.0, 1200, 1213, TestName = "結算_下一題目標_範圍內就是實力四捨五入")]
+        [TestCase(600.0, 600, 744, TestName = "結算_下一題目標_低於下限夾到下限")]
+        [TestCase(1800.0, 1655, 1660, TestName = "結算_下一題目標_高於上限夾到上限")]
+        public void 結算_下一題目標是夾過的(double ratingBefore, int difficulty, int expectedNextTarget)
+        {
+            // 前景 90、拖曳 40 就是示範表「普通」那一列：C = 70、S = 0.5625。
+            // 實力 = 難度時 E = 0.5，ΔR = +12.5（1200 → 1212.5 → 四捨五入 1213，600 → 613 再夾到 744）；
+            // 1800 對 1655 時 E ≈ 0.70，ΔR ≈ −27，1773 仍然高於上限
+            RatingUpdate update = SkillRating.Settle(ratingBefore, difficulty, LevelOutcome.Solved,
+                                                     90.0, 40.0, 0, AgreedSettings(), TestRange());
+
+            int unclamped = SkillRating.RoundRating(update.RatingAfter);
+            Assert.AreEqual(TestRange().Clamp(unclamped), update.NextTargetDifficulty, "記下來的不是夾過的結算後實力");
+            Assert.AreEqual(expectedNextTarget, update.NextTargetDifficulty,
+                $"結算後實力 {update.RatingAfter:F1}，這組測資應該讓目標落在 {expectedNextTarget}");
         }
 
         // ─────────────────────────────────────────────────────────────
@@ -248,9 +276,21 @@ namespace Tangram.Core.Tests
             session.Data.StartForegroundTiming(0.0);
             session.Data.StopForegroundTiming(50.0);
 
-            Assert.IsFalse(session.Rating.TrySettle(session.Data, out _));
+            Assert.IsFalse(session.Rating.TrySettle(session.Data, TestRange(), out _));
             Assert.IsFalse(session.Data.Settlement.HasValue);
             Assert.AreEqual(1200.0, session.Rating.CurrentRating);
+        }
+
+        /// <summary>
+        /// ⚠️ <b>沒給範圍就丟例外，連還不需要結算的一局也一樣</b>：那是接線錯了。
+        /// 如果等守衛放行才檢查，症狀會延後到「第一次過關那一刻才當掉」。
+        /// </summary>
+        [Test]
+        public void 結算_沒給範圍就丟例外_不等到真的要結算()
+        {
+            LevelSession session = FreshSession();
+            Assert.Throws<ArgumentNullException>(() => session.Rating.TrySettle(session.Data, null, out _), "還在玩的一局");
+            Assert.Throws<ArgumentNullException>(() => session.Rating.TrySettle(null, null, out _), "沒有關卡");
         }
 
         /// <summary>
@@ -267,7 +307,7 @@ namespace Tangram.Core.Tests
             }));
             session.Data.MarkAbandoned(10.0);
 
-            Assert.IsFalse(session.Rating.TrySettle(session.Data, out _));
+            Assert.IsFalse(session.Rating.TrySettle(session.Data, TestRange(), out _));
             Assert.AreEqual(1200.0, session.Rating.CurrentRating);
         }
 
@@ -279,10 +319,10 @@ namespace Tangram.Core.Tests
             session.Data.StartForegroundTiming(0.0);
             session.Data.MarkAbandoned(100.0);
 
-            Assert.IsTrue(session.Rating.TrySettle(session.Data, out RatingUpdate first));
+            Assert.IsTrue(session.Rating.TrySettle(session.Data, TestRange(), out RatingUpdate first));
             double afterFirst = session.Rating.CurrentRating;
 
-            Assert.IsFalse(session.Rating.TrySettle(session.Data, out _), "第二次不應該再結算");
+            Assert.IsFalse(session.Rating.TrySettle(session.Data, TestRange(), out _), "第二次不應該再結算");
             Assert.AreEqual(afterFirst, session.Rating.CurrentRating, "實力被扣了兩次");
             Assert.AreEqual(first.RatingAfter, session.Data.Settlement.Value.RatingAfter);
         }
@@ -300,10 +340,10 @@ namespace Tangram.Core.Tests
             PlaceAllPieces(level);
             Assert.IsTrue(level.MarkSolvedIfAllOnBoard());
 
-            Assert.IsFalse(session.Rating.TrySettle(level, out _), "計時還在跑，不應該結算");
+            Assert.IsFalse(session.Rating.TrySettle(level, TestRange(), out _), "計時還在跑，不應該結算");
 
             level.StopAllTiming(90.0);
-            Assert.IsTrue(session.Rating.TrySettle(level, out RatingUpdate update), "停了之後就該結算");
+            Assert.IsTrue(session.Rating.TrySettle(level, TestRange(), out RatingUpdate update), "停了之後就該結算");
             Assert.AreEqual(90.0, update.TimeCostSeconds, 1e-9, "用的必須是停完之後的前景秒數");
         }
 
@@ -321,9 +361,9 @@ namespace Tangram.Core.Tests
             level.MarkSolvedIfAllOnBoard();
             level.StopAllTiming(35.0);
 
-            Assert.IsTrue(session.Rating.TrySettle(level, out RatingUpdate update));
+            Assert.IsTrue(session.Rating.TrySettle(level, TestRange(), out RatingUpdate update));
 
-            RatingUpdate expected = SkillRating.Settle(1200.0, 1350, LevelOutcome.Solved, 35.0, 2.0, 1, AgreedSettings());
+            RatingUpdate expected = SkillRating.Settle(1200.0, 1350, LevelOutcome.Solved, 35.0, 2.0, 1, AgreedSettings(), TestRange());
             Assert.AreEqual(LevelOutcome.Solved, update.Outcome);
             Assert.AreEqual(1350, update.Difficulty);
             Assert.AreEqual(expected.RatingChange, update.RatingChange, 1e-12);
@@ -341,7 +381,7 @@ namespace Tangram.Core.Tests
             LoadClassicSquare(session, 1200);
             session.Data.StartForegroundTiming(0.0);
             session.Data.MarkAbandoned(100.0);
-            Assert.IsTrue(session.Rating.TrySettle(session.Data, out RatingUpdate first));
+            Assert.IsTrue(session.Rating.TrySettle(session.Data, TestRange(), out RatingUpdate first));
             Assert.AreNotEqual(Math.Round(first.RatingAfter), first.RatingAfter, "這組數字應該算出小數，測試才有意義");
 
             // 換關：LevelData 整包換掉，「還沒結算」自動重置；tracker 在外殼上，實力延續
@@ -349,7 +389,7 @@ namespace Tangram.Core.Tests
             Assert.IsFalse(session.Data.Settlement.HasValue, "換關之後應該是還沒結算");
             session.Data.StartForegroundTiming(0.0);
             session.Data.MarkAbandoned(100.0);
-            Assert.IsTrue(session.Rating.TrySettle(session.Data, out RatingUpdate second));
+            Assert.IsTrue(session.Rating.TrySettle(session.Data, TestRange(), out RatingUpdate second));
 
             Assert.AreEqual(first.RatingAfter, second.RatingBefore, "第二局的起點必須是第一局的終點，一點都不差");
             Assert.AreEqual(second.RatingAfter, session.Rating.CurrentRating);
@@ -364,7 +404,7 @@ namespace Tangram.Core.Tests
         {
             LevelSession session = FreshSession();
             LevelData level = session.Data;
-            RatingUpdate update = SkillRating.Settle(1200.0, 1200, LevelOutcome.Abandoned, 10.0, 0.0, 0, AgreedSettings());
+            RatingUpdate update = SkillRating.Settle(1200.0, 1200, LevelOutcome.Abandoned, 10.0, 0.0, 0, AgreedSettings(), TestRange());
 
             Assert.IsFalse(level.RecordSettlement(update), "還沒結束就不該收");
 

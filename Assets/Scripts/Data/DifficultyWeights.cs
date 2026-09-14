@@ -109,6 +109,23 @@ namespace Tangram.Data
         public DifficultyTermWeight[] terms;
 
         /// <summary>
+        /// 出題器目標難度的下限：基準批次篩過的 845 題在這把尺上的第 1 百分位（2026-09-14 從程式常數搬進來）。
+        /// ⚠️ <b>不是公式的一部分</b>，但跟換算倍率一樣是「在這把尺上量的」，所以住在這裡、由重算工具一起寫回。
+        /// 用的時候拿 <see cref="TargetRange"/>，不要直接讀這兩個欄位。
+        /// </summary>
+        public int minimumTargetDifficulty;
+
+        /// <summary>出題器目標難度的上限：同一群的第 99 百分位。說明見 <see cref="minimumTargetDifficulty"/>。</summary>
+        public int maximumTargetDifficulty;
+
+        /// <summary>
+        /// 出題器的目標難度範圍。讀檔時已經檢查過，所以<b>從 <see cref="FromJson"/> 拿到的權重，這裡一定建得出來</b>。
+        /// </summary>
+        /// <exception cref="ArgumentException">欄位被改成不合法的值（只有測試會這樣做）。</exception>
+        public TargetDifficultyRange TargetRange =>
+            new TargetDifficultyRange(minimumTargetDifficulty, maximumTargetDifficulty);
+
+        /// <summary>
         /// 從權重檔的內容讀回來，<b>讀的當下就把整份檢查完</b>。
         ///
         /// ⚠️ <b>為什麼要在這裡檢查，不等算難度時才發現</b>：原本特徵名稱打錯字，
@@ -145,6 +162,10 @@ namespace Tangram.Data
         ///
         /// ⚠️ <b>算的是數字不是檔案文字</b>：排版、空白、特徵的先後順序不影響指紋（公式是加總，順序本來就不影響結果），
         /// 只有真的會改變難度值的東西才會。數字用 <c>"R"</c> 格式與 InvariantCulture 寫，換機器、換地區設定都一樣。
+        ///
+        /// ⚠️ <b>目標難度範圍刻意不算進去</b>（2026-09-14）：它不改變任何一題的難度值。
+        /// 而且它是從權重量出來的，權重一改指紋自然會變，不會漏；
+        /// 不算進去的好處是加欄位那一天指紋沒變，<b>之前收的回饋資料照樣對得上</b>。
         /// </summary>
         /// <returns>例如 <c>3f9a0c1b7e2d</c>。</returns>
         public string Fingerprint()
@@ -187,6 +208,13 @@ namespace Tangram.Data
             if (spread <= 0.0) return $"spread 是 {spread}，必須大於 0（多半是欄位名稱拼錯、被讀成 0）";
             if (weightedDeviation <= 0.0)
                 return $"weightedDeviation 是 {weightedDeviation}，必須大於 0（多半是欄位名稱拼錯、被讀成 0）";
+
+            // 範圍的兩條跟 TargetDifficultyRange 的建構子同一套，這裡先擋，錯誤訊息才會指到權重檔
+            if (minimumTargetDifficulty <= 0)
+                return $"minimumTargetDifficulty 是 {minimumTargetDifficulty}，必須大於 0（多半是欄位名稱拼錯、被讀成 0）";
+            if (maximumTargetDifficulty <= minimumTargetDifficulty)
+                return $"maximumTargetDifficulty 是 {maximumTargetDifficulty}，必須大於 minimumTargetDifficulty " +
+                       $"{minimumTargetDifficulty}（上下限寫反，或上限的欄位名稱拼錯、被讀成 0）";
 
             var seenKeys = new HashSet<string>();
             foreach (DifficultyTermWeight term in terms)
