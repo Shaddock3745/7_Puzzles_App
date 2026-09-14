@@ -206,7 +206,8 @@ namespace Tangram.Core.Tests
         public void 方向_用夾過的下一題目標跟這一題比(int difficulty, double ratingBefore, double change,
                                                       NextPuzzleTrend expected)
         {
-            var update = new RatingUpdate(LevelOutcome.Solved, difficulty, ratingBefore, 0.5, 90.0, 0.5, 200.0, change);
+            var update = new RatingUpdate(LevelOutcome.Solved, difficulty, ratingBefore, 0.5, 90.0, 0.5, 200.0, change,
+                                          90.0, 0.0, 0);
             Assert.AreEqual(expected, update.Trend);
         }
 

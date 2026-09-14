@@ -1,8 +1,39 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using Tangram.Data;
 
 namespace Tangram.Core
 {
+    /// <summary>
+    /// 走勢裡的一筆：<b>一局結算了什麼</b>（P2-15，issue #32）。
+    /// </summary>
+    public readonly struct SettlementRecord
+    {
+        /// <summary>
+        /// 第幾筆，從 1 開始。
+        /// ⚠️ <b>刻意不用 <c>LevelController</c> 的關卡編號</b>：被守衛擋下、沒結算的關會讓關卡編號跳號，
+        /// 筆數不會。兩個都顯示的話會讓人以為少了一局。
+        /// </summary>
+        public readonly int SequenceNumber;
+
+        /// <summary>那一局的出題紀錄；不是出題器生的題目時是 null。</summary>
+        public readonly GenerationRecord? Generation;
+
+        /// <summary>結算明細，原封不動複製（唯讀 struct，不會有兩邊互相改到的問題）。</summary>
+        public readonly RatingUpdate Update;
+
+        /// <param name="sequenceNumber">第幾筆。</param>
+        /// <param name="generation">出題紀錄。</param>
+        /// <param name="update">結算明細。</param>
+        public SettlementRecord(int sequenceNumber, GenerationRecord? generation, RatingUpdate update)
+        {
+            SequenceNumber = sequenceNumber;
+            Generation = generation;
+            Update = update;
+        }
+    }
+
     /// <summary>
     /// <b>持有玩家目前的實力</b>，並負責「這一關要不要結算、結算完記下來」（P2-14，issue #31）。
     ///
@@ -42,8 +73,35 @@ namespace Tangram.Core
         {
             Settings = settings ?? throw new ArgumentNullException(nameof(settings));
             settings.ThrowIfInvalid();
+            StartingRating = startingRating;
             CurrentRating = startingRating;
+            History = new ReadOnlyCollection<SettlementRecord>(history);
         }
+
+        /// <summary>這一場開始時的實力。走勢第一筆的「結算前」必須等於它。</summary>
+        public readonly double StartingRating;
+
+        /// <summary>
+        /// ⭐ <b>這一場的走勢</b>：每結算一局加一筆，只往後加（P2-15）。
+        ///
+        /// <b>為什麼放這裡，不讓監控面板自己記</b>（2026-09-14 定）：面板只能每隔一段時間去<b>看</b>
+        /// <c>LevelData.Settlement</c>，它不在結算的現場——晚開視窗、中途關掉再開、換關太快
+        /// （<c>EnterNextLevel</c> 補結算與換掉 <c>LevelData</c> 在同一格），三種都會漏。
+        /// <b>記錄要放在事情發生的地方，不能放在可能在看的人身上。</b>
+        ///
+        /// ⭐ 跟實力在<b>同一刻</b>更新，所以兩條不變式結構上成立（測試釘住）：
+        /// ① 最後一筆的「結算後」＝ <see cref="CurrentRating"/>
+        /// ② 每一筆的「結算前」＝ 前一筆的「結算後」，第一筆的 ＝ <see cref="StartingRating"/>
+        /// 第二條順便是防線：之後有人在 <see cref="TrySettle"/> 之外改了實力，走勢就接不起來。
+        ///
+        /// <b>不設上限</b>：一筆十幾個數字，玩一千局才一百 KB 左右。只存在記憶體裡，重開 App 就沒了——
+        /// 要不要寫進 <c>PlayerProgress.json</c> 是 P3 的決定。
+        /// ⚠️ 回饋收集場景也會照記，沒人讀、無害。
+        /// </summary>
+        public readonly IReadOnlyList<SettlementRecord> History;
+
+        /// <summary><see cref="History"/> 底下那一份。外面拿到的是唯讀包裝，轉型也改不動。</summary>
+        private readonly List<SettlementRecord> history = new List<SettlementRecord>();
 
         /// <summary>
         /// 看看這一關要不要結算；要的話就結算、記進 <see cref="LevelData.Settlement"/>、更新實力。
@@ -81,7 +139,9 @@ namespace Tangram.Core
             // 真相的守衛在 LevelData（它才是那一格的擁有者），這裡照它的回傳值走
             if (!level.RecordSettlement(update)) return false;
 
+            // ⚠️ 這兩行不要拆開：走勢的兩條不變式靠的就是「實力與紀錄在同一刻變」
             CurrentRating = update.RatingAfter;
+            history.Add(new SettlementRecord(history.Count + 1, level.Generation, update));
             return true;
         }
     }

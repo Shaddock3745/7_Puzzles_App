@@ -59,6 +59,21 @@ namespace Tangram.Data
         /// <summary>實力變化 ΔR = K × (S − E)。<b>小數，不化整</b>。</summary>
         public readonly double RatingChange;
 
+        // ───────── 結算的輸入（P2-15 加）─────────
+        //
+        // ⭐ 原本只記了時間代價 C，沒記 C 是怎麼算出來的。正在玩的這一關那三個數字還在 LevelData 上，
+        // 但走勢裡的舊局 LevelData 已經換掉了——「第 2 局的 C 為什麼是 42 秒」答不出來。
+        // 原樣存下來之後，一份明細自己就能解釋自己。
+
+        /// <summary>結算時的前景秒數。</summary>
+        public readonly double ForegroundSeconds;
+
+        /// <summary>結算時的拖曳秒數（已經套過單次上限）。</summary>
+        public readonly double DragSeconds;
+
+        /// <summary>結算時用了幾次提示。</summary>
+        public readonly int HintsUsed;
+
         /// <param name="outcome">結局。</param>
         /// <param name="difficulty">題目難度。</param>
         /// <param name="ratingBefore">結算前的實力。</param>
@@ -67,9 +82,13 @@ namespace Tangram.Data
         /// <param name="actualPerformance">實際表現。</param>
         /// <param name="effectiveKFactor">實際用的 K。</param>
         /// <param name="ratingChange">實力變化。</param>
+        /// <param name="foregroundSeconds">前景秒數。⚠️ 三個輸入刻意放最後：前面已經一串 double，插在中間的話舊的呼叫端位置錯開也編得過。</param>
+        /// <param name="dragSeconds">拖曳秒數。</param>
+        /// <param name="hintsUsed">提示次數。</param>
         public RatingUpdate(LevelOutcome outcome, int difficulty, double ratingBefore,
                             double expectedPerformance, double timeCostSeconds, double actualPerformance,
-                            double effectiveKFactor, double ratingChange)
+                            double effectiveKFactor, double ratingChange,
+                            double foregroundSeconds, double dragSeconds, int hintsUsed)
         {
             Outcome = outcome;
             Difficulty = difficulty;
@@ -79,6 +98,9 @@ namespace Tangram.Data
             ActualPerformance = actualPerformance;
             EffectiveKFactor = effectiveKFactor;
             RatingChange = ratingChange;
+            ForegroundSeconds = foregroundSeconds;
+            DragSeconds = dragSeconds;
+            HintsUsed = hintsUsed;
         }
 
         /// <summary>結算後的實力 = 結算前 ＋ 變化。</summary>
@@ -174,7 +196,8 @@ namespace Tangram.Data
 
             double kFactor = settings.EffectiveKFactor;
             return new RatingUpdate(outcome, difficulty, ratingBefore, expected, timeCost, actual,
-                                    kFactor, kFactor * (actual - expected));
+                                    kFactor, kFactor * (actual - expected),
+                                    foregroundSeconds, dragSeconds, hintsUsed);
         }
 
         /// <summary>預期表現 E = 1 ÷ (1 + 10^((D − R) ÷ 尺度))。實力等於難度時是 0.5。</summary>

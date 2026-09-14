@@ -180,7 +180,7 @@ public class LevelController : MonoBehaviour
 
         SaveRating(SkillRating.RoundRating(update.RatingAfter));
 
-        // 監控面板（P2-15）做好之前，實測時看這一行
+        // 完整的算式在監控面板（P2-15，Window → Tangram → 監控面板）。這一行留著給沒開面板、或看 exe 的 log 時用
         string outcome = update.Outcome == LevelOutcome.Solved ? "過關" : "放棄";
         Debug.Log($"第 {levelIndex} 關結算：{outcome}，難度 {update.Difficulty}，" +
                   $"預期 {update.ExpectedPerformance:F2}、實際 {update.ActualPerformance:F2}" +
@@ -283,9 +283,12 @@ public class LevelController : MonoBehaviour
             // 💡 大正方形是 2261 分——比生成池最高分還高，那不是算錯，見 DifficultyEvaluator 的說明
             Placement[] fallback = Fixtures.ClassicSquare();
             Puzzle fallbackPuzzle = Puzzle.FromPlacements(fallback);
+
+            // ⚠️ 出題紀錄照樣帶進去（P2-15），下場是失敗——不標出來的話，
+            // 走勢上那一跳會看起來像 ELO 壞了
             EnterLevel(fallbackPuzzle, fallback,
                        DifficultyEvaluator.Score(fallbackPuzzle, fallback, difficultyWeights),
-                       allowRoll: true);
+                       allowRoll: true, generation: GenerationRecord.From(result));
             return;
         }
 
@@ -300,7 +303,8 @@ public class LevelController : MonoBehaviour
         // ⚠️ allowRoll 傳 false：生成題要看的是「存進去的那個角度好不好看」，
         // 讓相機轉會看不到真實情況。P2-8 接上題庫時這條要重新決定。
         // ⭐ 難度直接用出題器算好的那個，不重算——同一題只算一次，見 LevelData.Difficulty
-        EnterLevel(result.Puzzle, result.ReferenceSolution, result.Difficulty, allowRoll: false);
+        EnterLevel(result.Puzzle, result.ReferenceSolution, result.Difficulty, allowRoll: false,
+                   generation: GenerationRecord.From(result));
     }
 
     /// <summary>
@@ -313,10 +317,15 @@ public class LevelController : MonoBehaviour
     /// 允不允許 roll 相機。精選題傳 false（互動設計 §2.6）。
     /// 目前 <c>Puzzle</c> 還沒有「是不是精選題」的欄位，所以由呼叫端決定，等 P3 題庫做好再改。
     /// </param>
-    public void EnterLevel(Puzzle puzzle, IReadOnlyList<Placement> referenceSolution, int difficulty, bool allowRoll)
+    /// <param name="generation">
+    /// 出題紀錄（P2-15），給監控面板看。<b>選填</b>：只有 <see cref="EnterNextLevel(int)"/> 會給，
+    /// 回饋收集場景的題單與練習題不給。
+    /// </param>
+    public void EnterLevel(Puzzle puzzle, IReadOnlyList<Placement> referenceSolution, int difficulty, bool allowRoll,
+                           GenerationRecord? generation = null)
     {
         // 1. 載入：算原點、建 Region、換掉整包資料
-        session.Load(puzzle, referenceSolution, difficulty, allowRoll);
+        session.Load(puzzle, referenceSolution, difficulty, allowRoll, generation);
         LevelData level = session.Data;
 
         // 2. 設盒子 → 相機這時候才算得出來。**一定要排在第 3、4 步之前**

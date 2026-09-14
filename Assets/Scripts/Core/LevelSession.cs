@@ -69,6 +69,13 @@ namespace Tangram.Core
         /// </summary>
         public readonly int Difficulty;
 
+        /// <summary>
+        /// 這一題是怎麼生出來的（P2-15）。<b>不是出題器生的題目時是 null</b>——回饋場景的題單、練習題、出題工具。
+        /// ⚠️ 生成失敗退回大正方形時<b>不是 null</b>，下場是失敗，理由見 <see cref="GenerationRecord"/>。
+        /// 每關一份，換關整包換掉，所以不會殘留上一題的。
+        /// </summary>
+        public readonly GenerationRecord? Generation;
+
         /// <summary>提示用掉幾次。上限 3（互動設計 §9）。</summary>
         public int HintsUsed { get; private set; }
 
@@ -191,8 +198,10 @@ namespace Tangram.Core
         /// <param name="referenceSolution">參考解，已平移到盤面座標。</param>
         /// <param name="difficulty">這一題的難度值，由出題的人算好，見 <see cref="Difficulty"/>。</param>
         /// <param name="allowRoll">允不允許 roll 相機。</param>
+        /// <param name="generation">出題紀錄，不是出題器生的題目就不給。</param>
         public LevelData(Puzzle puzzle, ExactVector2 boxOrigin, Region boxRegion,
-                         Placement[] referenceSolution, int difficulty, bool allowRoll)
+                         Placement[] referenceSolution, int difficulty, bool allowRoll,
+                         GenerationRecord? generation = null)
         {
             Puzzle = puzzle;
             BoxOrigin = boxOrigin;
@@ -201,6 +210,7 @@ namespace Tangram.Core
             AllowRoll = allowRoll;
             Board = new BoardState();
             Difficulty = difficulty;
+            Generation = generation;
             HintsUsed = 0;
             IsSolved = false;
 
@@ -746,7 +756,11 @@ namespace Tangram.Core
         /// 照難度生的話就是 <c>TargetedGenerationResult.Difficulty</c>，理由見 <see cref="LevelData.Difficulty"/>。
         /// </param>
         /// <param name="allowRoll">允不允許 roll 相機。精選題傳 false。</param>
-        public void Load(Puzzle puzzle, IReadOnlyList<Placement> referenceSolution, int difficulty, bool allowRoll)
+        /// <param name="generation">
+        /// 出題紀錄（P2-15）。<b>選填</b>：只有照難度生的那條路會給，回饋場景、練習題不給，呼叫端一行都不用改。
+        /// </param>
+        public void Load(Puzzle puzzle, IReadOnlyList<Placement> referenceSolution, int difficulty, bool allowRoll,
+                         GenerationRecord? generation = null)
         {
             ExactVector2 boxOrigin = BoxOriginFor(puzzle);
             Region boxRegion = Region.FromPuzzle(puzzle, boxOrigin);
@@ -757,7 +771,7 @@ namespace Tangram.Core
             for (int i = 0; i < referenceSolution.Count; i++)
                 translated[i] = referenceSolution[i].Translated(boxOrigin);
 
-            Data = new LevelData(puzzle, boxOrigin, boxRegion, translated, difficulty, allowRoll);
+            Data = new LevelData(puzzle, boxOrigin, boxRegion, translated, difficulty, allowRoll, generation);
         }
 
         /// <summary>
