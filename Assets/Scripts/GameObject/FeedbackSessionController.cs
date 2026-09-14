@@ -17,7 +17,8 @@ using UnityEngine.UI;
 ///
 /// <b>流程</b>：開場生題單 → 開始面板（選年齡層與經驗）→ ⭐ <b>練習題</b>（殘局，只剩平行四邊形與一片三角形；
 /// 可以教、不問難不難）→「準備好了嗎」面板（<b>開始正式題目</b>，或<b>再練習一次</b>）→
-/// 正式五題依打散後的順序玩（<b>不教</b>）→ 每題結束（過關或放棄）問一句「難不難」→ 五題做完 → 完成面板「下一位」。
+/// 正式五題依打散後的順序玩（<b>不教</b>）→ 每題結束問一句：<b>過關問「難不難」、放棄問「為什麼不玩了」</b>
+/// （2026-09-14 改，理由見 <see cref="AbandonReason"/>）→ 五題做完 → 完成面板「下一位」。
 ///
 /// ⭐ <b>資料先寫進這一位自己的暫存檔，做完才整份併進結果檔</b>（2026-09-14，見 <see cref="FeedbackFiles"/>）。
 /// ⭐ <b>每個人一批不同的題</b>（<see cref="FeedbackPlan.PlanSeedFor"/>：會一次帶一組小朋友來，在旁邊看的人不能看過同一題），
@@ -74,11 +75,16 @@ public class FeedbackSessionController : MonoBehaviour
     [Tooltip("練習題結束之後出現。「開始正式題目」接 OnReadyPressed、「再練習一次」接 OnPracticeAgainPressed。")]
     [SerializeField] private GameObject readyPanel;
 
-    [Header("問答面板（滿版）")]
-    [Tooltip("整個問答面板的根物件。五顆鈕的 onClick 各接 OnAnswerPressed(1～5)。")]
+    [Header("問答面板（滿版，過關之後）")]
+    [Tooltip("整個問答面板的根物件。五顆鈕的 onClick 各接 OnAnswerPressed(1～5)。只在過關之後出現。")]
     [SerializeField] private GameObject answerPanel;
 
-    [Tooltip("顯示「練習題」或「第 3／5 題」。沒填也能跑。")]
+    [Header("放棄原因面板（滿版，放棄之後）")]
+    [Tooltip("放棄之後出現，問「為什麼不玩了」。三顆鈕的 onClick 各接 OnAbandonReasonPressed：0 = 太難了、1 = 不知道怎麼玩、2 = 不想玩了。")]
+    [SerializeField] private GameObject abandonReasonPanel;
+
+    [Header("題號")]
+    [Tooltip("顯示「練習題」或「第 3／5 題」。一直在畫面上，不屬於任何一個面板，所以過關與放棄共用這一個。沒填也能跑。")]
     [SerializeField] private TMP_Text progressText;
 
     [Header("完成面板（滿版）")]
@@ -173,6 +179,7 @@ public class FeedbackSessionController : MonoBehaviour
     private RectTransform startArea;
     private RectTransform readyArea;
     private RectTransform answerArea;
+    private RectTransform abandonReasonArea;
     private RectTransform completeArea;
     private RectTransform stopArea;
 
@@ -187,18 +194,19 @@ public class FeedbackSessionController : MonoBehaviour
             Debug.LogError("FeedbackSessionController 找不到 TouchInputController：面板蓋著的時候盤面還抓得到片。", this);
 
         // ⚠️ 除錯記錄 004：掛在自己要開關的面板上，第一幀就把自己關掉、從此不再跑 Update，而且不報錯
-        foreach (GameObject panel in new[] { startPanel, readyPanel, answerPanel, completePanel, stopPanel })
+        foreach (GameObject panel in new[] { startPanel, readyPanel, answerPanel, abandonReasonPanel, completePanel, stopPanel })
             if (panel == gameObject)
                 Debug.LogError($"FeedbackSessionController 掛在它要開關的 {panel.name} 上了——那個面板一被關掉，" +
                                "這支就不再跑 Update，之後什麼都不會出現。請移到另一個物件上。", this);
     }
 
-    /// <summary>五個面板都登記成擋片區（隱藏時自動不擋，理由見 <see cref="LevelResultPanels"/>）。</summary>
+    /// <summary>六個面板都登記成擋片區（隱藏時自動不擋，理由見 <see cref="LevelResultPanels"/>）。</summary>
     private void OnEnable()
     {
         startArea = RegisterArea(startPanel);
         readyArea = RegisterArea(readyPanel);
         answerArea = RegisterArea(answerPanel);
+        abandonReasonArea = RegisterArea(abandonReasonPanel);
         completeArea = RegisterArea(completePanel);
         stopArea = RegisterArea(stopPanel);
     }
@@ -209,6 +217,7 @@ public class FeedbackSessionController : MonoBehaviour
         inputController.UnregisterPressBlockingArea(startArea);
         inputController.UnregisterPressBlockingArea(readyArea);
         inputController.UnregisterPressBlockingArea(answerArea);
+        inputController.UnregisterPressBlockingArea(abandonReasonArea);
         inputController.UnregisterPressBlockingArea(completeArea);
         inputController.UnregisterPressBlockingArea(stopArea);
     }
@@ -335,6 +344,7 @@ public class FeedbackSessionController : MonoBehaviour
             SetShown(startPanel, false);
             SetShown(readyPanel, false);
             SetShown(answerPanel, false);
+            SetShown(abandonReasonPanel, false);
             SetShown(completePanel, false);
             SetShown(stopPanel, true);
             return;
@@ -354,7 +364,10 @@ public class FeedbackSessionController : MonoBehaviour
 
         SetShown(startPanel, waitingForParticipant);
         SetShown(readyPanel, practiceOver);
-        SetShown(answerPanel, answering);
+        // 依結局分兩個面板。⚠️ 兩個條件都從 answering 分出來、互斥由 LevelData 保證（過關與放棄不會同時成立）；
+        // 就算場景接錯線讓兩個都出現，Core 那兩支也會擋掉跟結局對不上的答案
+        SetShown(answerPanel, answering && level.IsSolved);
+        SetShown(abandonReasonPanel, answering && level.IsAbandoned);
         SetShown(completePanel, complete);
 
         string code = CurrentCode();
@@ -470,7 +483,7 @@ public class FeedbackSessionController : MonoBehaviour
     }
 
     /// <summary>
-    /// 問答面板的五顆鈕。onClick 帶整數參數 1（很簡單）～ 5（很難）。
+    /// 問答面板的五顆鈕（<b>過關之後</b>）。onClick 帶整數參數 1（很簡單）～ 5（很難）。
     ///
     /// ⚠️ <b>順序</b>：先組出那一行 → 寫進暫存檔 → <b>寫成功才</b>推進度 → 進下一題；
     /// 第五題答完就把暫存檔整份併進結果檔。寫檔失敗時停在這一題，再點一次就是重試。
@@ -481,19 +494,36 @@ public class FeedbackSessionController : MonoBehaviour
         if (session == null) return;
         LevelData level = LevelSession.Current?.Data;
 
-        if (!session.TryCreateRecord(level, subjectiveDifficulty, DateTime.UtcNow, Application.version,
-                                     out FeedbackRecord record))
+        if (!session.TryCreateSolvedRecord(level, subjectiveDifficulty, DateTime.UtcNow, Application.version,
+                                           out FeedbackRecord record))
         {
             if (!FeedbackPlan.IsValidSubjectiveDifficulty(subjectiveDifficulty))
                 Debug.LogError($"OnAnswerPressed 收到 {subjectiveDifficulty}，只能是 1 ～ 5。檢查按鈕的 onClick 參數。", this);
             return;   // 其他情況（還沒結束、已經答過）是正常的連點，安靜地忽略
         }
 
-        if (!AppendToPartial(record)) return;
+        CommitAnswer(level, record);
+    }
 
-        session.MarkAnswered(level);
-        if (session.IsComplete) MergePartialIntoResults();
-        else EnterCurrentPuzzle();
+    /// <summary>
+    /// 放棄原因面板的三顆鈕（<b>放棄之後</b>，2026-09-14）。onClick 帶整數參數：0 = 太難了、1 = 不知道怎麼玩、2 = 不想玩了。
+    /// 順序跟 <see cref="OnAnswerPressed"/> 完全一樣。
+    /// </summary>
+    /// <param name="reasonIndex">0 ～ 2（<see cref="AbandonReason"/> 的順序）。</param>
+    public void OnAbandonReasonPressed(int reasonIndex)
+    {
+        if (session == null) return;
+        LevelData level = LevelSession.Current?.Data;
+        var reason = (AbandonReason)reasonIndex;
+
+        if (!session.TryCreateAbandonedRecord(level, reason, DateTime.UtcNow, Application.version, out FeedbackRecord record))
+        {
+            if (!FeedbackPlan.IsValidAbandonReason(reason))
+                Debug.LogError($"OnAbandonReasonPressed 收到 {reasonIndex}，只能是 0 ～ 2。檢查按鈕的 onClick 參數。", this);
+            return;   // 其他情況（還沒結束、已經答過）是正常的連點，安靜地忽略
+        }
+
+        CommitAnswer(level, record);
     }
 
     /// <summary>完成面板的「下一位」：回到開始面板。資料在答完第五題時已經併進結果檔了。</summary>
@@ -556,6 +586,21 @@ public class FeedbackSessionController : MonoBehaviour
     }
 
     // ───────── 內部 ─────────
+
+    /// <summary>
+    /// 正式題的一行已經組好：寫進暫存檔 → <b>寫成功才</b>推進度 → 下一題，或第五題答完就併進結果檔。
+    /// 過關與放棄兩條路共用，免得兩邊的順序分岔。寫檔失敗時停在這一題，再點一次就是重試。
+    /// </summary>
+    /// <param name="level">剛答完的那一關。</param>
+    /// <param name="record">那一行。</param>
+    private void CommitAnswer(LevelData level, FeedbackRecord record)
+    {
+        if (!AppendToPartial(record)) return;
+
+        session.MarkAnswered(level);
+        if (session.IsComplete) MergePartialIntoResults();
+        else EnterCurrentPuzzle();
+    }
 
     /// <summary>
     /// 叫出中止面板，並<b>暫停這一關的時間</b>——顧場的人在面板上想的那幾秒不能算進受試者的前景時間。

@@ -332,7 +332,7 @@ namespace Tangram.Core.Tests
             LevelData level = LoadedSession(Fixtures.ClassicSquare()).Data;
             FeedbackSession session = SessionPastPractice();
 
-            Assert.IsFalse(session.TryCreateRecord(level, 3, DateTime.UtcNow, "test", out _));
+            Assert.IsFalse(session.TryCreateSolvedRecord(level, 3, DateTime.UtcNow, "test", out _));
             Assert.IsFalse(session.MarkAnswered(level));
             Assert.AreEqual(0, session.AnsweredCount);
         }
@@ -348,10 +348,10 @@ namespace Tangram.Core.Tests
             level.MarkSolvedIfAllOnBoard();
 
             FeedbackSession session = SessionPastPractice();
-            Assert.IsFalse(session.TryCreateRecord(level, 3, DateTime.UtcNow, "test", out _), "計時還在跑");
+            Assert.IsFalse(session.TryCreateSolvedRecord(level, 3, DateTime.UtcNow, "test", out _), "計時還在跑");
 
             level.StopAllTiming(30.0);
-            Assert.IsTrue(session.TryCreateRecord(level, 3, DateTime.UtcNow, "test", out _), "停了之後就能答");
+            Assert.IsTrue(session.TryCreateSolvedRecord(level, 3, DateTime.UtcNow, "test", out _), "停了之後就能答");
         }
 
         /// <summary>⭐ <b>同一題只能答一次</b>——手指連點兩下只能寫一行。</summary>
@@ -361,10 +361,10 @@ namespace Tangram.Core.Tests
             LevelData level = SolvedClassicSquare();
             FeedbackSession session = SessionPastPractice();
 
-            Assert.IsTrue(session.TryCreateRecord(level, 2, DateTime.UtcNow, "test", out _));
+            Assert.IsTrue(session.TryCreateSolvedRecord(level, 2, DateTime.UtcNow, "test", out _));
             Assert.IsTrue(session.MarkAnswered(level));
 
-            Assert.IsFalse(session.TryCreateRecord(level, 4, DateTime.UtcNow, "test", out _), "同一關第二次不能再組一行");
+            Assert.IsFalse(session.TryCreateSolvedRecord(level, 4, DateTime.UtcNow, "test", out _), "同一關第二次不能再組一行");
             Assert.IsFalse(session.MarkAnswered(level), "同一關第二次不能再推進度");
             Assert.AreEqual(1, session.AnsweredCount);
         }
@@ -377,7 +377,7 @@ namespace Tangram.Core.Tests
         public void 進度_主觀難度只收一到五(int subjectiveDifficulty, bool accepted)
         {
             Assert.AreEqual(accepted,
-                SessionPastPractice().TryCreateRecord(SolvedClassicSquare(), subjectiveDifficulty, DateTime.UtcNow, "test", out _));
+                SessionPastPractice().TryCreateSolvedRecord(SolvedClassicSquare(), subjectiveDifficulty, DateTime.UtcNow, "test", out _));
         }
 
         /// <summary>
@@ -390,8 +390,8 @@ namespace Tangram.Core.Tests
             LevelData level = SolvedClassicSquare();
             FeedbackSession session = SessionPastPractice();
 
-            Assert.IsTrue(session.TryCreateRecord(level, 3, DateTime.UtcNow, "test", out FeedbackRecord first));
-            Assert.IsTrue(session.TryCreateRecord(level, 3, DateTime.UtcNow, "test", out FeedbackRecord retry),
+            Assert.IsTrue(session.TryCreateSolvedRecord(level, 3, DateTime.UtcNow, "test", out FeedbackRecord first));
+            Assert.IsTrue(session.TryCreateSolvedRecord(level, 3, DateTime.UtcNow, "test", out FeedbackRecord retry),
                 "寫檔失敗時要能重試");
             Assert.AreEqual(0, session.AnsweredCount);
             Assert.AreEqual(first.sequenceNumber, retry.sequenceNumber);
@@ -408,7 +408,104 @@ namespace Tangram.Core.Tests
             }));
             levelSession.Data.MarkAbandoned(10.0);
 
-            Assert.IsFalse(SessionPastPractice().TryCreateRecord(levelSession.Data, 3, DateTime.UtcNow, "test", out _));
+            Assert.IsFalse(SessionPastPractice().TryCreateAbandonedRecord(levelSession.Data, AbandonReason.TooHard,
+                                                                          DateTime.UtcNow, "test", out _));
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // 二之二、依結局分兩條（2026-09-14）
+        // ─────────────────────────────────────────────────────────────
+
+        /// <returns>一場已經放棄、計時也停了的經典大正方形。</returns>
+        private static LevelData AbandonedClassicSquare()
+        {
+            LevelData level = LoadedSession(Fixtures.ClassicSquare()).Data;
+            level.StartForegroundTiming(0.0);
+            level.MarkAbandoned(135.0);
+            return level;
+        }
+
+        /// <summary>
+        /// ⭐ <b>過關的題不收放棄原因、放棄的題不收難不難</b>。
+        /// 場景接錯線的時候資料要「寫不進去」而不是「寫錯」——「放棄＋超簡單」那種行只有收完打開檔案才看得到。
+        /// </summary>
+        [Test]
+        public void 結局_答案要跟結局對得上()
+        {
+            FeedbackSession session = SessionPastPractice();
+
+            Assert.IsFalse(session.TryCreateAbandonedRecord(SolvedClassicSquare(), AbandonReason.TooHard,
+                                                            DateTime.UtcNow, "test", out _), "過關的題收了放棄原因");
+            Assert.IsFalse(session.TryCreateSolvedRecord(AbandonedClassicSquare(), 1, DateTime.UtcNow, "test", out _),
+                           "放棄的題收了難不難");
+        }
+
+        /// <summary>還在玩的題兩條都不收（結局那條不能讓「還沒結束」溜過去）。</summary>
+        [Test]
+        public void 結局_還沒結束兩條都不收()
+        {
+            LevelData level = LoadedSession(Fixtures.ClassicSquare()).Data;
+            FeedbackSession session = SessionPastPractice();
+
+            Assert.IsFalse(session.TryCreateSolvedRecord(level, 3, DateTime.UtcNow, "test", out _));
+            Assert.IsFalse(session.TryCreateAbandonedRecord(level, AbandonReason.TooHard, DateTime.UtcNow, "test", out _));
+        }
+
+        /// <summary>放棄原因只收列舉裡的三種——按鈕的 onClick 參數打錯時不能寫進去。</summary>
+        [TestCase(0, true)]
+        [TestCase(2, true)]
+        [TestCase(3, false)]
+        [TestCase(-1, false)]
+        public void 結局_放棄原因只收三種(int reasonIndex, bool accepted)
+        {
+            Assert.AreEqual(accepted, SessionPastPractice().TryCreateAbandonedRecord(
+                AbandonedClassicSquare(), (AbandonReason)reasonIndex, DateTime.UtcNow, "test", out _));
+        }
+
+        /// <summary>
+        /// 放棄那一行：<b>主觀難度 0</b>、原因照填、結局 Abandoned。過關那一行：原因是空字串。
+        /// 經過一次 JSON 來回，因為真正要讀的是檔案裡那一行。
+        /// </summary>
+        [Test]
+        public void 結局_放棄那一行難度是零而且有原因()
+        {
+            Assert.IsTrue(SessionPastPractice().TryCreateAbandonedRecord(
+                AbandonedClassicSquare(), AbandonReason.DidNotKnowHow, DateTime.UtcNow, "test", out FeedbackRecord abandoned));
+            FeedbackRecord abandonedReread = JsonUtility.FromJson<FeedbackRecord>(JsonUtility.ToJson(abandoned));
+            Assert.AreEqual(0, abandonedReread.subjectiveDifficulty);
+            Assert.AreEqual("DidNotKnowHow", abandonedReread.abandonReason);
+            Assert.AreEqual("Abandoned", abandonedReread.outcome);
+
+            Assert.IsTrue(SessionPastPractice().TryCreateSolvedRecord(
+                SolvedClassicSquare(), 4, DateTime.UtcNow, "test", out FeedbackRecord solved));
+            FeedbackRecord solvedReread = JsonUtility.FromJson<FeedbackRecord>(JsonUtility.ToJson(solved));
+            Assert.AreEqual(4, solvedReread.subjectiveDifficulty);
+            Assert.AreEqual("", solvedReread.abandonReason);
+            Assert.AreEqual("Solved", solvedReread.outcome);
+        }
+
+        /// <summary>放棄的題一樣只能答一次、答完一樣推進度（推進度兩條共用）。</summary>
+        [Test]
+        public void 結局_放棄的題也只能答一次()
+        {
+            LevelData level = AbandonedClassicSquare();
+            FeedbackSession session = SessionPastPractice();
+
+            Assert.IsTrue(session.TryCreateAbandonedRecord(level, AbandonReason.TooHard, DateTime.UtcNow, "test", out _));
+            Assert.IsTrue(session.MarkAnswered(level));
+            Assert.IsFalse(session.TryCreateAbandonedRecord(level, AbandonReason.NotInterested, DateTime.UtcNow, "test", out _),
+                           "同一關第二次不能再組一行");
+            Assert.AreEqual(1, session.AnsweredCount);
+        }
+
+        /// <summary>練習題放棄了也不問原因：那一行原因是空的。</summary>
+        [Test]
+        public void 結局_練習題放棄了也不問原因()
+        {
+            Assert.IsTrue(NewSession().TryCreatePracticeRecord(AbandonedClassicSquare(), DateTime.UtcNow, "test",
+                                                                out FeedbackRecord record));
+            Assert.AreEqual("", record.abandonReason);
+            Assert.AreEqual(0, record.subjectiveDifficulty);
         }
 
         /// <summary>
@@ -432,7 +529,7 @@ namespace Tangram.Core.Tests
                 levelSession.Load(Puzzle.FromPlacements(solution), solution, 1000 + k, allowRoll: false);
                 Solve(levelSession.Data, 10.0 * (k + 1));
 
-                Assert.IsTrue(session.TryCreateRecord(levelSession.Data, 3, DateTime.UtcNow, "test", out FeedbackRecord record));
+                Assert.IsTrue(session.TryCreateSolvedRecord(levelSession.Data, 3, DateTime.UtcNow, "test", out FeedbackRecord record));
                 Assert.AreEqual(FeedbackPlan.TargetDifficulties[expectedOrder[k]], record.targetDifficulty);
                 Assert.IsTrue(session.MarkAnswered(levelSession.Data));
             }
@@ -462,7 +559,7 @@ namespace Tangram.Core.Tests
             FeedbackSession session = NewSession();
             LevelData level = SolvedClassicSquare();
 
-            Assert.IsFalse(session.TryCreateRecord(level, 3, DateTime.UtcNow, "test", out _));
+            Assert.IsFalse(session.TryCreateSolvedRecord(level, 3, DateTime.UtcNow, "test", out _));
             Assert.IsFalse(session.MarkAnswered(level));
             Assert.AreEqual(0, session.AnsweredCount);
         }
@@ -496,7 +593,7 @@ namespace Tangram.Core.Tests
 
             Assert.IsFalse(session.TryCreatePracticeRecord(SolvedClassicSquare(), DateTime.UtcNow, "test", out _), "練習做兩次");
             Assert.IsFalse(session.MarkPracticeDone(SolvedClassicSquare()));
-            Assert.IsFalse(session.TryCreateRecord(practice, 3, DateTime.UtcNow, "test", out _), "練習那一關被當成正式題");
+            Assert.IsFalse(session.TryCreateSolvedRecord(practice, 3, DateTime.UtcNow, "test", out _), "練習那一關被當成正式題");
         }
 
         /// <summary>
@@ -603,7 +700,7 @@ namespace Tangram.Core.Tests
             Assert.IsTrue(session.TryCreatePracticeRecord(practice, DateTime.UtcNow, "0.1", out _));
             Assert.IsTrue(session.MarkPracticeDone(practice));
             var time = new DateTime(2026, 9, 14, 3, 4, 5, DateTimeKind.Utc);
-            Assert.IsTrue(session.TryCreateRecord(level, 5, time, "0.1", out FeedbackRecord record));
+            Assert.IsTrue(session.TryCreateAbandonedRecord(level, AbandonReason.TooHard, time, "0.1", out FeedbackRecord record));
 
             Assert.AreEqual(9, record.participantNumber);
             Assert.AreEqual("EighteenOrOver", record.ageGroup);
@@ -621,7 +718,8 @@ namespace Tangram.Core.Tests
             Assert.AreEqual(2.0, record.dragSeconds, 1e-9);
             Assert.AreEqual(1, record.dragCount);
             Assert.AreEqual(1, record.clearCount);
-            Assert.AreEqual(5, record.subjectiveDifficulty);
+            Assert.AreEqual(0, record.subjectiveDifficulty, "放棄的題不問難不難");
+            Assert.AreEqual("TooHard", record.abandonReason);
             Assert.AreEqual(level.Puzzle.Key, record.puzzleKey);
             Assert.AreEqual(time.ToString("o"), record.recordedAtUtc);
             Assert.AreEqual("0.1", record.appVersion);
@@ -643,7 +741,7 @@ namespace Tangram.Core.Tests
             levelSession.Load(generated.Puzzle, generated.ReferenceSolution, generated.Difficulty, allowRoll: false);
             Solve(levelSession.Data, 80.0);
 
-            Assert.IsTrue(SessionPastPractice().TryCreateRecord(levelSession.Data, 3, DateTime.UtcNow, "test", out FeedbackRecord record));
+            Assert.IsTrue(SessionPastPractice().TryCreateSolvedRecord(levelSession.Data, 3, DateTime.UtcNow, "test", out FeedbackRecord record));
             FeedbackRecord reread = JsonUtility.FromJson<FeedbackRecord>(JsonUtility.ToJson(record));
 
             Placement[] decoded = Serialization.FromDto(reread.arrangement).Decode();

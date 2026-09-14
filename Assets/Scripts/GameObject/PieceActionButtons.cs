@@ -1,17 +1,20 @@
 using Tangram.Core;
+using Tangram.Data;
 using UnityEngine;
+using UnityEngine.UI;
 
 /// <summary>
 /// 旋轉／翻面鈕的顯示與轉接（P1-8，互動設計 §5）。
 ///
-/// <b>這支不做事，它只負責兩件：什麼時候顯示，以及把按下轉給控制器。</b>
+/// <b>這支不做事，它只負責兩件：什麼時候顯示（與能不能按），以及把按下轉給控制器。</b>
 /// 轉一格的規則住在 <see cref="TouchInputController.RotateSelected"/>——
 /// 按鈕只是眾多觸發器裡的一個，之後加鍵盤快捷鍵或手勢時規則不用再寫一份（2026-09-07 定案）。
 ///
-/// <b>為什麼不引用 <c>UnityEngine.UI</c></b>：這裡收的是 <c>GameObject</c> 不是 <c>Button</c>，
-/// 按下由 Unity 的 <c>Button.onClick</c> 在 Inspector 上接到
+/// <b>欄位收的是 <c>GameObject</c> 不是 <c>Button</c></b>：按下由 Unity 的 <c>Button.onClick</c> 在 Inspector 上接到
 /// <see cref="OnRotatePressed"/> / <see cref="OnFlipPressed"/>。
-/// 少一個組件相依，也表示按鈕之後換成別的做法（自繪、手勢）不用改這支。
+/// ⚠️ 原本刻意不引用 <c>UnityEngine.UI</c>，<b>2026-09-14 為了翻轉鈕變灰破例</b>：
+/// 「能不能按」要用 <c>Button.interactable</c>，它同時擋掉 <c>onClick</c> 又套上 Disabled Color，
+/// 自己做一套的話等於重寫 Button。按鈕上沒有 <c>Button</c> 元件時就只是不會變灰，不會壞。
 ///
 /// <b>場景要做的事</b>（P1-8 的接線）：
 /// <list type="number">
@@ -117,8 +120,23 @@ public class PieceActionButtons : MonoBehaviour
         // 兩顆旋轉鈕的顯示條件刻意是同一個算式——分岔的話會出現「只看得到一個方向」
         SetShown(rotateClockwiseButton, target != null);
 
-        // 翻面鈕再多一層：其餘片的鏡像等於某個旋轉，翻了是做白工
-        SetShown(flipButton, target != null && SnapSolver.CanFlip(target.Kind));
+        // 翻轉鈕（2026-09-14）：顯示條件跟旋轉鈕同一個算式——三顆一起出現，給人玩過之後「少一顆感覺怪怪的」。
+        // 鏡射完跟現在一樣（正方形永遠、三角形 8 格裡 2 格）時變灰。
+        // ⚠️ 變灰不是隱藏：物件還開著，所以照樣是擋片區、位置也不跳——那正是要的（坑表〈隱藏就不擋〉的反面）。
+        // ⚠️ 能不能按跟 FlipSelected 裡的擋法是同一支函數，分岔的話會出現「亮著但按了沒反應」
+        SetShown(flipButton, target != null);
+        SetInteractable(flipButton, target != null
+                                    && !PiecePrototype.IsMirrorSymmetric(target.Kind, target.Rotation, target.IsFlipped));
+    }
+
+    /// <param name="button">按鈕物件，可以是 null；上面沒有 <c>Button</c> 元件時不做事。</param>
+    /// <param name="interactable">能不能按。不能按時 Unity 會套上按鈕的 Disabled Color。</param>
+    private static void SetInteractable(GameObject button, bool interactable)
+    {
+        if (button == null) return;
+        Button component = button.GetComponent<Button>();
+        if (component == null || component.interactable == interactable) return;
+        component.interactable = interactable;
     }
 
     /// <param name="button">要顯示或隱藏的按鈕物件，可以是 null。</param>

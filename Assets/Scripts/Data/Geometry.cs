@@ -6,6 +6,34 @@ namespace Tangram.Data
     /// <summary>全整數（ℤ[√2]）的多邊形工具。沒有容差，也不需要容差。</summary>
     public static class Geometry
     {
+        /// <summary>
+        /// 兩組頂點平移之後能不能完全重合——「形狀方向一樣、位置不算」。
+        ///
+        /// ⚠️ <b>比形狀一定要比頂點集合，不能比姿態欄位</b>：正方形轉 0 與轉 2 佔位一樣，
+        /// 三角形「翻面 ＋ 轉某格」跟「不翻面轉另一格」也一樣（CLAUDE.md〈Placement.Equals 是姿態相等，不是形狀相等〉）。
+        /// 2026-09-14 從 <c>FeedbackPractice</c> 搬來，因為翻轉鈕也要用。
+        /// </summary>
+        /// <param name="first">第一組頂點（順序不拘）。</param>
+        /// <param name="second">第二組頂點（順序不拘）。</param>
+        /// <returns>能重合的話 true。</returns>
+        public static bool SameVerticesIgnoringPosition(IReadOnlyList<ExactVector2> first, IReadOnlyList<ExactVector2> second)
+        {
+            if (first.Count != second.Count || first.Count == 0) return false;
+
+            var secondVertices = new HashSet<ExactVector2>(second);
+
+            // 如果能重合，第一組的第 0 個頂點一定落在第二組的某個頂點上——逐一試那幾個平移量
+            foreach (ExactVector2 candidate in secondVertices)
+            {
+                ExactVector2 shift = candidate - first[0];
+                bool allMatch = true;
+                foreach (ExactVector2 vertex in first)
+                    if (!secondVertices.Contains(vertex + shift)) { allMatch = false; break; }
+                if (allMatch) return true;
+            }
+            return false;
+        }
+
         /// <summary>shoelace，回傳面積 ×2。正 = CCW（外環），負 = CW（洞）。</summary>
         /// <param name="polygon">頂點環，起點不用重複放在結尾。</param>
         /// <returns>

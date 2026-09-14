@@ -91,5 +91,35 @@ namespace Tangram.Data
         /// <returns>在範圍內就是 true。</returns>
         public static bool IsValidSubjectiveDifficulty(int subjectiveDifficulty) =>
             subjectiveDifficulty >= MinimumSubjectiveDifficulty && subjectiveDifficulty <= MaximumSubjectiveDifficulty;
+
+        /// <summary>放棄原因合不合法（按鈕帶的整數轉過來的，可能不在列舉裡）。</summary>
+        /// <param name="reason">放棄原因。</param>
+        /// <returns>是列舉裡的其中一個就是 true。</returns>
+        public static bool IsValidAbandonReason(AbandonReason reason) => Enum.IsDefined(typeof(AbandonReason), reason);
+    }
+
+    /// <summary>
+    /// 為什麼放棄（2026-09-14，回饋收集）。<b>放棄之後問這個，不問 1 ～ 5 難不難。</b>
+    ///
+    /// <b>為什麼改</b>：給人實際玩過之後發現「放棄了卻選超簡單」——放棄的原因不只一種，
+    /// 而只有「太難了」那一種是尺的上界訊號。另外兩種是雜訊：「不知道怎麼玩」會把題目誤判成很難。
+    /// 分析時只把 <see cref="TooHard"/> 算進上界，其餘排除。
+    ///
+    /// ⚠️ 原本的決定「放棄也要問難不難」要保住的是<b>那一行紀錄</b>（解不出來的題不能從樣本裡消失），
+    /// 不是那個分數——這一行照寫、結局照記，那個理由仍然成立。
+    ///
+    /// ⚠️ <b>名字會寫進結果檔</b>（<c>abandonReason</c> 欄位存的是列舉名），開始收資料之後不要改名。
+    /// 按鈕的 onClick 帶的整數就是這裡的順序，所以<b>也不要調換順序</b>。
+    /// </summary>
+    public enum AbandonReason
+    {
+        /// <summary>太難了。</summary>
+        TooHard,
+
+        /// <summary>不知道怎麼玩。</summary>
+        DidNotKnowHow,
+
+        /// <summary>不想玩了（累了、沒興趣）。</summary>
+        NotInterested,
     }
 }

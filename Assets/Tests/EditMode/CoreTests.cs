@@ -203,6 +203,122 @@ namespace Tangram.Core.Tests
             }
         }
 
+        // --- 翻轉鈕：左右鏡射（2026-09-14）---
+
+        /// <returns>五種片、每一種能擺的每一個姿態（旋轉 0 ～ 循環長度−1，翻面只有平行四邊形）。</returns>
+        private static IEnumerable<PiecePose> AllReachablePoses()
+        {
+            foreach (PieceKind kind in (PieceKind[])System.Enum.GetValues(typeof(PieceKind)))
+                for (int flipIndex = 0; flipIndex < (PiecePrototype.CanFlip(kind) ? 2 : 1); flipIndex++)
+                    for (int rotation = 0; rotation < PiecePrototype.RotationCycleLength(kind); rotation++)
+                        yield return new PiecePose(kind, rotation, flipIndex == 1);
+        }
+
+        /// <summary>
+        /// 每一個姿態鏡射之後的形狀，<b>就是現在的形狀把 x 取負</b>（位置不算）。
+        /// </summary>
+        [Test]
+        public void 鏡射_結果的形狀就是現在左右鏡射()
+        {
+            foreach (PiecePose pose in AllReachablePoses())
+            {
+                ExactVector2[] current = new Placement(pose.Kind, pose.Rotation, pose.IsFlipped, ExactVector2.Zero).Vertices();
+                var expected = new ExactVector2[current.Length];
+                for (int i = 0; i < current.Length; i++) expected[i] = new ExactVector2(-current[i].X, current[i].Y);
+
+                PiecePose mirrored = PiecePrototype.MirroredLeftRight(pose.Kind, pose.Rotation, pose.IsFlipped);
+                ExactVector2[] actual = new Placement(mirrored.Kind, mirrored.Rotation, mirrored.IsFlipped, ExactVector2.Zero).Vertices();
+
+                Assert.IsTrue(Geometry.SameVerticesIgnoringPosition(expected, actual), $"{pose} 鏡射成 {mirrored}，形狀不對");
+            }
+        }
+
+        /// <summary>
+        /// 不靠搜尋的錨點：小三角原型直角在原點、兩股朝 +x 與 +y。左右鏡射之後兩股朝 −x 與 +y，
+        /// 那是逆時針轉 90°，也就是第 2 格。對稱軸（45°）直立的是第 1 格（90°）與第 5 格（270°）。
+        /// </summary>
+        [Test]
+        public void 鏡射_小三角的錨點()
+        {
+            Assert.AreEqual(new PiecePose(PieceKind.SmallTriangle, 2, false),
+                            PiecePrototype.MirroredLeftRight(PieceKind.SmallTriangle, 0, false));
+
+            var symmetric = new List<int>();
+            for (int rotation = 0; rotation < 8; rotation++)
+                if (PiecePrototype.IsMirrorSymmetric(PieceKind.SmallTriangle, rotation, false)) symmetric.Add(rotation);
+            CollectionAssert.AreEqual(new[] { 1, 5 }, symmetric);
+        }
+
+        /// <summary>鏡射兩次回到原本的姿態（翻轉鈕按兩下要回到原狀）。</summary>
+        [Test]
+        public void 鏡射_兩次回到原姿態()
+        {
+            foreach (PiecePose pose in AllReachablePoses())
+            {
+                PiecePose once = PiecePrototype.MirroredLeftRight(pose.Kind, pose.Rotation, pose.IsFlipped);
+                Assert.AreEqual(pose, PiecePrototype.MirroredLeftRight(once.Kind, once.Rotation, once.IsFlipped), $"{pose} 翻兩次");
+            }
+        }
+
+        /// <summary>
+        /// ⚠️ <b>三角形與正方形鏡射之後永遠沒有翻面</b>，旋轉永遠在循環範圍內。
+        /// 出現翻面的三角形的話，<c>Placement.Equals</c> 那類比較會安靜地對不上。
+        /// </summary>
+        [Test]
+        public void 鏡射_只有平行四邊形會翻面而且旋轉在範圍內()
+        {
+            foreach (PiecePose pose in AllReachablePoses())
+            {
+                PiecePose mirrored = PiecePrototype.MirroredLeftRight(pose.Kind, pose.Rotation, pose.IsFlipped);
+                Assert.AreEqual(pose.Kind, mirrored.Kind);
+                Assert.That(mirrored.Rotation, Is.InRange(0, PiecePrototype.RotationCycleLength(pose.Kind) - 1), pose.ToString());
+                if (!PiecePrototype.CanFlip(pose.Kind)) Assert.IsFalse(mirrored.IsFlipped, $"{pose} 鏡射出翻面");
+            }
+        }
+
+        /// <summary>
+        /// ⭐ <b>平行四邊形的行為跟以前一模一樣</b>：以前的翻面鈕是「翻面切換 ＋ 旋轉取負」（上下鏡射），
+        /// 平行四邊形轉 180° 長一樣，所以跟左右鏡射是同一個姿態。
+        /// </summary>
+        [Test]
+        public void 鏡射_平行四邊形跟舊的翻面規則一樣()
+        {
+            foreach (bool flipped in new[] { false, true })
+                for (int rotation = 0; rotation < 4; rotation++)
+                {
+                    var oldRule = new PiecePose(PieceKind.Parallelogram, (4 - rotation) % 4, !flipped);
+                    Assert.AreEqual(oldRule, PiecePrototype.MirroredLeftRight(PieceKind.Parallelogram, rotation, flipped),
+                                    $"轉 {rotation} 格、翻面 {flipped}");
+                }
+        }
+
+        /// <summary>
+        /// 按了沒變化（翻轉鈕變灰）的次數：正方形 2／2、每種三角形 2／8、平行四邊形 0／8。
+        /// </summary>
+        [TestCase(PieceKind.Square, 2)]
+        [TestCase(PieceKind.LargeTriangle, 2)]
+        [TestCase(PieceKind.MediumTriangle, 2)]
+        [TestCase(PieceKind.SmallTriangle, 2)]
+        [TestCase(PieceKind.Parallelogram, 0)]
+        public void 鏡射_按了沒變化的姿態數(PieceKind kind, int expectedCount)
+        {
+            int count = 0;
+            foreach (PiecePose pose in AllReachablePoses())
+                if (pose.Kind == kind && PiecePrototype.IsMirrorSymmetric(pose.Kind, pose.Rotation, pose.IsFlipped)) count++;
+            Assert.AreEqual(expectedCount, count);
+        }
+
+        /// <summary>旋轉值超出循環（正方形傳 2、傳負數）也照循環正規化，跟旋轉鈕同一條規則。</summary>
+        [Test]
+        public void 鏡射_旋轉值會先照循環正規化()
+        {
+            Assert.AreEqual(PiecePrototype.MirroredLeftRight(PieceKind.Square, 0, false),
+                            PiecePrototype.MirroredLeftRight(PieceKind.Square, 2, false));
+            Assert.IsTrue(PiecePrototype.IsMirrorSymmetric(PieceKind.Square, 2, false), "正方形轉 2 格跟 0 格一樣，要算對稱");
+            Assert.AreEqual(PiecePrototype.MirroredLeftRight(PieceKind.SmallTriangle, 7, false),
+                            PiecePrototype.MirroredLeftRight(PieceKind.SmallTriangle, -1, false));
+        }
+
         // --- P1-7 盒子模式的吸附 ---
 
         /// <summary>經典大正方形當盒子，原點放在 (0,0)。</summary>

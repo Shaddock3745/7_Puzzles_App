@@ -19,6 +19,8 @@ namespace Tangram.Core
     ///
     /// <b>順序</b>：練習題（<see cref="TryCreatePracticeRecord"/> → <see cref="MarkPracticeDone"/>）→ 正式五題。
     /// 練習題可以教、不問難不難，但一樣記一行（第 0 題）。
+    /// 正式題依結局分兩條（2026-09-14）：過關問難不難（<see cref="TryCreateSolvedRecord"/>），
+    /// 放棄問為什麼（<see cref="TryCreateAbandonedRecord"/>）。推進度共用 <see cref="MarkAnswered"/>。
     /// </summary>
     public sealed class FeedbackSession
     {
@@ -94,17 +96,21 @@ namespace Tangram.Core
         }
 
         /// <summary>
-        /// 檢查這一題能不能答，能的話組出要寫進檔案的那一行。<b>不改任何狀態</b>。
+        /// <b>過關的</b>正式題：檢查能不能答，能的話組出要寫進檔案的那一行。<b>不改任何狀態</b>。
         ///
         /// <b>不收的情況</b>（回 false）：
         /// <list type="bullet">
-        /// <item>五題已經做完</item>
+        /// <item>練習題還沒做完、五題已經做完</item>
         /// <item>沒有這一關或沒有題目</item>
         /// <item><b>還沒結束</b>（還在玩就不能答）</item>
         /// <item>⚠️ <b>計時還在跑</b>——前景秒數只在停止時累加，還在跑就讀會少算（跟 ELO 結算同一條理由）</item>
         /// <item><b>這一題已經答過</b>——手指連點兩下只能寫一行</item>
+        /// <item>⭐ <b>這一關不是過關的</b>（2026-09-14）——放棄的題要走 <see cref="TryCreateAbandonedRecord"/></item>
         /// <item>主觀難度不在 1 ～ 5</item>
         /// </list>
+        ///
+        /// ⚠️ <b>為什麼要分結局擋</b>：場景接錯線（例如放棄之後難度面板也出現了）時，
+        /// 資料是<b>寫不進去</b>而不是<b>寫錯</b>——後者就是「放棄＋超簡單」那種行，只有收完打開檔案才看得到。
         /// </summary>
         /// <param name="level">這一關。</param>
         /// <param name="subjectiveDifficulty">主觀難度 1 ～ 5。</param>
@@ -112,16 +118,43 @@ namespace Tangram.Core
         /// <param name="appVersion">App 版本。</param>
         /// <param name="record">收的話是那一行；不收時是 null。</param>
         /// <returns>收不收。</returns>
-        public bool TryCreateRecord(LevelData level, int subjectiveDifficulty, DateTime recordedAtUtc,
-                                    string appVersion, out FeedbackRecord record)
+        public bool TryCreateSolvedRecord(LevelData level, int subjectiveDifficulty, DateTime recordedAtUtc,
+                                          string appVersion, out FeedbackRecord record)
         {
             record = null;
-            if (!IsPracticeDone || !CanAnswer(level) || !FeedbackPlan.IsValidSubjectiveDifficulty(subjectiveDifficulty))
+            if (!IsPracticeDone || !CanAnswer(level) || !level.IsSolved
+                || !FeedbackPlan.IsValidSubjectiveDifficulty(subjectiveDifficulty))
                 return false;
 
             record = BuildRecord(level, isPractice: false, SequenceNumber,
                                  FeedbackPlan.TargetDifficulties[CurrentPlanIndex], subjectiveDifficulty,
-                                 recordedAtUtc, appVersion);
+                                 abandonReason: null, recordedAtUtc, appVersion);
+            return true;
+        }
+
+        /// <summary>
+        /// <b>放棄的</b>正式題：檢查能不能答，能的話組出那一行。<b>不改任何狀態</b>（2026-09-14）。
+        ///
+        /// 放棄之後<b>不問難不難，改問為什麼</b>（理由見 <see cref="AbandonReason"/>），所以主觀難度寫 0。
+        /// 不收的情況跟 <see cref="TryCreateSolvedRecord"/> 一樣，只是結局那條反過來（這一關要是放棄的），
+        /// 而答案要是列舉裡的其中一個。
+        /// </summary>
+        /// <param name="level">這一關。</param>
+        /// <param name="reason">為什麼放棄。</param>
+        /// <param name="recordedAtUtc">現在的 UTC 時間。</param>
+        /// <param name="appVersion">App 版本。</param>
+        /// <param name="record">收的話是那一行；不收時是 null。</param>
+        /// <returns>收不收。</returns>
+        public bool TryCreateAbandonedRecord(LevelData level, AbandonReason reason, DateTime recordedAtUtc,
+                                             string appVersion, out FeedbackRecord record)
+        {
+            record = null;
+            if (!IsPracticeDone || !CanAnswer(level) || !level.IsAbandoned || !FeedbackPlan.IsValidAbandonReason(reason))
+                return false;
+
+            record = BuildRecord(level, isPractice: false, SequenceNumber,
+                                 FeedbackPlan.TargetDifficulties[CurrentPlanIndex], subjectiveDifficulty: 0,
+                                 reason, recordedAtUtc, appVersion);
             return true;
         }
 
@@ -129,7 +162,7 @@ namespace Tangram.Core
         /// 那一行已經寫進檔案了，推進到下一題。<b>寫檔成功之後才叫</b>（理由見類別說明）。
         /// </summary>
         /// <param name="level">剛答完的那一關。</param>
-        /// <returns>有沒有真的推進（守衛跟 <see cref="TryCreateRecord"/> 一樣，不看分數）。</returns>
+        /// <returns>有沒有真的推進（守衛跟組那一行的兩支一樣，但不看結局也不看答案——那一行已經寫進去了）。</returns>
         public bool MarkAnswered(LevelData level)
         {
             if (!IsPracticeDone || !CanAnswer(level)) return false;
@@ -142,7 +175,7 @@ namespace Tangram.Core
         // ───────── 練習題（2026-09-13）─────────
         //
         // 跟正式題同一套兩步：組出那一行 → 寫檔 → 寫成功才標記做完。
-        // 差別：不問主觀難度（寫 0）、第幾題寫 0、目標難度寫 0、isPractice = true。
+        // 差別：不問主觀難度（寫 0）、不問放棄原因（空的，放棄了也一樣）、第幾題寫 0、目標難度寫 0、isPractice = true。
 
         /// <summary>
         /// 檢查練習題能不能收尾，能的話組出那一行。<b>不改任何狀態</b>。
@@ -160,7 +193,7 @@ namespace Tangram.Core
             if (IsPracticeDone || !CanAnswer(level)) return false;
 
             record = BuildRecord(level, isPractice: true, sequenceNumber: 0, targetDifficulty: 0,
-                                 subjectiveDifficulty: 0, recordedAtUtc, appVersion);
+                                 subjectiveDifficulty: 0, abandonReason: null, recordedAtUtc, appVersion);
             return true;
         }
 
@@ -189,12 +222,14 @@ namespace Tangram.Core
         /// <param name="isPractice">是不是練習題。</param>
         /// <param name="sequenceNumber">第幾題（練習是 0）。</param>
         /// <param name="targetDifficulty">題單上的目標（練習是 0）。</param>
-        /// <param name="subjectiveDifficulty">主觀難度（練習是 0）。</param>
+        /// <param name="subjectiveDifficulty">主觀難度（練習與放棄是 0）。</param>
+        /// <param name="abandonReason">放棄原因（過關與練習是 null，寫成空字串）。</param>
         /// <param name="recordedAtUtc">現在的 UTC 時間。</param>
         /// <param name="appVersion">App 版本。</param>
         /// <returns>那一行。</returns>
         private FeedbackRecord BuildRecord(LevelData level, bool isPractice, int sequenceNumber, int targetDifficulty,
-                                           int subjectiveDifficulty, DateTime recordedAtUtc, string appVersion)
+                                           int subjectiveDifficulty, AbandonReason? abandonReason,
+                                           DateTime recordedAtUtc, string appVersion)
         {
             // 題目存相對編碼：權重校正之後拿它重算難度。puzzleKey 直接用 LevelData 上那個，
             // 不跑 WithKeys（那要 16 次輪廓追蹤，而且算出來的應該就是同一個——測試釘住）
@@ -224,6 +259,8 @@ namespace Tangram.Core
                 clearCount = level.ClearCount,
                 hintsUsed = level.HintsUsed,
                 subjectiveDifficulty = subjectiveDifficulty,
+                // 空字串而不是 null：JsonUtility 本來就把 null 寫成 ""，這裡明寫，免得記憶體裡跟讀回來的不一樣
+                abandonReason = abandonReason.HasValue ? abandonReason.Value.ToString() : string.Empty,
                 recordedAtUtc = recordedAtUtc.ToString("o"),
                 appVersion = appVersion,
             };

@@ -260,49 +260,29 @@ public class TouchInputController : MonoBehaviour
     }
 
     /// <summary>
-    /// 把選取的那一片翻面（互動設計 §5）。
+    /// 把選取的那一片<b>照現在的樣子左右鏡射</b>（互動設計 §5；2026-09-14 改成對每一片都有效）。
     ///
-    /// <b>只有平行四邊形有效</b>（<see cref="SnapSolver.CanFlip"/>）。
-    /// 其餘片的鏡像等於某個旋轉，翻了是做白工——畫面跳一下但可達的姿態集合完全沒變。
-    /// 按鈕本來就不該對那些片顯示，這裡再擋一次。
+    /// 鏡射之後落在哪個姿態由 <see cref="PiecePrototype.MirroredLeftRight"/> 決定——三角形會變成「沒翻面、轉另一格」，
+    /// 平行四邊形跟以前一樣是「翻面 ＋ 旋轉取負」。<b>鏡射完跟現在一樣就什麼都不做</b>
+    /// （正方形永遠是、三角形 8 格裡有 2 格）；按鈕在那些時候本來就是灰的，這裡再擋一次。
     ///
-    /// <b>⚠️ 翻面會順便把旋轉格數取負</b>，理由見 <see cref="MirroredRotation"/>。
+    /// <b>為什麼規則放在按鈕動作這一層，而不是 <see cref="PieceView.IsFlipped"/> 的設定值裡</b>（2026-09-07 就這樣定）：
+    /// 這是<b>翻轉鈕的手感規則</b>，不是翻面本身的定義。
+    /// 拖曳的還原、換關重設那些路徑要能單獨改翻面而不動旋轉，做進 setter 的話它們會被順便改掉，而且不報錯。
     /// </summary>
     public void FlipSelected()
     {
         PieceView piece = RequireActionTarget("FlipSelected");
         if (piece == null) return;
-        if (!SnapSolver.CanFlip(piece.Kind)) return;
+        if (PiecePrototype.IsMirrorSymmetric(piece.Kind, piece.Rotation, piece.IsFlipped)) return;
 
-        // 兩個 setter 各自都會把視覺中心留在原地，所以先後順序不影響結果
-        piece.IsFlipped = !piece.IsFlipped;
-        piece.Rotation = MirroredRotation(piece.Rotation, SnapSolver.RotationCycleLength(piece.Kind));
+        PiecePose mirrored = PiecePrototype.MirroredLeftRight(piece.Kind, piece.Rotation, piece.IsFlipped);
+
+        // 兩個 setter 各自都會把視覺中心留在原地，所以先後順序不影響結果。
+        // 三角形的 IsFlipped 本來就是 false、結果也是 false，那個 setter 等於沒動
+        piece.IsFlipped = mirrored.IsFlipped;
+        piece.Rotation = mirrored.Rotation;
     }
-
-    /// <summary>
-    /// 翻面之後該落在哪一格旋轉，好讓畫面上的鏡射軸是水平或垂直的（2026-09-07）。
-    ///
-    /// <b>問題</b>：模型的翻面是對**片自己的 x 軸**鏡射，然後才旋轉。
-    /// 所以從畫面看，翻面等於「繞一條通過中心、角度 θ 的直線鏡射」——
-    /// θ 是奇數格（45°、135°）時那條軸是斜的，看起來不像翻面，像被扭了一下。
-    ///
-    /// <b>推導</b>：舊姿態 <c>R(θ)</c>、新姿態 <c>R(θ')·M</c>，
-    /// 兩者之間的變換是 <c>R(θ'+θ)·M</c>，那是「繞角度 <c>(θ'+θ)/2</c> 的直線鏡射」。
-    /// 目前 <c>θ' = θ</c> 所以軸就是 θ。要讓軸落在 0° 或 90°，需要 <c>θ' = −θ</c>。
-    ///
-    /// <b>為什麼這樣改不會少掉姿態</b>：翻兩次回到原狀（<c>−(−θ) = θ</c>），
-    /// 而且「轉到任一格 → 翻 → 再轉到任一格」照樣走得到全部八種姿態。
-    ///
-    /// <b>為什麼放在這裡而不是 <see cref="PieceView.IsFlipped"/> 的設定值那一層</b>：
-    /// 這是**翻面鈕的手感規則**，不是翻面本身的定義。
-    /// 拖曳的還原、換關重設那些路徑要能單獨改翻面而不動旋轉，
-    /// 做進 setter 的話它們會被順便改掉，而且不報錯。
-    /// </summary>
-    /// <param name="rotation">目前的旋轉格數。</param>
-    /// <param name="cycleLength">這一片的旋轉循環長度。</param>
-    /// <returns>取負之後的旋轉格數，保證落在 0 ~ cycleLength−1。</returns>
-    private static int MirroredRotation(int rotation, int cycleLength)
-        => (cycleLength - rotation % cycleLength) % cycleLength;
 
     /// <summary>
     /// 取出按鈕的作用對象，沒有的話**大聲抱怨**。

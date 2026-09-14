@@ -74,24 +74,8 @@ namespace Tangram.Data
         /// <param name="first">第一片。</param>
         /// <param name="second">第二片。</param>
         /// <returns>能的話 true。</returns>
-        public static bool SameShapeIgnoringPosition(Placement first, Placement second)
-        {
-            if (first.Kind != second.Kind) return false;
-
-            ExactVector2[] firstVertices = first.Vertices();
-            var secondVertices = new HashSet<ExactVector2>(second.Vertices());
-
-            // 如果能重合，第一片的第 0 個頂點一定落在第二片的某個頂點上——逐一試那幾個平移量
-            foreach (ExactVector2 candidate in secondVertices)
-            {
-                ExactVector2 shift = candidate - firstVertices[0];
-                bool allMatch = true;
-                foreach (ExactVector2 vertex in firstVertices)
-                    if (!secondVertices.Contains(vertex + shift)) { allMatch = false; break; }
-                if (allMatch) return true;
-            }
-            return false;
-        }
+        public static bool SameShapeIgnoringPosition(Placement first, Placement second) =>
+            first.Kind == second.Kind && Geometry.SameVerticesIgnoringPosition(first.Vertices(), second.Vertices());
 
         /// <param name="solution">七片。</param>
         /// <param name="kind">片種。</param>

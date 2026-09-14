@@ -191,6 +191,94 @@ namespace Tangram.Data
         /// <returns>只有平行四邊形回 true。</returns>
         public static bool CanFlip(PieceKind kind) => kind == PieceKind.Parallelogram;
 
+        /// <summary>
+        /// 這個姿態<b>在畫面上左右鏡射</b>之後，落在哪個姿態（2026-09-14，翻轉鈕對所有片開放）。
+        ///
+        /// <b>為什麼要有</b>：翻轉鈕原本只對平行四邊形顯示，給人玩過之後「少一顆感覺怪怪的」。
+        /// 所以翻轉鈕改成對每一片都做「照現在的樣子左右鏡射」——三角形的鏡像等於某個旋轉，那就轉過去。
+        ///
+        /// <b>做法不分片種</b>：把現在的頂點左右鏡射（x 取負），然後在<b>這種片本來就能擺的姿態</b>裡
+        /// 找形狀一樣的那一個（位置不算）。能擺的姿態：旋轉 0 ～ 循環長度−1，翻面只有 <see cref="CanFlip"/> 的片才有。
+        /// 兩個結果不用另外寫：
+        /// <list type="bullet">
+        /// <item><b>三角形與正方形永遠不會出現翻面</b>——搜尋範圍裡本來就沒有。⚠️ 出現的話 <c>Placement.Equals</c> 那類比較會安靜地對不上</item>
+        /// <item><b>答案只有一個</b>——循環長度已經把「同一個樣子兩個編號」排除掉了</item>
+        /// </list>
+        ///
+        /// ⭐ <b>平行四邊形的行為跟以前一模一樣</b>。以前的翻面鈕是「翻面 ＋ 旋轉取負」，
+        /// 那在畫面上是<b>上下</b>鏡射（推導見舊版 <c>TouchInputController.MirroredRotation</c> 的說明：
+        /// 舊姿態 R(θ)、新姿態 R(θ')·M，兩者差 R(θ'+θ)·M，θ' = −θ 時就是對 x 軸鏡射）。
+        /// 而平行四邊形轉 180° 長一樣，所以上下鏡射與左右鏡射是同一個形狀——測試釘住。
+        ///
+        /// <b>鏡射完跟現在一樣的情況</b>：正方形永遠是、每種三角形 8 格裡有 2 格（對稱軸剛好直立）。
+        /// 翻轉鈕在那些時候要變灰，判斷就是「回傳值等於現在的姿態」（<see cref="IsMirrorSymmetric"/>）。
+        ///
+        /// ⚠️ <b>查表</b>：按鈕每幀都要問「能不能按」，每次現算要生八個 <c>Placement</c> 與雜湊集合（手機上是每幀的 GC）。
+        /// 5 種片 × 2 × 8 格，第一次呼叫時算好。
+        /// </summary>
+        /// <param name="kind">片種。</param>
+        /// <param name="rotation">目前的旋轉格數（會照循環長度正規化）。</param>
+        /// <param name="isFlipped">目前有沒有翻面。</param>
+        /// <returns>鏡射之後的姿態，旋轉保證落在 0 ～ 循環長度−1。</returns>
+        public static PiecePose MirroredLeftRight(PieceKind kind, int rotation, bool isFlipped)
+        {
+            if (mirrorTable == null) mirrorTable = BuildMirrorTable();
+            return mirrorTable[(int)kind, isFlipped ? 1 : 0, RotateWithinCycle(kind, rotation, 0)];
+        }
+
+        /// <summary>這個姿態左右鏡射之後是不是跟現在一樣（翻轉鈕變灰的條件）。</summary>
+        /// <param name="kind">片種。</param>
+        /// <param name="rotation">目前的旋轉格數。</param>
+        /// <param name="isFlipped">目前有沒有翻面。</param>
+        /// <returns>一樣的話 true——按了不會有任何變化。</returns>
+        public static bool IsMirrorSymmetric(PieceKind kind, int rotation, bool isFlipped) =>
+            MirroredLeftRight(kind, rotation, isFlipped).Equals(new PiecePose(kind, RotateWithinCycle(kind, rotation, 0), isFlipped));
+
+        /// <summary>
+        /// [片種, 翻面, 旋轉] → 左右鏡射之後的姿態。第一次用到時才建——
+        /// ⚠️ 不能寫成靜態欄位的初始值：建表要用 <see cref="Prototypes"/>，而靜態欄位照文字順序初始化，排在它前面就是 null。
+        /// </summary>
+        private static PiecePose[,,] mirrorTable;
+
+        /// <returns>建好的鏡射表。</returns>
+        /// <exception cref="InvalidOperationException">某個姿態的鏡像在能擺的姿態裡找不到（原型或循環長度寫錯才會發生）。</exception>
+        private static PiecePose[,,] BuildMirrorTable()
+        {
+            var table = new PiecePose[5, 2, 8];
+            foreach (PieceKind kind in (PieceKind[])Enum.GetValues(typeof(PieceKind)))
+            {
+                int cycleLength = RotationCycleLength(kind);
+                for (int flipIndex = 0; flipIndex < 2; flipIndex++)
+                    for (int rotation = 0; rotation < cycleLength; rotation++)
+                    {
+                        ExactVector2[] vertices = new Placement(kind, rotation, flipIndex == 1, ExactVector2.Zero).Vertices();
+                        var mirrored = new ExactVector2[vertices.Length];
+                        for (int i = 0; i < vertices.Length; i++) mirrored[i] = new ExactVector2(-vertices[i].X, vertices[i].Y);
+
+                        table[(int)kind, flipIndex, rotation] = FindReachablePose(kind, mirrored);
+                    }
+            }
+            return table;
+        }
+
+        /// <summary>在這種片能擺的姿態裡，找形狀跟 <paramref name="vertices"/> 一樣的那一個（位置不算）。</summary>
+        /// <param name="kind">片種。</param>
+        /// <param name="vertices">要找的形狀。</param>
+        /// <returns>那個姿態。</returns>
+        /// <exception cref="InvalidOperationException">找不到。</exception>
+        private static PiecePose FindReachablePose(PieceKind kind, ExactVector2[] vertices)
+        {
+            int flipCount = CanFlip(kind) ? 2 : 1;
+            for (int flipIndex = 0; flipIndex < flipCount; flipIndex++)
+                for (int rotation = 0; rotation < RotationCycleLength(kind); rotation++)
+                {
+                    ExactVector2[] candidate = new Placement(kind, rotation, flipIndex == 1, ExactVector2.Zero).Vertices();
+                    if (Geometry.SameVerticesIgnoringPosition(candidate, vertices))
+                        return new PiecePose(kind, rotation, flipIndex == 1);
+                }
+            throw new InvalidOperationException($"{kind} 的鏡像在能擺的姿態裡找不到——原型頂點或循環長度寫錯了？");
+        }
+
         /// <returns>五種原型，索引就是 <see cref="PieceKind"/> 的整數值。</returns>
         private static PiecePrototype[] BuildAllPrototypes()
         {

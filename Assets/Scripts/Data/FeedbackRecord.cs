@@ -86,8 +86,14 @@ namespace Tangram.Data
         /// <summary>提示次數（現在恆為 0）。</summary>
         public int hintsUsed;
 
-        /// <summary>主觀難度 1（很簡單）～ 5（很難）。練習題不問，是 0。</summary>
+        /// <summary>主觀難度 1（很簡單）～ 5（很難）。<b>只有過關的正式題才問</b>；練習題與放棄的題是 0。</summary>
         public int subjectiveDifficulty;
+
+        /// <summary>
+        /// ⭐ <see cref="AbandonReason"/> 的名字（2026-09-14）。<b>只有放棄的正式題才問</b>；過關與練習題是空字串。
+        /// ⚠️ 這個欄位加上之前收的那幾行讀進來是空的——那幾行放棄時問的是 1 ～ 5，分析時看 <see cref="appVersion"/> 分開。
+        /// </summary>
+        public string abandonReason;
 
         /// <summary>寫下這一行的時間，ISO-8601 UTC。</summary>
         public string recordedAtUtc;
