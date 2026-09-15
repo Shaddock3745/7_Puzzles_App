@@ -76,8 +76,33 @@ namespace Tangram.Core
         /// </summary>
         public readonly GenerationRecord? Generation;
 
-        /// <summary>提示用掉幾次。上限 3（互動設計 §9）。</summary>
-        public int HintsUsed { get; private set; }
+        // ───────── 提示（2026-09-15，互動設計 §9、待辦清單〈提示〉）─────────
+
+        /// <summary>一關最多幾次提示。</summary>
+        public const int MaximumHints = 3;
+
+        /// <summary>
+        /// 提示過的<b>參考解槽</b>，照按的順序。
+        ///
+        /// ⭐ <b>記槽不記「蓋在哪」</b>：參考解就在這一包裡，位置隨時查得到，存兩份只會不同步。
+        /// ⚠️ 清空與 undo 都不動它——提示已經用掉了（2026-09-14 定）。換關整包換掉，所以會自己歸零。
+        /// </summary>
+        private readonly List<int> hintedReferenceSlots = new List<int>(MaximumHints);
+
+        /// <summary>提示過的參考解槽，照按的順序。畫面層每幀讀它畫覆蓋片。</summary>
+        public IReadOnlyList<int> HintedReferenceSlots => hintedReferenceSlots;
+
+        /// <summary>
+        /// 提示用掉幾次。<b>衍生值</b>：就是 <see cref="HintedReferenceSlots"/> 的長度，不另外存一份數字。
+        /// ELO 與回饋紀錄讀的是它。
+        /// </summary>
+        public int HintsUsed => hintedReferenceSlots.Count;
+
+        /// <summary>
+        /// <b>第一次按提示時的前景秒數</b>（回饋收集用：他在第幾秒卡住）。<b>沒按過是 0</b>——
+        /// 提示最早要等一個間隔才能按，所以 0 不會跟真的值撞在一起。
+        /// </summary>
+        public double FirstHintForegroundSeconds { get; private set; }
 
         /// <summary>過關了沒。</summary>
         public bool IsSolved { get; private set; }
@@ -211,7 +236,6 @@ namespace Tangram.Core
             Board = new BoardState();
             Difficulty = difficulty;
             Generation = generation;
-            HintsUsed = 0;
             IsSolved = false;
 
             // 一關的開頭七片都在抽屜裡。換關是整包換掉（見類別說明），
@@ -220,8 +244,144 @@ namespace Tangram.Core
                 inTray[slotIndex] = true;
         }
 
-        /// <summary>用掉一次提示。</summary>
-        public void UseHint() => HintsUsed++;
+        /// <summary>
+        /// 現在還能按幾次提示＝ min(3, ⌊前景秒數 ÷ 間隔⌋) − 已用次數。
+        ///
+        /// ⭐ <b>沒按的次數會累積</b>（2026-09-15 使用者定）：135 秒都沒按的人可以連按三次。
+        /// ⭐ <b>放棄鈕的門檻是間隔 × 3</b>，跟第三次提示同時出現——間隔只有一個數字，住在按鈕那邊
+        /// （<c>BoardActionButtons</c>），這一層照呼叫端給的算，跟「現在幾點」同一個模式。
+        /// </summary>
+        /// <param name="nowSeconds">現在的時刻（秒）。</param>
+        /// <param name="intervalSeconds">每隔幾秒多開放一次，必須 &gt; 0。</param>
+        /// <returns>還能按幾次，最少 0。沒有參考解（出題工具）或這一局已經結束時是 0。</returns>
+        /// <exception cref="System.ArgumentOutOfRangeException">間隔不是正數。</exception>
+        public int HintsAvailableAt(double nowSeconds, double intervalSeconds)
+        {
+            // 不擋的話間隔 0 會除出無限大、負數會讓次數變負——都是 Inspector 填錯，大聲比較好
+            if (!(intervalSeconds > 0.0))
+                throw new System.ArgumentOutOfRangeException(nameof(intervalSeconds), intervalSeconds, "提示間隔必須是正數");
+
+            if (ReferenceSolution == null || IsFinished) return 0;
+
+            double unlocked = System.Math.Floor(ForegroundSecondsAt(nowSeconds) / intervalSeconds);
+            int unlockedCount = unlocked >= MaximumHints ? MaximumHints : (int)unlocked;
+            int available = unlockedCount - HintsUsed;
+            return available > 0 ? available : 0;
+        }
+
+        /// <summary>
+        /// 參考解的這一槽<b>現在算不算已經擺對</b>：盤上有沒有<b>同片種、頂點集合一樣</b>的片。
+        ///
+        /// ⚠️ <b>不比 <c>Placement.Equals</c>、也不綁槽</b>（互動設計 §9〈完成判定的陷阱〉）——
+        /// 正方形轉 0／2、兩片大三角互換、兩片小三角互換都要算對。綁槽的話玩家拿「另一片」大三角放對了，
+        /// 提示還一直閃，他會以為自己擺錯。
+        ///
+        /// 畫面層每幀拿它決定「這個提示還要不要畫」（擺對時不畫，被拿走又出現）。
+        /// ⚠️ <b>看的是盤面，不是畫面</b>：拖曳中吸住只是預覽，所以提示要等鬆手那一格才消失。
+        /// </summary>
+        /// <param name="referenceSlot">參考解的槽索引 0~6。</param>
+        /// <returns>擺對了 true。沒有參考解時永遠 false。</returns>
+        /// <exception cref="System.ArgumentOutOfRangeException">槽索引超出範圍。</exception>
+        public bool IsReferenceSlotSatisfied(int referenceSlot)
+        {
+            if (referenceSlot < 0 || referenceSlot >= BoardState.PieceCount)
+                throw new System.ArgumentOutOfRangeException(nameof(referenceSlot), referenceSlot, "槽索引超出範圍");
+            if (ReferenceSolution == null) return false;
+
+            Placement target = ReferenceSolution[referenceSlot];
+            ExactVector2[] targetVertices = null;       // 盤上沒有同片種的片時就不必算
+
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+            {
+                PieceObservation observation = Board[slotIndex];
+                if (!observation.OnBoard || observation.Kind != target.Kind) continue;
+
+                targetVertices ??= target.Vertices();
+                if (Geometry.SameVertexSet(targetVertices, observation.Placement.Vertices())) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 按一次提示：挑參考解裡的一片記下來，畫面層就會把它蓋上去。
+        ///
+        /// <b>挑哪一片</b>（沒有求解器，挑不到「跟玩家現在盤面相容的解」，所以只看參考解）：
+        /// <list type="number">
+        /// <item>拿掉已經提示過的、已經擺對的（<see cref="IsReferenceSlotSatisfied"/>）</item>
+        /// <item><b>位置是空的優先</b>（跟盤上每一片都不重疊）；空的沒有才挑被佔住的——
+        ///   蓋在玩家的片上面本身就是「這裡擺錯了」的訊號</item>
+        /// <item>同一組裡<b>面積大的先</b>（大片資訊量最大，§9）；一樣大就挑槽號小的，
+        ///   同一個盤面永遠挑出同一片，才測得了</item>
+        /// </list>
+        ///
+        /// ⚠️ <b>一個候選都沒有就不扣次數</b>（例如四片擺對、三片提示過）——扣了的話玩家按了沒反應還被算一次。
+        /// </summary>
+        /// <param name="nowSeconds">現在的時刻（秒）。</param>
+        /// <param name="intervalSeconds">提示間隔，見 <see cref="HintsAvailableAt"/>。</param>
+        /// <param name="referenceSlot">挑中的參考解槽；沒有提示時是 −1。</param>
+        /// <returns>有沒有真的用掉一次。</returns>
+        public bool TryUseHint(double nowSeconds, double intervalSeconds, out int referenceSlot)
+        {
+            referenceSlot = -1;
+            if (HintsAvailableAt(nowSeconds, intervalSeconds) <= 0) return false;
+
+            int bestSlot = PickHintSlot();
+            if (bestSlot < 0) return false;
+
+            // 第一次按的那一刻記前景秒數（HintsUsed 還沒加上去之前問）
+            if (HintsUsed == 0) FirstHintForegroundSeconds = ForegroundSecondsAt(nowSeconds);
+            hintedReferenceSlots.Add(bestSlot);
+            referenceSlot = bestSlot;
+            return true;
+        }
+
+        /// <summary>
+        /// 提示鈕現在按下去<b>會不會真的有東西</b>：還有次數，而且挑得到一片。
+        /// 提示鈕的顯示條件就是它——跟 <see cref="TryUseHint"/> 共用同一個挑片算式，所以「看得到鈕、按了沒反應」不會發生。
+        /// </summary>
+        /// <param name="nowSeconds">現在的時刻（秒）。</param>
+        /// <param name="intervalSeconds">提示間隔。</param>
+        /// <returns>按下去會用掉一次的話 true。</returns>
+        public bool CanUseHintAt(double nowSeconds, double intervalSeconds) =>
+            HintsAvailableAt(nowSeconds, intervalSeconds) > 0 && PickHintSlot() >= 0;
+
+        /// <summary>照 <see cref="TryUseHint"/> 說明的規則挑一片，只算不記。</summary>
+        /// <returns>挑中的參考解槽；一個候選都沒有時是 −1。</returns>
+        private int PickHintSlot()
+        {
+            Placement[] onBoard = Board.OnBoardPlacements();
+            int bestSlot = -1;
+            bool bestIsEmpty = false;
+            Scalar bestDoubleArea = Scalar.Zero;
+
+            for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+            {
+                if (hintedReferenceSlots.Contains(slotIndex) || IsReferenceSlotSatisfied(slotIndex)) continue;
+
+                Placement candidate = ReferenceSolution[slotIndex];
+                bool isEmpty = !OverlapsAny(candidate, onBoard);
+                Scalar doubleArea = candidate.Prototype.DoubleArea;
+
+                // 由小到大掃槽號，所以「一樣好」時不換 = 槽號小的贏
+                bool better = bestSlot < 0
+                              || (isEmpty && !bestIsEmpty)
+                              || (isEmpty == bestIsEmpty && doubleArea > bestDoubleArea);
+                if (!better) continue;
+
+                bestSlot = slotIndex;
+                bestIsEmpty = isEmpty;
+                bestDoubleArea = doubleArea;
+            }
+            return bestSlot;
+
+            static bool OverlapsAny(Placement candidate, Placement[] placements)
+            {
+                ExactVector2[] candidateVertices = candidate.Vertices();
+                foreach (Placement placement in placements)
+                    if (Geometry.ConvexOverlap(candidateVertices, placement.Vertices())) return true;
+                return false;
+            }
+        }
 
         // ───────── 局內統計的四件事（P2-13）─────────
         //

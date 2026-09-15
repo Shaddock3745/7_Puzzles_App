@@ -1,3 +1,4 @@
+using Tangram.Core;
 using UnityEngine;
 
 /// <summary>
@@ -53,9 +54,22 @@ public class BoardActionButtons : MonoBehaviour
              + "⚠️ 它跟另外兩顆不一樣：卡夠久才會出現，見下面那個門檻。")]
     [SerializeField] private GameObject abandonButton;
 
-    [Tooltip("卡多久放棄鈕才出現（秒）。⚠️ 評審現場只玩 2~3 局，demo 時調成 5 秒。"
-             + "⭐ 之後三級提示鈕照同一個框架，而它們的門檻都要比這個早（暫定 45、90、135）。")]
-    [SerializeField] private float stuckSecondsBeforeAbandon = 135f;
+    [Tooltip("提示鈕的 GameObject（2026-09-15）。onClick 接到這支的 OnHintPressed。"
+             + "還有次數可以按時才出現。")]
+    [SerializeField] private GameObject hintButton;
+
+    [Tooltip("⭐ 提示與放棄共用的唯一門檻（秒）：每隔這麼久多開放一次提示，最多 3 次；"
+             + "放棄鈕跟第三次提示同時出現（＝ 這個數字 × 3）。"
+             + "⚠️ 評審現場只玩 2~3 局，demo 時調小（例如 5 → 5／10／15 秒）。")]
+    [Min(1f)]
+    [SerializeField] private float hintIntervalSeconds = 45f;
+
+    /// <summary>
+    /// 放棄鈕的門檻＝提示間隔 × 3，<b>不另外設</b>（2026-09-15 使用者定）。
+    /// ⚠️ 原本放棄門檻是自己一個 Inspector 數字——兩個數字的話 demo 時漏改一個，
+    /// 玩家就會<b>先看到「投降」才看到「幫忙」</b>，那正是待辦清單〈放棄〉第 7 點要避免的順序。
+    /// </summary>
+    private float StuckSecondsBeforeAbandon => hintIntervalSeconds * LevelData.MaximumHints;
 
     private void Awake()
     {
@@ -88,6 +102,7 @@ public class BoardActionButtons : MonoBehaviour
         undoArea = RegisterArea(undoButton);
         clearArea = RegisterArea(clearButton);
         abandonArea = RegisterArea(abandonButton);
+        hintArea = RegisterArea(hintButton);
     }
 
     private void OnDisable()
@@ -96,6 +111,7 @@ public class BoardActionButtons : MonoBehaviour
         inputController.UnregisterPressBlockingArea(undoArea);
         inputController.UnregisterPressBlockingArea(clearArea);
         inputController.UnregisterPressBlockingArea(abandonArea);
+        inputController.UnregisterPressBlockingArea(hintArea);
     }
 
     /// <param name="button">按鈕物件，可以是 null。</param>
@@ -119,6 +135,7 @@ public class BoardActionButtons : MonoBehaviour
     private RectTransform undoArea;
     private RectTransform clearArea;
     private RectTransform abandonArea;
+    private RectTransform hintArea;
 
     /// <summary>
     /// 每幀重算「該不該顯示」。
@@ -138,14 +155,28 @@ public class BoardActionButtons : MonoBehaviour
         SetShown(undoButton, inputController != null && inputController.CanUndo);
         SetShown(clearButton, inputController != null && inputController.CanClearBoard);
         SetShown(abandonButton, CanAbandon);
+        SetShown(hintButton, CanUseHint);
     }
+
+    /// <summary>
+    /// 提示鈕該不該出現（2026-09-15）：<b>按下去真的會有東西，而且抽屜沒開</b>。
+    /// 「這一關結束了」不用另外寫——結束之後模型層回的次數就是 0。
+    ///
+    /// 💡 跟放棄鈕同一個形狀：前一個間隔根本不佔位。
+    /// ⭐ 顯示條件跟作用條件是同一個算式（<c>LevelData.CanUseHintAt</c> 與 <c>TryUseHint</c> 共用挑片），
+    /// 所以次數還有、但七片裡已經沒東西可提示時，鈕會自己退場，不會擺一顆按了沒反應的鈕。
+    /// </summary>
+    private bool CanUseHint =>
+        inputController != null
+        && !inputController.IsTrayDrawerOpen
+        && inputController.CanUseHint(hintIntervalSeconds);
 
     /// <summary>
     /// 放棄鈕該不該出現（P2-13）：<b>卡夠久，而且這一關還沒結束</b>。
     ///
     /// ⭐ <b>「卡夠久才出現」一次解掉兩個問題</b>：
     /// ① 按鈕已經很擠（旋轉／翻面、undo／清空、抽屜箭頭、回收框），而它前
-    /// <see cref="stuckSecondsBeforeAbandon"/> 秒<b>根本不佔位</b>；
+    /// <see cref="StuckSecondsBeforeAbandon"/> 秒<b>根本不佔位</b>；
     /// ② 放棄不可逆而且會扣實力值，但<b>只有真的卡住的人看得到它</b>——
     /// 所以刻意<b>不做二次確認</b>，兩個決定互相支援。
     ///
@@ -157,7 +188,7 @@ public class BoardActionButtons : MonoBehaviour
         && !inputController.IsLevelComplete
         && !inputController.IsLevelAbandoned
         && !inputController.IsTrayDrawerOpen
-        && inputController.StuckSeconds >= stuckSecondsBeforeAbandon;
+        && inputController.StuckSeconds >= StuckSecondsBeforeAbandon;
 
     /// <param name="button">要顯示或隱藏的按鈕物件，可以是 null。</param>
     /// <param name="shown">要不要顯示。</param>
@@ -178,6 +209,12 @@ public class BoardActionButtons : MonoBehaviour
     public void OnClearPressed()
     {
         if (inputController != null) inputController.ClearBoard();
+    }
+
+    /// <summary>提示鈕被按下（2026-09-15）。接在 Unity <c>Button.onClick</c> 上。</summary>
+    public void OnHintPressed()
+    {
+        if (inputController != null) inputController.UseHint(hintIntervalSeconds);
     }
 
     /// <summary>

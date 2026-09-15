@@ -36,6 +36,16 @@ public class BoardView : MonoBehaviour
              "太接近的話片會在邊界反覆吸上／甩開，看起來像在抖。")]
     [SerializeField] private float releaseRadiusDp = 18f;
 
+    [Header("盒子要躲開的按鈕排")]
+    [Tooltip("按鈕排的父物件（例如掛 Horizontal Layout Group 的那個），它的矩形就是按鈕區（2026-09-15）。"
+             + "中心在螢幕上半的會壓低盒子區的上緣、下半的會抬高下緣；只管上下不管左右。停用的跳過。"
+             + "⚠️ 這個物件的大小要固定：跟著按鈕出現／消失變大變小的話，盒子會當場縮放、正在拖的片會被放回原位。")]
+    [SerializeField] private RectTransform[] avoidedButtonAreas = Array.Empty<RectTransform>();
+
+    [Tooltip("盒子與按鈕排之間留多少，單位 dp。")]
+    [Min(0f)]
+    [SerializeField] private float buttonAreaMarginDp = 8f;
+
     /// <summary>
     /// 這一題的座標狀態。相機參數的來源；盒子原點**不在這裡**，在 <c>LevelSession</c>。
     /// </summary>
@@ -79,9 +89,62 @@ public class BoardView : MonoBehaviour
     /// </summary>
     public event Action LayoutRecomputed;
 
+    /// <summary>
+    /// 盒子區規則的起點：寫死的直式版面。按鈕排只會從它往內縮（見 <see cref="LayoutRule.AvoidingButtonAreas"/>）。
+    /// </summary>
+    private static readonly LayoutRule BaseRule = LayoutRule.Portrait;
+
+    /// <summary>
+    /// 規則差多少像素才算「變了」。⚠️ 不能是 0：矩形每幀從 Canvas 換算，浮點抖一下就會重算版面，
+    /// 而重算會把正在拖的片放回原位（見 <see cref="LayoutRule.ApproximatelyEquals"/>）。
+    /// </summary>
+    private const float RuleChangeTolerancePixels = 0.5f;
+
+    /// <summary>擠不下的警告只吵一次，擠得下了再解除——不然每幀都印一行。</summary>
+    private bool hasWarnedButtonAreasDoNotFit;
+
+    /// <summary>每幀重用，不在 Update 裡配置。</summary>
+    private readonly System.Collections.Generic.List<ScreenVerticalRange> buttonAreaRanges =
+        new System.Collections.Generic.List<ScreenVerticalRange>();
+
+    /// <summary>
+    /// 照按鈕排現在的位置算出盒子區規則，<b>跟現在的差超過容差才</b>換（2026-09-15）。
+    ///
+    /// <b>每幀都算</b>，所以轉螢幕方向、改解析度、Canvas 縮放變了都會自己跟上，不必有人通知。
+    ///
+    /// ⚠️ <b>按鈕排的螢幕位置一定要走 <see cref="UiScreenRect"/>，不能用畫布的相機換算</b>（除錯記錄 012）：
+    /// 畫布是 Screen Space - Camera，要等到畫面要畫之前才跟上相機；而這裡算出來的規則會改相機——
+    /// 用相機換算的話「讀錯 → 改相機 → 又讀錯」，實測盒子連抖十幀，每次重算還會把正在拖的片放回原位。
+    /// </summary>
+    /// <param name="screenWidth">螢幕寬（像素）。</param>
+    /// <param name="screenHeight">螢幕高（像素）。</param>
+    private void RefreshRuleFromButtonAreas(int screenWidth, int screenHeight)
+    {
+        if (screenWidth <= 0 || screenHeight <= 0) return;
+
+        buttonAreaRanges.Clear();
+        foreach (RectTransform area in avoidedButtonAreas)
+        {
+            if (area == null || !area.gameObject.activeInHierarchy) continue;
+            if (!UiScreenRect.TryGet(area, out Rect screenRect)) continue;
+            buttonAreaRanges.Add(new ScreenVerticalRange(screenRect.yMin, screenRect.yMax));
+        }
+
+        LayoutRule rule = BaseRule.AvoidingButtonAreas(buttonAreaRanges, screenHeight,
+                                                       ScreenMetrics.ToPixels(buttonAreaMarginDp), out bool fits);
+
+        if (!fits && !hasWarnedButtonAreasDoNotFit)
+            Debug.LogWarning("盒子區躲開按鈕排之後沒有高度了（按鈕排太大，或畫面太扁），先照原本的版面放。" +
+                             "檢查 BoardView 的「盒子要躲開的按鈕排」與那幾個物件的大小。", this);
+        hasWarnedButtonAreasDoNotFit = !fits;
+
+        if (!rule.ApproximatelyEquals(Layout.Rule, screenWidth, screenHeight, RuleChangeTolerancePixels))
+            Layout.SetRule(rule);
+    }
+
     private void Awake()
     {
-        Layout = new BoardLayout(LayoutRule.Portrait);
+        Layout = new BoardLayout(BaseRule);
         if (targetCamera == null) targetCamera = Camera.main;
     }
 
@@ -112,6 +175,9 @@ public class BoardView : MonoBehaviour
     {
         int screenWidth = Screen.width;
         int screenHeight = Screen.height;
+
+        // 按鈕排的位置變了就換規則。SetRule 會把「已推送的螢幕尺寸」清掉，所以下一行一定會往下重算
+        RefreshRuleFromButtonAreas(screenWidth, screenHeight);
 
         if (!Layout.HasScreenSizeChanged(screenWidth, screenHeight)) return;
 

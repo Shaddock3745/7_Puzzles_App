@@ -83,8 +83,14 @@ namespace Tangram.Data
         /// <summary>清空次數——之後有資料時可能是最有鑑別力的挫折指標。</summary>
         public int clearCount;
 
-        /// <summary>提示次數（現在恆為 0）。</summary>
+        /// <summary>提示次數 0 ～ 3。</summary>
         public int hintsUsed;
+
+        /// <summary>
+        /// ⭐ <b>第一次按提示時的前景秒數</b>（2026-09-15）＝他在第幾秒卡住，校正尺用。
+        /// <b>沒按過是 0</b>（提示最早也要等一個間隔，不會跟真的值撞在一起）。
+        /// </summary>
+        public double firstHintForegroundSeconds;
 
         /// <summary>主觀難度 1（很簡單）～ 5（很難）。<b>只有過關的正式題才問</b>；練習題與放棄的題是 0。</summary>
         public int subjectiveDifficulty;

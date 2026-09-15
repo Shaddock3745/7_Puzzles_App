@@ -691,6 +691,7 @@ namespace Tangram.Core.Tests
             level.StartDragTiming(5.0);
             level.StopDragTiming(7.0);
             level.RecordClear();
+            Assert.IsTrue(level.TryUseHint(50.0, 45.0, out _), "前置：50 秒時能按一次提示");
             level.MarkAbandoned(60.0);
 
             var profile = new FeedbackParticipantProfile("c-3", 2, AgeGroup.EighteenOrOver,
@@ -718,6 +719,8 @@ namespace Tangram.Core.Tests
             Assert.AreEqual(2.0, record.dragSeconds, 1e-9);
             Assert.AreEqual(1, record.dragCount);
             Assert.AreEqual(1, record.clearCount);
+            Assert.AreEqual(1, record.hintsUsed);
+            Assert.AreEqual(50.0, record.firstHintForegroundSeconds, 1e-9, "第一次按提示時的前景秒數");
             Assert.AreEqual(0, record.subjectiveDifficulty, "放棄的題不問難不難");
             Assert.AreEqual("TooHard", record.abandonReason);
             Assert.AreEqual(level.Puzzle.Key, record.puzzleKey);

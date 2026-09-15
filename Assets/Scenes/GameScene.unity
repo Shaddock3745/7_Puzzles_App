@@ -169,7 +169,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &21302645
 RectTransform:
   m_ObjectHideFlags: 0
@@ -186,9 +186,9 @@ RectTransform:
   - {fileID: 96064019}
   m_Father: {fileID: 1641593733}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 75, y: -75}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 150, y: 150}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &21302646
@@ -234,7 +234,19 @@ MonoBehaviour:
   m_TargetGraphic: {fileID: 21302647}
   m_OnClick:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 720275648}
+        m_TargetAssemblyTypeName: BoardActionButtons, Assembly-CSharp
+        m_MethodName: OnHintPressed
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
 --- !u!114 &21302647
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2234,7 +2246,8 @@ MonoBehaviour:
   undoButton: {fileID: 427825622}
   clearButton: {fileID: 1057341462}
   abandonButton: {fileID: 2044370322}
-  stuckSecondsBeforeAbandon: 5
+  hintButton: {fileID: 21302644}
+  hintIntervalSeconds: 5
 --- !u!4 &720275649
 Transform:
   m_ObjectHideFlags: 0
@@ -2762,6 +2775,7 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
+  - {fileID: 1151380276}
   - {fileID: 1403617022}
   - {fileID: 595082543}
   - {fileID: 1609142069}
@@ -3278,6 +3292,55 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1144322156}
   m_CullTransparentMesh: 1
+--- !u!1 &1151380275
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1151380276}
+  - component: {fileID: 1151380277}
+  m_Layer: 0
+  m_Name: HintOverlayView
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1151380276
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1151380275}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1003093370}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1151380277
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1151380275}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5ce189a84009e964eabe034f35fded32, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HintOverlayView
+  trayView: {fileID: 1609142068}
+  tint: {r: 1, g: 1, b: 1, a: 1}
+  pulsePeriodSeconds: 1
+  minimumAlpha: 0.15
+  maximumAlpha: 0.8
 --- !u!1 &1158511500
 GameObject:
   m_ObjectHideFlags: 0
@@ -3861,6 +3924,11 @@ MonoBehaviour:
   targetCamera: {fileID: 1551645253}
   snapRadiusDp: 7
   releaseRadiusDp: 12
+  avoidedButtonAreas:
+  - {fileID: 289820527}
+  - {fileID: 593055301}
+  - {fileID: 1641593733}
+  buttonAreaMarginDp: 8
 --- !u!4 &1403617022
 Transform:
   m_ObjectHideFlags: 0

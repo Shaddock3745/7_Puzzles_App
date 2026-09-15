@@ -174,6 +174,32 @@ public class TouchInputController : MonoBehaviour
     }
 
     /// <summary>
+    /// 提示鈕現在按下去會不會真的有東西（2026-09-15）。沒有關就是 false。
+    /// ⚠️ 間隔由按鈕那邊給——跟 <see cref="StuckSeconds"/> 同一個分工：門檻幾秒是按鈕的事。
+    /// </summary>
+    /// <param name="intervalSeconds">每隔幾秒多開放一次，必須 &gt; 0。</param>
+    /// <returns>按下去會用掉一次的話 true。</returns>
+    public bool CanUseHint(double intervalSeconds)
+    {
+        LevelData level = LevelSession.Current?.Data;
+        return level != null && level.CanUseHintAt(GameClock.NowSeconds, intervalSeconds);
+    }
+
+    /// <summary>
+    /// 用一次提示（2026-09-15）。接在提示鈕的 <c>onClick</c> 上（經過 <c>BoardActionButtons</c>）。
+    ///
+    /// <b>這裡只叫模型層記下來</b>，覆蓋片由 <c>HintOverlayView</c> 每幀照 <c>LevelData</c> 畫——
+    /// 不用通知任何人，也就不會有人漏收通知。挑哪一片、能不能按，規則都在 <see cref="LevelData.TryUseHint"/>。
+    /// </summary>
+    /// <param name="intervalSeconds">提示間隔。</param>
+    public void UseHint(double intervalSeconds)
+    {
+        LevelData level = LevelSession.Current?.Data;
+        if (level == null) return;
+        level.TryUseHint(GameClock.NowSeconds, intervalSeconds, out _);
+    }
+
+    /// <summary>
     /// 放棄這一關（P2-13）。接在放棄鈕的 <c>onClick</c> 上。
     ///
     /// ⚠️ <b>盤面刻意不動</b>：片留在原地——讓玩家看著自己的殘局按「下一題」比空盤面合理，
@@ -1226,15 +1252,10 @@ public class TouchInputController : MonoBehaviour
         {
             if (area == null || !area.gameObject.activeInHierarchy) continue;
 
-            // ⚠️ 相機參數不能亂傳：Screen Space - Overlay 的畫布要傳 null，
-            // 其他模式要傳畫布自己的相機。傳錯不會報錯，只會變成永遠命中或永遠不命中
-            Canvas canvas = area.GetComponentInParent<Canvas>();
-            Camera canvasCamera =
-                canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay
-                    ? canvas.worldCamera
-                    : null;
-
-            if (RectTransformUtility.RectangleContainsScreenPoint(area, screenPoint, canvasCamera))
+            // ⚠️ 不用 RectangleContainsScreenPoint 配畫布的相機（2026-09-15，除錯記錄 012）：
+            // 畫布是 Screen Space - Camera，相機剛被改過的那一幀畫布還沒跟上，換算會錯。
+            // 盒子區躲按鈕排也是同一份換算，兩邊不能各走各的
+            if (UiScreenRect.TryGet(area, out Rect areaScreenRect) && areaScreenRect.Contains(screenPoint))
                 return true;
         }
 

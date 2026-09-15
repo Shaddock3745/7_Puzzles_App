@@ -84,6 +84,13 @@ public class TrayView : MonoBehaviour
 
     private PieceSpriteLibrary library;
 
+    /// <summary>
+    /// 七片與縮圖共用的圖（2026-09-15 開出來給提示覆蓋片用）。<b><c>Awake</c> 之前是 null。</b>
+    /// 共用這一份是為了讓覆蓋片的內縮與圓角跟片一模一樣——各生一份的話兩邊的 Inspector 數字遲早不一致。
+    /// ⚠️ 圖的釋放歸這一支（<c>OnDestroy</c>），拿去用的人不要釋放。
+    /// </summary>
+    public PieceSpriteLibrary SpriteLibrary => library;
+
     /// <summary>七片的父物件。<b>必須維持 identity</b>，見 <see cref="EnforcePieceRootIdentity"/>。</summary>
     private Transform pieceRoot;
 

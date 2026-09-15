@@ -30,7 +30,8 @@ using UnityEngine.UI;
 /// <b>跟遊戲場景的差別</b>（場景要這樣設）：
 /// <list type="bullet">
 /// <item><c>LevelController</c> 的「開場自動進第一關」<b>關掉</b>——什麼時候進關由這支決定</item>
-/// <item><c>BoardActionButtons</c> 的放棄門檻 <b>60 秒</b>（使用者定）：放棄正是「尺的上界在哪」的訊號，不要讓人撐太久</item>
+/// <item><c>BoardActionButtons</c> 的提示間隔 <b>45 秒</b>，放棄跟第三次提示同時出現（135 秒），跟正式版一模一樣（2026-09-14 定）。
+/// （原本放棄門檻是 60 秒；那時還沒正式收資料，所以沒有前後兩批要分）</item>
 /// <item><c>LevelResultPanels</c> <b>拿掉</b>，由這裡的面板取代</item>
 /// <item>⚠️ <b><c>DebugOverlay</c> 與 <c>DebugTools</c> 拿掉</b>——overlay 會顯示這一題的難度值，受試者看到數字，主觀判斷就被帶走了</item>
 /// </list>

@@ -34,6 +34,26 @@ namespace Tangram.Data
             return false;
         }
 
+        /// <summary>
+        /// 兩組頂點是不是<b>同一個集合</b>——形狀、方向、位置全都一樣（2026-09-15，提示要問「這片擺對了沒」）。
+        ///
+        /// 跟 <see cref="SameVerticesIgnoringPosition"/> 的差別只有位置算不算。
+        /// ⚠️ 同一個理由不能比姿態欄位：正方形轉 0 與轉 2 的 <c>Placement</c> 不相等，佔的位置卻一模一樣。
+        /// </summary>
+        /// <param name="first">第一組頂點（順序不拘）。</param>
+        /// <param name="second">第二組頂點（順序不拘）。</param>
+        /// <returns>頂點數相同而且每一個都對得上的話 true。空的一律 false。</returns>
+        public static bool SameVertexSet(IReadOnlyList<ExactVector2> first, IReadOnlyList<ExactVector2> second)
+        {
+            if (first.Count != second.Count || first.Count == 0) return false;
+
+            // 七巧板的片沒有重複頂點，所以「數量一樣 ＋ 第一組每個都在第二組裡」就是集合相等
+            var secondVertices = new HashSet<ExactVector2>(second);
+            foreach (ExactVector2 vertex in first)
+                if (!secondVertices.Contains(vertex)) return false;
+            return true;
+        }
+
         /// <summary>shoelace，回傳面積 ×2。正 = CCW（外環），負 = CW（洞）。</summary>
         /// <param name="polygon">頂點環，起點不用重複放在結尾。</param>
         /// <returns>

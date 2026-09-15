@@ -258,6 +258,7 @@ namespace Tangram.Core
                 dragCount = level.DragCount,
                 clearCount = level.ClearCount,
                 hintsUsed = level.HintsUsed,
+                firstHintForegroundSeconds = level.FirstHintForegroundSeconds,
                 subjectiveDifficulty = subjectiveDifficulty,
                 // 空字串而不是 null：JsonUtility 本來就把 null 寫成 ""，這裡明寫，免得記憶體裡跟讀回來的不一樣
                 abandonReason = abandonReason.HasValue ? abandonReason.Value.ToString() : string.Empty,

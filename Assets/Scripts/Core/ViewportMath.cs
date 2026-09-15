@@ -94,6 +94,98 @@ namespace Tangram.Core
         public float BoxAreaCenterXRatio => (BoxAreaMinimumX + BoxAreaMaximumX) * 0.5f;
         /// <summary>盒子區中心的 Y，螢幕比例。</summary>
         public float BoxAreaCenterYRatio => (BoxAreaMinimumY + BoxAreaMaximumY) * 0.5f;
+
+        /// <summary>
+        /// 讓盒子區<b>躲開按鈕排</b>（2026-09-15）：每一排看它的中心在螢幕上半還是下半，
+        /// 上半就把盒子區的上緣往下壓、下半就把下緣往上抬，各留 <paramref name="marginPixels"/> 的間距。
+        ///
+        /// <b>只會往內縮，不會放寬</b>——按鈕排離得很遠時，基本規則的留白照樣在。
+        /// <b>只管上下，不管左右</b>：直式版面的按鈕排是橫的。哪天在側邊放一排直的，這一支就不夠用了。
+        ///
+        /// ⚠️ 間距與範圍是<b>螢幕像素</b>，換成比例在這裡做——呼叫端（<c>BoardView</c>）才知道 dp 換多少像素。
+        /// </summary>
+        /// <param name="buttonAreas">按鈕排在螢幕上的上下範圍（像素，原點左下）。上下顛倒或 NaN 的會被跳過。</param>
+        /// <param name="screenHeight">螢幕高（像素）。</param>
+        /// <param name="marginPixels">盒子與按鈕排之間留多少（像素）。</param>
+        /// <param name="fits">
+        /// 擠完之後盒子區還有沒有高度。<b>沒有的話回傳的是原本的規則</b>（不是一個無效的矩形），
+        /// 呼叫端要自己吵——按鈕排太大或版面拉得太扁時會發生。
+        /// </param>
+        /// <returns>躲開之後的規則。螢幕高不是正數時原樣回傳。</returns>
+        public LayoutRule AvoidingButtonAreas(System.Collections.Generic.IReadOnlyList<ScreenVerticalRange> buttonAreas,
+                                              float screenHeight, float marginPixels, out bool fits)
+        {
+            fits = true;
+            if (buttonAreas == null || !(screenHeight > 0f)) return this;
+
+            float minimumY = BoxAreaMinimumY;
+            float maximumY = BoxAreaMaximumY;
+            float halfHeight = screenHeight * 0.5f;
+
+            foreach (ScreenVerticalRange area in buttonAreas)
+            {
+                if (!area.IsValid) continue;
+
+                if (area.Center >= halfHeight)
+                    maximumY = Math.Min(maximumY, (area.Bottom - marginPixels) / screenHeight);
+                else
+                    minimumY = Math.Max(minimumY, (area.Top + marginPixels) / screenHeight);
+            }
+
+            var result = new LayoutRule(BoxAreaMinimumX, minimumY, BoxAreaMaximumX, maximumY);
+            if (result.IsValid) return result;
+
+            fits = false;
+            return this;
+        }
+
+        /// <summary>
+        /// 兩條規則在這個螢幕上差不到 <paramref name="tolerancePixels"/> 像素嗎。
+        ///
+        /// ⚠️ <b>一定要用容差比，不能 <c>==</c></b>：按鈕排的矩形每幀從 Canvas 換算出來，
+        /// 浮點抖一下就會被當成「規則變了」→ 版面重算 → <c>LayoutRecomputed</c> 把正在拖的片放回原位。
+        /// 症狀會是「拖到一半片自己彈回去」，時好時壞而且不報錯。
+        /// </summary>
+        /// <param name="other">另一條規則。</param>
+        /// <param name="screenWidth">螢幕寬（像素）。</param>
+        /// <param name="screenHeight">螢幕高（像素）。</param>
+        /// <param name="tolerancePixels">容差（像素）。</param>
+        /// <returns>四個邊都差不到容差就 true。</returns>
+        public bool ApproximatelyEquals(LayoutRule other, float screenWidth, float screenHeight, float tolerancePixels)
+        {
+            return Math.Abs(BoxAreaMinimumX - other.BoxAreaMinimumX) * screenWidth <= tolerancePixels
+                && Math.Abs(BoxAreaMaximumX - other.BoxAreaMaximumX) * screenWidth <= tolerancePixels
+                && Math.Abs(BoxAreaMinimumY - other.BoxAreaMinimumY) * screenHeight <= tolerancePixels
+                && Math.Abs(BoxAreaMaximumY - other.BoxAreaMaximumY) * screenHeight <= tolerancePixels;
+        }
+    }
+
+    /// <summary>
+    /// 一塊東西在螢幕上的上下範圍（像素，原點左下）。給 <see cref="LayoutRule.AvoidingButtonAreas"/> 用——
+    /// 那一支只管上下，所以不收整個矩形，免得讀的人以為左右也有算。
+    /// </summary>
+    public readonly struct ScreenVerticalRange
+    {
+        /// <summary>下緣（像素）。</summary>
+        public readonly float Bottom;
+        /// <summary>上緣（像素）。</summary>
+        public readonly float Top;
+
+        /// <param name="bottom">下緣（像素）。</param>
+        /// <param name="top">上緣（像素）。</param>
+        public ScreenVerticalRange(float bottom, float top)
+        {
+            Bottom = bottom;
+            Top = top;
+        }
+
+        /// <summary>中心（像素）。</summary>
+        public float Center => (Bottom + Top) * 0.5f;
+
+        /// <summary>上緣不低於下緣（NaN 也會被擋掉）。</summary>
+        public bool IsValid => Top >= Bottom;
+
+        public override string ToString() => $"{Bottom} ~ {Top}";
     }
 
     /// <summary>

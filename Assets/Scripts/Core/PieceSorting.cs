@@ -28,6 +28,20 @@ namespace Tangram.Core
         /// <summary>同一層裡面積階數之間的間距。要大於最大槽索引（6）。</summary>
         public const int SizeRankStride = 10;
 
+        /// <summary>
+        /// 提示覆蓋片在 <b>Piece 層裡</b>的起始 order（2026-09-15），第 i 個提示用這個 ＋ i。
+        ///
+        /// ⭐ <b>刻意夾在「未吸附」與「拖曳中」兩層之間</b>（100～126 與 200～226 之間）：
+        /// 蓋在所有沒在拖的片上面（位置被佔住時照樣看得到，那就是「這裡擺錯了」的訊號），
+        /// 但<b>拖著的那片蓋在提示上面</b>——不然玩家把片拖向提示時，手上那片會鑽到提示底下。
+        /// 抽屜在 GameUI 層，所以抽屜打開時提示被蓋住。
+        ///
+        /// ⚠️ 本來是另開一個 sorting layer（Piece 與 GameUI 之間），那樣拖曳中的片就壓不過它——
+        /// <b>跟「拖曳中」比先後，一定要在同一層裡比</b>。
+        /// ⚠️ <see cref="TierStride"/> 改了這個數字要跟著檢查，測試 <c>排序_提示夾在未吸附與拖曳中之間</c> 釘住。
+        /// </summary>
+        public const int HintSortingOrder = TierStride + TierStride / 2;
+
         /// <summary>盒子在自己那層裡的順序。<b>它跟片的先後由 sorting layer 決定，不靠這個數字。</b></summary>
         public const int BoxSortingOrder = 0;
 
@@ -42,7 +56,7 @@ namespace Tangram.Core
         //
         //     Default → Box → Piece → GameUI → CompleteUI
         //               盒子   七片    抽屜與   完成彈窗
-        //                             四顆鈕
+        //                     提示片   四顆鈕
         //
         // 各系統的 sortingOrder 從此**只在自己那層裡有意義**，不必再跟別人比大小。
         //

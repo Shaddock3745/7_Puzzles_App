@@ -538,6 +538,116 @@ namespace Tangram.Tests
         private static BoundingBox WideBoxExact()
             => new BoundingBox(ExactVector2.Zero, new ExactVector2(8, 2));
 
+        // ------------------------------------------------------------------
+        // 盒子區躲開按鈕排（2026-09-15）
+        // ------------------------------------------------------------------
+
+        /// <summary>右上那排（提示／放棄）：上緣壓到「按鈕排下緣 − 間距」。左右與下緣不動。</summary>
+        [Test]
+        public void 躲按鈕_上方那排把上緣往下壓()
+        {
+            var areas = new[] { new ScreenVerticalRange(1720f, 1900f) };
+
+            LayoutRule rule = LayoutRule.Portrait.AvoidingButtonAreas(areas, PhoneHeight, marginPixels: 20f, out bool fits);
+
+            Assert.IsTrue(fits);
+            Assert.AreEqual(1700f / PhoneHeight, rule.BoxAreaMaximumY, Tolerance);
+            Assert.AreEqual(LayoutRule.Portrait.BoxAreaMinimumY, rule.BoxAreaMinimumY, Tolerance);
+            Assert.AreEqual(LayoutRule.Portrait.BoxAreaMinimumX, rule.BoxAreaMinimumX, Tolerance);
+            Assert.AreEqual(LayoutRule.Portrait.BoxAreaMaximumX, rule.BoxAreaMaximumX, Tolerance);
+        }
+
+        [Test]
+        public void 躲按鈕_下方那排把下緣往上抬()
+        {
+            var areas = new[] { new ScreenVerticalRange(0f, 800f) };
+
+            LayoutRule rule = LayoutRule.Portrait.AvoidingButtonAreas(areas, PhoneHeight, marginPixels: 20f, out bool fits);
+
+            Assert.IsTrue(fits);
+            Assert.AreEqual(820f / PhoneHeight, rule.BoxAreaMinimumY, Tolerance);
+            Assert.AreEqual(LayoutRule.Portrait.BoxAreaMaximumY, rule.BoxAreaMaximumY, Tolerance);
+        }
+
+        /// <summary>
+        /// ⭐ <b>只會往內縮，不會放寬</b>：現在手機版下方兩排的頂端約在 23%，比基本規則的 34% 低——
+        /// 下緣要留在 34%，不能被拉下來貼著按鈕。上方貼著螢幕頂的也一樣。
+        /// </summary>
+        [Test]
+        public void 躲按鈕_離得很遠的不會把盒子區放寬()
+        {
+            var areas = new[]
+            {
+                new ScreenVerticalRange(0f, 0.23f * PhoneHeight),
+                new ScreenVerticalRange(0.99f * PhoneHeight, PhoneHeight),
+            };
+
+            LayoutRule rule = LayoutRule.Portrait.AvoidingButtonAreas(areas, PhoneHeight, marginPixels: 10f, out bool fits);
+
+            Assert.IsTrue(fits);
+            Assert.IsTrue(rule.ApproximatelyEquals(LayoutRule.Portrait, PhoneWidth, PhoneHeight, 0.01f));
+        }
+
+        /// <summary>同一側有好幾排時，照最擠的那一排。</summary>
+        [Test]
+        public void 躲按鈕_同一側好幾排取最擠的()
+        {
+            var areas = new[]
+            {
+                new ScreenVerticalRange(1800f, 1900f),
+                new ScreenVerticalRange(1600f, 1750f),
+            };
+
+            LayoutRule rule = LayoutRule.Portrait.AvoidingButtonAreas(areas, PhoneHeight, marginPixels: 0f, out _);
+
+            Assert.AreEqual(1600f / PhoneHeight, rule.BoxAreaMaximumY, Tolerance);
+        }
+
+        /// <summary>擠到沒高度時回原本的規則並回報，不能回一個無效的矩形讓相機 fit 失敗（畫面會卡在上一題的縮放）。</summary>
+        [Test]
+        public void 躲按鈕_擠不下回原本的規則()
+        {
+            var areas = new[]
+            {
+                new ScreenVerticalRange(900f, 1900f),
+                new ScreenVerticalRange(0f, 1000f),
+            };
+
+            LayoutRule rule = LayoutRule.Portrait.AvoidingButtonAreas(areas, PhoneHeight, marginPixels: 0f, out bool fits);
+
+            Assert.IsFalse(fits);
+            Assert.IsTrue(rule.ApproximatelyEquals(LayoutRule.Portrait, PhoneWidth, PhoneHeight, 0.01f));
+        }
+
+        [Test]
+        public void 躲按鈕_上下顛倒或NaN的範圍跳過()
+        {
+            var areas = new[]
+            {
+                new ScreenVerticalRange(1900f, 1000f),
+                new ScreenVerticalRange(float.NaN, 1500f),
+            };
+
+            LayoutRule rule = LayoutRule.Portrait.AvoidingButtonAreas(areas, PhoneHeight, marginPixels: 0f, out bool fits);
+
+            Assert.IsTrue(fits);
+            Assert.IsTrue(rule.ApproximatelyEquals(LayoutRule.Portrait, PhoneWidth, PhoneHeight, 0.01f));
+        }
+
+        /// <summary>容差是像素：差 0.4 像素算一樣（浮點抖動），差 2 像素算不一樣。</summary>
+        [Test]
+        public void 躲按鈕_規則比較用像素容差()
+        {
+            LayoutRule baseRule = LayoutRule.Portrait;
+            LayoutRule jitter = new LayoutRule(baseRule.BoxAreaMinimumX, baseRule.BoxAreaMinimumY,
+                                               baseRule.BoxAreaMaximumX, baseRule.BoxAreaMaximumY + 0.4f / PhoneHeight);
+            LayoutRule moved = new LayoutRule(baseRule.BoxAreaMinimumX, baseRule.BoxAreaMinimumY,
+                                              baseRule.BoxAreaMaximumX, baseRule.BoxAreaMaximumY - 2f / PhoneHeight);
+
+            Assert.IsTrue(baseRule.ApproximatelyEquals(jitter, PhoneWidth, PhoneHeight, 0.5f));
+            Assert.IsFalse(baseRule.ApproximatelyEquals(moved, PhoneWidth, PhoneHeight, 0.5f));
+        }
+
         private static void AssertVectorEqual(Vector2 expected, Vector2 actual,
                                               string message = null)
         {

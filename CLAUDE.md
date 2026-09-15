@@ -1,7 +1,8 @@
 # CLAUDE.md
 
 > 給 Claude 看的專案交接文件。新 session／換裝置時先讀這份。
-> 最後更新：2026-09-14 深夜（給人看過回饋收集之後的五點：**翻轉鈕對每一片開放（左右鏡射、不變時變灰）**與**放棄之後改問原因**已寫好、待 Unity 接場景；提示與精選題還沒做。全在 `待辦清單.md`〈給人看過之後的五點〉）
+> 最後更新：2026-09-15（**提示**已寫好、待 Unity 接場景：參考解位置蓋一片會閃的半透明片、擺對就不畫；提示間隔是唯一的門檻，放棄＝間隔 × 3；提示片在 `Piece` 層、拖著的片蓋在它上面。⚠️ 回饋收集**還沒正式開始收**（使用者 2026-09-15 說），改程式不用改 `appVersion`。細節在 `待辦清單.md`〈提示〉與 `互動設計.md` §9）
+> 前一版：2026-09-14 深夜（給人看過回饋收集之後的五點：**翻轉鈕對每一片開放（左右鏡射、不變時變灰）**與**放棄之後改問原因**已寫好、待 Unity 接場景；提示與精選題還沒做。全在 `待辦清單.md`〈給人看過之後的五點〉）
 > 同一天稍早：2026-09-14 晚（**夾住範圍搬進權重檔**：760／1710 → 744／1660，重算工具一起寫回；結算明細多記「下一題目標」。⚠️ 另外發現 **`dotnet test --filter` 沒有作用**，adapter 降到 3.17.0，**工具改用 `-- NUnit.Where=...` 跑**，見〈怎麼跑測試〉）
 > 同一天稍早：2026-09-14（**P2-15 監控面板完成並實測過（#32）**——只在 Editor，`Window → Tangram → 監控面板`。⭐ **10/5 前要保護的 P2 卡全部做完**，接下來是回饋收集、系統概述文件與影片。
 > 前一版：2026-09-13，P2-14 ELO 完成（#31 關），權重檔改成唯一的源頭。
@@ -210,7 +211,7 @@ dotnet test Tools/DotnetTests -- "NUnit.Where=name == RescaleDifficultyWeights"
 | **共線邊只在邊界度數 = 2 時合併** | 捏點度數是 4，合併會毀掉拓樸 |
 | **`Canonical.PuzzleKey` 要跑 16 次輪廓追蹤** | 不便宜，算過就存起來。盒子模式下遊玩迴圈已經不用它了 |
 | **`Serialization.FromDto` 不重算 key** | 相信檔案裡存的 |
-| ⚠️ **繪製順序：先 sorting layer 再 order** | 層清單在 `ProjectSettings/TagManager.asset`（`Box → Piece → GameUI → CompleteUI`），層名常數在 `PieceSorting`。**跨系統的先後由 layer 決定，order 只在自己那層裡有意義**。<br>⚠️ 新增任何會生 renderer 的東西時**記得設層**——沒設會留在 `Default`，症狀是**被別的東西蓋住而且不報錯**（除錯記錄 005）。⚠️ 也不要靠「挑一個夠大的 order」壓過別人，那不是排序是巧合 |
+| ⚠️ **繪製順序：先 sorting layer 再 order** | 層清單在 `ProjectSettings/TagManager.asset`（`Box → Piece → GameUI → CompleteUI`；提示覆蓋片刻意**不另開層**，住在 `Piece` 層、order 夾在未吸附與拖曳中之間，拖著的片才壓得過它），層名常數在 `PieceSorting`。**跨系統的先後由 layer 決定，order 只在自己那層裡有意義**。<br>⚠️ 新增任何會生 renderer 的東西時**記得設層**——沒設會留在 `Default`，症狀是**被別的東西蓋住而且不報錯**（除錯記錄 005）。⚠️ 也不要靠「挑一個夠大的 order」壓過別人，那不是排序是巧合 |
 | **`Region.ContainsPolygon` 只管出界，不管重疊** | 合法擺放要它與 `Geometry.ConvexOverlap` 兩個都過 |
 | **`Region` 內部有兩套座標系** | 原座標與 ×2。中點只在 ×2 那邊算，混用會差一個 2 倍而且不報錯 |
 | **兩個地方各自認定「真相」= 安靜的 bug**（`PiecePreview` 的教訓） | `PiecePreview` 每幀無條件把 `Rotation`/`IsFlipped`/`IsSnapped` 蓋回 Inspector 滑桿值，而控制器也在寫——症狀是「旋轉鈕按了完全沒反應」，不報錯（除錯記錄 003）。**P1-5 已經把它刪掉。**<br>⚠️ **判準不是「誰寫哪個欄位」**——`TrayView` 與控制器都會寫 `IsVisible`，那沒問題，因為真相只有一份（`LevelData`），控制器只是在改完真相的同一刻順手同步。新增任何會碰 `PieceView` 的東西時先問：**這個欄位的真相在哪？我是在改真相，還是在畫真相？** |
@@ -220,6 +221,7 @@ dotnet test Tools/DotnetTests -- "NUnit.Where=name == RescaleDifficultyWeights"
 | **「隱藏就不擋」是一條會被拿來用的機制，不只是防呆** | 擋片區跳過停用的物件（`activeInHierarchy`）。所以按鈕蓋住抽屜縮圖的解法是**讓按鈕隱藏**，不是改判定順序。反過來說，任何「只關掉圖片、物件還開著」的隱藏做法都會留下點不到片的死角 |
 | **`LevelData.SetInTray` 對還在盤上的片會丟例外** | 那是刻意的。「在盤上」與「在待用區」互斥，默默修正的症狀是「片在抽屜裡但盤面認為它還在盒內」——過關判定與中途回饋跟著錯，不報錯。所以回收那條一定是**先 `Lift` 再 `SetInTray`** |
 | **`Pointer.current` 在手機上只反映主要觸控** | 第二根手指之後完全看不見。症狀是「手掌先碰到螢幕就整個沒反應」，而且**在 Editor 用滑鼠永遠測不到**。P1-5 已改成按下時鎖定 touch id、之後只聽那一根（`互動設計` §15.5）。新加輸入路徑時不要退回去直接讀 `Pointer.current` |
+| ⚠️ **UI 的螢幕位置一律走 `UiScreenRect`，不要用畫布的相機換算** | 2026-09-15。畫布是 **Screen Space - Camera**，相機被 `BoardView` 改過的那一幀畫布還沒跟上（要到 `willRenderCanvases` 才跟上），`RectTransformUtility.WorldToScreenPoint`／`RectangleContainsScreenPoint` 配畫布的相機會算錯。盒子區又是照按鈕排算相機的 → **回授迴圈，盒子連抖十幾幀**、正在拖的片被放回原位，不報錯（除錯記錄 012）。`UiScreenRect` 用根畫布的本地座標換算、完全不讀相機，**前提是根畫布蓋滿整個螢幕** |
 | **`EventSystem.IsPointerOverGameObject()` 會晚一幀** | 它的答案由 UI 輸入模組在**它自己的 `Update`** 裡算，而 `MonoBehaviour` 之間的順序是未定義的——按下那一幀很可能拿到上一幀的答案，症狀是「按按鈕的同時也抓到了片」，時好時壞且不報錯。`TouchInputController` 改成自己比矩形（`RegisterPressBlockingArea`），沒有這個問題 |
 | **「事件有觸發但沒效果」先 grep 誰還會寫那個欄位** | 除錯記錄 003 的教訓：先給機制解釋、再找證據，方向錯了整段都是白工。`grep` 全專案的寫入者是機械性的、不會猜錯 |
 | ⚠️ **Windows 版圖形 API 固定 D3D11，不要改回 Auto** | 2026-09-14：Unity 6 新專案在 Windows 預設 **D3D12**。回饋收集的 exe 在開發機（AMD RX 7900 XTX、驅動 32.0.31041.1004）上**一開就 TDR**：開場題單生完、送出第一張畫面時 `swapchain present failed (887a0005)`、`Device removed reason (887a0006)`＝`DEVICE_HUNG`，事件記錄是 `LKD_0x141_Tdr … amdkmdag.sys … HWS:1`，連三次一模一樣。**改成 D3D11 就不當了**。<br>設定在 Player Settings → Windows → Other Settings：取消 Auto Graphics API，**Direct3D11 放第一**（D3D12 留在第二位當備援）。專案全是 2D sprite 與 UI，用不到 D3D12 的任何功能，而且要去的舊筆電對 D3D11 支援更穩。<br>⭐ **根因（D3D12 除錯層查到的）：Unity 6000.3.7f1 的 D3D12 後端在開場上傳貼圖時，把還在排隊的資源提前刪掉**（驗證錯誤 921 ×15、DRED 顯示 78 次 `COPYTEXTUREREGION` 後 page fault），不是驅動無故逾時。⚠️ 我一開始判斷「比較像驅動不穩」，**是錯的**——完整過程、排除掉的四個嫌疑（開場卡住、中文字圖、片貼圖 mipmap、圖示）與開除錯層要踩的兩個坑，在**除錯記錄 011**。<br>⚠️ **不為這個升級 Unity**（比賽期間風險太大）。另外 6000.3.16f1 才修掉 UUM-137629：某些硬體上**就算沒選 D3D12 也會跑 D3D12 初始化**而當——**新 build 帶出去前一定要在舊筆電上完整跑一輪**。症狀：「Editor 正常、exe 一開就驅動逾時」 |

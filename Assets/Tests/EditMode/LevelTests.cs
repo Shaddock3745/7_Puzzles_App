@@ -88,8 +88,9 @@ namespace Tangram.Core.Tests
             // 把能動的全部動一遍
             session.Data.Board.Place(0, solutionA[0]);
             session.Data.Board.Place(1, solutionA[1]);
-            session.Data.UseHint();
-            session.Data.UseHint();
+            session.Data.StartForegroundTiming(0.0);
+            Assert.IsTrue(session.Data.TryUseHint(100.0, 45.0, out _));
+            Assert.IsTrue(session.Data.TryUseHint(100.0, 45.0, out _));
             session.Data.MarkSolved();
 
             Assert.AreEqual(2, session.Data.Board.OnBoardCount, "前置動作沒生效的話這個測試沒有意義");
@@ -101,6 +102,8 @@ namespace Tangram.Core.Tests
 
             Assert.AreEqual(0, session.Data.Board.OnBoardCount, "盤面沒清乾淨");
             Assert.AreEqual(0, session.Data.HintsUsed, "提示次數沒歸零");
+            Assert.AreEqual(0, session.Data.HintedReferenceSlots.Count, "提示過的片沒歸零（覆蓋片會留到下一關）");
+            Assert.AreEqual(0.0, session.Data.FirstHintForegroundSeconds, "第一次提示的秒數沒歸零");
             Assert.IsFalse(session.Data.IsSolved, "過關旗標沒歸零");
             Assert.IsFalse(session.Data.AllowRoll, "allowRoll 沒換成新關的值");
             Assert.AreNotEqual(dataA.BoxRegion.Bounds.Minimum,

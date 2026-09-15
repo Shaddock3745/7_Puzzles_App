@@ -356,14 +356,14 @@ namespace Tangram.Core.Tests
             level.StartForegroundTiming(0.0);
             level.StartDragTiming(10.0);
             level.StopDragTiming(12.0);
-            level.UseHint();
+            Assert.IsTrue(level.TryUseHint(50.0, 45.0, out _));
             PlaceAllPieces(level);
             level.MarkSolvedIfAllOnBoard();
-            level.StopAllTiming(35.0);
+            level.StopAllTiming(55.0);
 
             Assert.IsTrue(session.Rating.TrySettle(level, TestRange(), out RatingUpdate update));
 
-            RatingUpdate expected = SkillRating.Settle(1200.0, 1350, LevelOutcome.Solved, 35.0, 2.0, 1, AgreedSettings(), TestRange());
+            RatingUpdate expected = SkillRating.Settle(1200.0, 1350, LevelOutcome.Solved, 55.0, 2.0, 1, AgreedSettings(), TestRange());
             Assert.AreEqual(LevelOutcome.Solved, update.Outcome);
             Assert.AreEqual(1350, update.Difficulty);
             Assert.AreEqual(expected.RatingChange, update.RatingChange, 1e-12);
