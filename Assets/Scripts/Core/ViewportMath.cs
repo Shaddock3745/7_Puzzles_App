@@ -394,6 +394,95 @@ namespace Tangram.Core
         }
 
         /// <summary>
+        /// 要把 <paramref name="point"/> 推多少才會落在 <paramref name="area"/> 裡（2026-09-15，防止暫放的片跑出畫面）。
+        /// 兩個軸各自夾住，<b>只推必要的量</b>，推到邊上為止。
+        /// </summary>
+        /// <param name="point">要推的點（片的視覺中心）。</param>
+        /// <param name="area">範圍（可放區）。</param>
+        /// <returns>位移量。範圍退化時回零。</returns>
+        public static Vector2 OffsetToKeepInside(Vector2 point, FloatBoundingBox area)
+        {
+            if (area.IsDegenerate) return Vector2.zero;
+            return new Vector2(Mathf.Clamp(point.x, area.Minimum.x, area.Maximum.x) - point.x,
+                               Mathf.Clamp(point.y, area.Minimum.y, area.Maximum.y) - point.y);
+        }
+
+        /// <summary>
+        /// 要把 <paramref name="point"/> 推多少，才會<b>在 <paramref name="area"/> 裡、而且不在任何一個 <paramref name="obstacles"/> 裡面</b>
+        /// （2026-09-15，暫放的片躲開按鈕排）。
+        ///
+        /// ⭐ <b>推的是一個點，不是整片的包圍盒</b>（使用者 2026-09-15 改）：整片推開移動量太大、看起來怪。
+        /// 呼叫端傳<b>片的視覺中心</b>——凸多邊形的頂點平均一定在片裡面，所以這一點露出來就點得到那片
+        /// （包圍盒的中心不行：直角邊貼著軸的三角形，包圍盒中心剛好在斜邊上）。片最多可以一半在外面，其他操作還救得回來。
+        ///
+        /// ⭐ <b>用候選位置挑，不是「推一次再檢查」</b>：兩個障礙物重疊或相鄰時（左下那兩排按鈕外擴之後），
+        /// 從下排推出去剛好在上排裡、再推又回下排，逐次推會來回彈。候選清單裡本來就有「推到上排的上面」，一步選得到。
+        /// <list type="number">
+        /// <item>候選：原地、以及每個障礙物的上／下／左／右邊上——每一個都先用 <see cref="OffsetToKeepInside"/> 推進範圍</item>
+        /// <item>留下不在任何障礙物裡面的（<b>在邊上不算在裡面</b>）</item>
+        /// <item>挑位移最小的；一樣小就挑清單裡先出現的（原地 → 第一個障礙物的上、下、左、右 → ……），同一個輸入永遠同一個答案</item>
+        /// <item>一個都不行（畫面太擠）→ 退回只推進範圍</item>
+        /// </list>
+        ///
+        /// ⚠️ 障礙物要<b>呼叫端先外擴好間距</b>；這一層不知道 dp。
+        /// </summary>
+        /// <param name="point">要推的點（片的視覺中心）。</param>
+        /// <param name="area">範圍（可放區）。</param>
+        /// <param name="obstacles">不能待的矩形（按鈕排，已外擴間距）。可以是 null 或空的。</param>
+        /// <returns>位移量。</returns>
+        public static Vector2 OffsetToKeepInsideAvoiding(Vector2 point, FloatBoundingBox area,
+                                                         System.Collections.Generic.IReadOnlyList<FloatBoundingBox> obstacles)
+        {
+            Vector2 insideOnly = OffsetToKeepInside(point, area);
+            if (obstacles == null || obstacles.Count == 0) return insideOnly;
+
+            bool found = false;
+            Vector2 best = Vector2.zero;
+
+            Consider(insideOnly);
+            foreach (FloatBoundingBox obstacle in obstacles)
+            {
+                if (obstacle.IsDegenerate) continue;
+                ConsiderMove(new Vector2(point.x, obstacle.Maximum.y));   // 上
+                ConsiderMove(new Vector2(point.x, obstacle.Minimum.y));   // 下
+                ConsiderMove(new Vector2(obstacle.Minimum.x, point.y));   // 左
+                ConsiderMove(new Vector2(obstacle.Maximum.x, point.y));   // 右
+            }
+            return found ? best : insideOnly;
+
+            void ConsiderMove(Vector2 target)
+            {
+                // 推到障礙物邊上之後可能出了範圍，再推回範圍裡；推回來又落進障礙物的話 Consider 會把它刷掉
+                Consider(target + OffsetToKeepInside(target, area) - point);
+            }
+
+            void Consider(Vector2 offset)
+            {
+                Vector2 moved = point + offset;
+                foreach (FloatBoundingBox obstacle in obstacles)
+                    if (!obstacle.IsDegenerate && StrictlyInside(moved, obstacle)) return;
+
+                if (found && offset.sqrMagnitude >= best.sqrMagnitude) return;
+                found = true;
+                best = offset;
+            }
+        }
+
+        /// <summary>
+        /// 「在裡面」的容差（世界單位）。推到邊上時點與邊是同一個浮點數，但加減過一輪可能差一點點，
+        /// 沒有容差的話「剛好在邊上」會被當成在裡面，候選全部被刷掉。
+        /// </summary>
+        private const float EdgeTolerance = 1e-4f;
+
+        /// <summary>點是不是在矩形的<b>內部</b>。在邊上（容差內）不算。</summary>
+        /// <param name="point">點。</param>
+        /// <param name="box">矩形。</param>
+        /// <returns>在內部的話 true。</returns>
+        private static bool StrictlyInside(Vector2 point, FloatBoundingBox box)
+            => point.x > box.Minimum.x + EdgeTolerance && point.x < box.Maximum.x - EdgeTolerance
+            && point.y > box.Minimum.y + EdgeTolerance && point.y < box.Maximum.y - EdgeTolerance;
+
+        /// <summary>
         /// <see cref="ScreenToWorld"/> 的反方向。
         ///
         /// <b>⚠️ 只給測試與除錯用，不在繪製路徑上。</b>提示的覆蓋框走 world-space sprite

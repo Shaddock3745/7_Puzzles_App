@@ -9744,6 +9744,12 @@ MonoBehaviour:
   targetCamera: {fileID: 1551645253}
   snapRadiusDp: 7
   releaseRadiusDp: 12
+  avoidedButtonAreas:
+  - {fileID: 289820527}
+  - {fileID: 593055301}
+  - {fileID: 1641593733}
+  buttonAreaMarginDp: 8
+  floatingPieceEdgeMarginDp: 8
 --- !u!4 &1403617022
 Transform:
   m_ObjectHideFlags: 0

@@ -283,6 +283,10 @@ public class TouchInputController : MonoBehaviour
         // **同一個外觀不要有兩個編號**：正方形 rot 0 與 rot 2 佔位一樣但 Placement.Equals 不相等，
         // 之後 undo 與解的比對會踩到。規則住在 PiecePrototype.RotateWithinCycle（離線測得到）
         piece.Rotation = PiecePrototype.RotateWithinCycle(piece.Kind, piece.Rotation, steps);
+
+        // 在邊緣轉，片的一角可能轉出畫面（2026-09-15）
+        LevelData level = LevelSession.Current?.Data;
+        if (level != null) KeepInsideFloatingArea(level, piece);
     }
 
     /// <summary>
@@ -308,6 +312,10 @@ public class TouchInputController : MonoBehaviour
         // 三角形的 IsFlipped 本來就是 false、結果也是 false，那個 setter 等於沒動
         piece.IsFlipped = mirrored.IsFlipped;
         piece.Rotation = mirrored.Rotation;
+
+        // 同旋轉：鏡射之後片的輪廓換了位置，可能超出畫面（2026-09-15）
+        LevelData level = LevelSession.Current?.Data;
+        if (level != null) KeepInsideFloatingArea(level, piece);
     }
 
     /// <summary>
@@ -448,13 +456,58 @@ public class TouchInputController : MonoBehaviour
     {
         // P1-1 刻意留的洞就是這裡補上的：版面重算會重排暫放區的片，
         // 手指底下那片會瞬間移位、抓取偏移歪掉，所以直接取消這次拖曳
-        if (boardView != null) boardView.LayoutRecomputed += CancelInteraction;
+        if (boardView != null) boardView.LayoutRecomputed += OnLayoutRecomputed;
     }
 
     private void OnDisable()
     {
-        if (boardView != null) boardView.LayoutRecomputed -= CancelInteraction;
+        if (boardView != null) boardView.LayoutRecomputed -= OnLayoutRecomputed;
     }
+
+    /// <summary>
+    /// 版面重算之後：先取消互動（拖曳中那片放回按下前的位置），<b>再</b>把暫放的片推回可放區（2026-09-15）。
+    ///
+    /// ⚠️ <b>第二步最容易忘</b>：轉螢幕方向、改解析度時相機動了，玩家什麼都沒做，暫放的片也可能掉到畫面外。
+    /// ⚠️ <b>順序不能反</b>：先推再取消的話，被取消的那片會被放回按下前的位置——那個位置可能正好在畫面外。
+    /// <c>LevelController</c> 換關時直接叫 <see cref="CancelInteraction"/>、不走這裡：那時七片都在抽屜裡，沒東西要推。
+    /// </summary>
+    private void OnLayoutRecomputed()
+    {
+        CancelInteraction();
+
+        LevelData level = LevelSession.Current?.Data;
+        if (level == null || trayView == null) return;
+        for (int slotIndex = 0; slotIndex < BoardState.PieceCount; slotIndex++)
+            KeepInsideFloatingArea(level, trayView.PieceAt(slotIndex));
+    }
+
+    /// <summary>
+    /// 暫放的片的<b>視覺中心</b>超出可放區、或落在按鈕排裡，就推開（2026-09-15，互動設計 §4〈暫放的片不會跑出畫面〉）。
+    ///
+    /// <b>推中心不推整片</b>（使用者定：整片推開移動量太大、看起來怪）。視覺中心就是旋轉的軸心，
+    /// 凸多邊形的頂點平均一定在片裡面，所以它露出來就點得到那片；片最多可以一半在外面。
+    ///
+    /// <b>只推暫放的片</b>：看得到、不在盤上、不在待用區、沒吸住、沒在被拖。吸住的片位置是精確座標，一定在盒子裡，碰了反而會漂成浮點。
+    /// <b>只動位置</b>：不嘗試吸附（推回來的位置剛好在吸附點旁邊也不吸——玩家沒有把片放到那裡）、不碰盤面、不壓 undo。
+    /// 可放區與推到哪裡都在別處算（<see cref="BoardView.TryGetFloatingArea"/>、<see cref="ViewportMath.OffsetToKeepInsideAvoiding"/>），這裡只搬運。
+    /// </summary>
+    /// <param name="level">這一關的資料。</param>
+    /// <param name="piece">要檢查的片，可以是 null。</param>
+    private void KeepInsideFloatingArea(LevelData level, PieceView piece)
+    {
+        if (piece == null || boardView == null) return;
+        int slotIndex = piece.SlotIndex;
+        if (!piece.IsVisible || piece.IsSnapped || piece.IsBeingDragged) return;
+        if (level.IsInTray(slotIndex) || level.Board[slotIndex].OnBoard) return;
+        if (!boardView.TryGetFloatingArea(out FloatBoundingBox area, floatingObstacleBuffer)) return;
+
+        Vector2 visualCenter = piece.Position + piece.PosedCenterOffset;
+        Vector2 offset = ViewportMath.OffsetToKeepInsideAvoiding(visualCenter, area, floatingObstacleBuffer);
+        if (offset != Vector2.zero) piece.Position += offset;
+    }
+
+    /// <summary>按鈕排的世界矩形，<see cref="KeepInsideFloatingArea"/> 每次重用，不配置。</summary>
+    private readonly List<FloatBoundingBox> floatingObstacleBuffer = new List<FloatBoundingBox>();
 
     private void Update()
     {
@@ -864,6 +917,11 @@ public class TouchInputController : MonoBehaviour
             else CommitDrag(level);
 
             pressedPiece.IsBeingDragged = false;
+
+            // 放在畫面外或按鈕底下 → 推回可放區（2026-09-15）。
+            // ⚠️ 要在 IsBeingDragged = false 之後（拖曳中的片會被略過），而且在回收／CommitDrag 之後——
+            // 回收掉的、吸上盤面的都會被那支自己的條件擋掉，所以這裡不用分支
+            KeepInsideFloatingArea(level, pressedPiece);
 
             // 過關判定（P1-10）。**鬆手這一格是唯一需要問的時機**：
             // CommitDrag 是全專案唯一會讓片進盤面的地方，而 undo 與回收只會讓片變少

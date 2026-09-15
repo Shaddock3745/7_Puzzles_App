@@ -36,15 +36,19 @@ public class BoardView : MonoBehaviour
              "太接近的話片會在邊界反覆吸上／甩開，看起來像在抖。")]
     [SerializeField] private float releaseRadiusDp = 18f;
 
-    [Header("盒子要躲開的按鈕排")]
+    [Header("盒子與暫放的片要躲開的按鈕排")]
     [Tooltip("按鈕排的父物件（例如掛 Horizontal Layout Group 的那個），它的矩形就是按鈕區（2026-09-15）。"
-             + "中心在螢幕上半的會壓低盒子區的上緣、下半的會抬高下緣；只管上下不管左右。停用的跳過。"
+             + "盒子區：中心在螢幕上半的壓低上緣、下半的抬高下緣（整條）。暫放的片：只躲這個矩形本身。停用的跳過。"
              + "⚠️ 這個物件的大小要固定：跟著按鈕出現／消失變大變小的話，盒子會當場縮放、正在拖的片會被放回原位。")]
     [SerializeField] private RectTransform[] avoidedButtonAreas = Array.Empty<RectTransform>();
 
-    [Tooltip("盒子與按鈕排之間留多少，單位 dp。")]
+    [Tooltip("盒子與暫放的片跟按鈕排之間留多少，單位 dp。")]
     [Min(0f)]
     [SerializeField] private float buttonAreaMarginDp = 8f;
+
+    [Tooltip("暫放的片離螢幕邊緣至少留多少，單位 dp（2026-09-15）。放手、旋轉、翻面、版面重算之後超出的片會被推回來。")]
+    [Min(0f)]
+    [SerializeField] private float floatingPieceEdgeMarginDp = 8f;
 
     /// <summary>
     /// 這一題的座標狀態。相機參數的來源；盒子原點**不在這裡**，在 <c>LevelSession</c>。
@@ -122,14 +126,7 @@ public class BoardView : MonoBehaviour
     {
         if (screenWidth <= 0 || screenHeight <= 0) return;
 
-        buttonAreaRanges.Clear();
-        foreach (RectTransform area in avoidedButtonAreas)
-        {
-            if (area == null || !area.gameObject.activeInHierarchy) continue;
-            if (!UiScreenRect.TryGet(area, out Rect screenRect)) continue;
-            buttonAreaRanges.Add(new ScreenVerticalRange(screenRect.yMin, screenRect.yMax));
-        }
-
+        CollectButtonAreaRanges();
         LayoutRule rule = BaseRule.AvoidingButtonAreas(buttonAreaRanges, screenHeight,
                                                        ScreenMetrics.ToPixels(buttonAreaMarginDp), out bool fits);
 
@@ -140,6 +137,86 @@ public class BoardView : MonoBehaviour
 
         if (!rule.ApproximatelyEquals(Layout.Rule, screenWidth, screenHeight, RuleChangeTolerancePixels))
             Layout.SetRule(rule);
+    }
+
+    /// <summary>
+    /// 把 Inspector 上的按鈕排換成螢幕上下範圍，填進 <see cref="buttonAreaRanges"/>。
+    /// ⚠️ 一定走 <see cref="UiScreenRect"/>，理由見 <see cref="RefreshRuleFromButtonAreas"/>。
+    /// </summary>
+    private void CollectButtonAreaRanges()
+    {
+        buttonAreaRanges.Clear();
+        foreach (RectTransform area in avoidedButtonAreas)
+        {
+            if (area == null || !area.gameObject.activeInHierarchy) continue;
+            if (!UiScreenRect.TryGet(area, out Rect screenRect)) continue;
+            buttonAreaRanges.Add(new ScreenVerticalRange(screenRect.yMin, screenRect.yMax));
+        }
+    }
+
+    /// <summary>
+    /// <b>暫放的片可以待的範圍</b>與<b>要躲開的按鈕排</b>（都是世界座標，2026-09-15）。
+    ///
+    /// <list type="bullet">
+    /// <item>範圍：整個螢幕四邊各留 <see cref="floatingPieceEdgeMarginDp"/>。<b>不扣盒子</b>——暫放的片本來就可以蓋在盒子上</item>
+    /// <item>按鈕排：Inspector 上那份清單（跟盒子區同一份），各自外擴 <see cref="buttonAreaMarginDp"/>。停用的跳過</item>
+    /// </list>
+    ///
+    /// ⭐ <b>為什麼要躲按鈕排</b>（使用者 2026-09-15 指出）：手指會蓋住自己要點的地方，觸控目標要大約 48 dp 才點得穩，
+    /// 所以片被按鈕蓋住大半、只露出一小條，在手機上就等於救不回來（滑鼠點得到，所以在 Editor 看不出來）。
+    /// ⭐ <b>看按鈕排的父物件，不看個別按鈕顯示了沒</b>：提示鈕、放棄鈕是玩到一半才冒出來的，
+    /// 看顯示中的按鈕的話，片暫放在那裡之後按鈕出現就把它蓋住了；而且選取時旋轉鈕出現也不會讓片突然被推走。
+    /// ⭐ <b>只躲那個矩形，不是整條螢幕寬</b>：左下兩排只佔左半邊，右下角照樣可以放片。
+    ///
+    /// 每次叫都現算、不存：版面解與按鈕排都會變，存了就多一份要同步的東西。
+    /// 相機 roll 只會是 90° 的倍數，所以螢幕上的軸對齊矩形換到世界裡還是軸對齊的，對角兩點取包圍盒就是它。
+    /// </summary>
+    /// <param name="area">可放區（世界座標）；失敗時是 default。</param>
+    /// <param name="buttonAreasInWorld">要躲開的按鈕排（世界座標、已外擴間距）。會先清空再填。</param>
+    /// <returns>算得出來的話 true。版面解還不能用，或留白比螢幕還寬時 false——呼叫端就不要推。</returns>
+    public bool TryGetFloatingArea(out FloatBoundingBox area,
+                                   System.Collections.Generic.List<FloatBoundingBox> buttonAreasInWorld)
+    {
+        area = default;
+        buttonAreasInWorld.Clear();
+        if (!Solution.IsValid) return false;
+
+        float screenWidth = Solution.ScreenWidth;
+        float screenHeight = Solution.ScreenHeight;
+        float edgeMarginPixels = ScreenMetrics.ToPixels(floatingPieceEdgeMarginDp);
+
+        var rule = new LayoutRule(edgeMarginPixels / screenWidth, edgeMarginPixels / screenHeight,
+                                  1f - edgeMarginPixels / screenWidth, 1f - edgeMarginPixels / screenHeight);
+        if (!rule.IsValid) return false;
+
+        area = ScreenRectToWorld(new Rect(rule.BoxAreaMinimumX * screenWidth, rule.BoxAreaMinimumY * screenHeight,
+                                          rule.BoxAreaWidthRatio * screenWidth, rule.BoxAreaHeightRatio * screenHeight));
+
+        float buttonMarginPixels = ScreenMetrics.ToPixels(buttonAreaMarginDp);
+        foreach (RectTransform buttonArea in avoidedButtonAreas)
+        {
+            if (buttonArea == null || !buttonArea.gameObject.activeInHierarchy) continue;
+            if (!UiScreenRect.TryGet(buttonArea, out Rect screenRect)) continue;   // ⚠️ 不能用畫布的相機換算，除錯記錄 012
+
+            screenRect.xMin -= buttonMarginPixels;
+            screenRect.yMin -= buttonMarginPixels;
+            screenRect.xMax += buttonMarginPixels;
+            screenRect.yMax += buttonMarginPixels;
+            buttonAreasInWorld.Add(ScreenRectToWorld(screenRect));
+        }
+        return true;
+    }
+
+    /// <summary>螢幕上的軸對齊矩形 → 世界裡的軸對齊矩形（照現在的版面解）。</summary>
+    /// <param name="screenRect">螢幕矩形（像素，原點左下）。</param>
+    /// <returns>世界座標的包圍盒。</returns>
+    private FloatBoundingBox ScreenRectToWorld(Rect screenRect)
+    {
+        Vector2 first = ViewportMath.ScreenToWorld(screenRect.min, Solution);
+        Vector2 second = ViewportMath.ScreenToWorld(screenRect.max, Solution);
+
+        // 對角兩點就夠：roll 90° 的倍數時，另外兩個角的座標是這兩點的 x、y 交換組合
+        return new FloatBoundingBox(Vector2.Min(first, second), Vector2.Max(first, second));
     }
 
     private void Awake()

@@ -648,6 +648,101 @@ namespace Tangram.Tests
             Assert.IsFalse(baseRule.ApproximatelyEquals(moved, PhoneWidth, PhoneHeight, 0.5f));
         }
 
+        // ------------------------------------------------------------------
+        // 把片推回可放區（2026-09-15）
+        // ------------------------------------------------------------------
+
+        private static FloatBoundingBox Box(float minimumX, float minimumY, float maximumX, float maximumY)
+            => new FloatBoundingBox(new Vector2(minimumX, minimumY), new Vector2(maximumX, maximumY));
+
+        [Test]
+        public void 推回_在裡面或邊上的不動()
+        {
+            AssertVectorEqual(Vector2.zero, ViewportMath.OffsetToKeepInside(new Vector2(3, 3), Box(0, 0, 10, 10)));
+            AssertVectorEqual(Vector2.zero, ViewportMath.OffsetToKeepInside(new Vector2(0, 10), Box(0, 0, 10, 10)), "剛好在邊上也不動");
+        }
+
+        /// <summary>只推必要的量：推到邊上，不是拉到中間。</summary>
+        [Test]
+        public void 推回_超出哪邊往反方向推到邊上()
+        {
+            AssertVectorEqual(new Vector2(2f, 0f), ViewportMath.OffsetToKeepInside(new Vector2(-2, 5), Box(0, 0, 10, 10)), "左邊超出");
+            AssertVectorEqual(new Vector2(-3f, 0f), ViewportMath.OffsetToKeepInside(new Vector2(13, 5), Box(0, 0, 10, 10)), "右邊超出");
+            AssertVectorEqual(new Vector2(-1f, 4f), ViewportMath.OffsetToKeepInside(new Vector2(11, -4), Box(0, 0, 10, 10)), "角落兩個軸各推各的");
+        }
+
+        [Test]
+        public void 推回_範圍退化不推()
+        {
+            AssertVectorEqual(Vector2.zero, ViewportMath.OffsetToKeepInside(new Vector2(20, 20), Box(0, 0, 0, 10)));
+            AssertVectorEqual(Vector2.zero, ViewportMath.OffsetToKeepInside(new Vector2(20, 20), Box(0, 0, float.NaN, 10)));
+        }
+
+        // ---- 躲按鈕排 ----
+
+        [Test]
+        public void 躲障礙_不在裡面的不動_在邊上也不算在裡面()
+        {
+            var obstacles = new[] { Box(0, 0, 4, 2) };
+            AssertVectorEqual(Vector2.zero, ViewportMath.OffsetToKeepInsideAvoiding(new Vector2(6, 6), Box(0, 0, 10, 10), obstacles));
+            AssertVectorEqual(Vector2.zero, ViewportMath.OffsetToKeepInsideAvoiding(new Vector2(1, 2), Box(0, 0, 10, 10), obstacles),
+                              "在按鈕排的上緣上，不是在裡面");
+        }
+
+        [Test]
+        public void 躲障礙_往位移最小的那一側推()
+        {
+            var obstacles = new[] { Box(0, 0, 4, 2) };
+            // 往上要 1、往右只要 0.2
+            AssertVectorEqual(new Vector2(0.2f, 0f),
+                              ViewportMath.OffsetToKeepInsideAvoiding(new Vector2(3.8f, 1), Box(0, 0, 10, 10), obstacles));
+        }
+
+        /// <summary>
+        /// 按鈕排外擴之後會超出螢幕邊：往那一邊推會被推回範圍、又落進按鈕排——那個方向要被刷掉，不能選。
+        /// </summary>
+        [Test]
+        public void 躲障礙_推出範圍的方向不選()
+        {
+            var obstacles = new[] { Box(-1, -1, 4, 2) };
+            // 往下、往左都出了範圍，推回來又在裡面；往上 1.5、往右 3
+            AssertVectorEqual(new Vector2(0f, 1.5f),
+                              ViewportMath.OffsetToKeepInsideAvoiding(new Vector2(1, 0.5f), Box(0, 0, 10, 10), obstacles));
+        }
+
+        /// <summary>
+        /// ⭐ 上下兩排外擴之後重疊（像左下那兩排按鈕）：
+        /// 推到下排上緣會落在上排裡、推到上排下緣會落在下排裡——要一步選到「上排的上面」。
+        /// </summary>
+        [Test]
+        public void 躲障礙_重疊的兩排一步選到外面()
+        {
+            var obstacles = new[] { Box(-1, -1, 6, 3), Box(-1, 2, 6, 5) };
+            AssertVectorEqual(new Vector2(0f, 2.5f),
+                              ViewportMath.OffsetToKeepInsideAvoiding(new Vector2(1, 2.5f), Box(0, 0, 10, 10), obstacles),
+                              "往右要 5、推到上排上面只要 2.5");
+        }
+
+        /// <summary>哪裡都放不下時退回只推進範圍——至少片還在畫面裡。</summary>
+        [Test]
+        public void 躲障礙_放不下時只推進範圍()
+        {
+            var obstacles = new[] { Box(-1, -1, 5, 5) };
+            AssertVectorEqual(new Vector2(1f, 0f),
+                              ViewportMath.OffsetToKeepInsideAvoiding(new Vector2(-1, 2), Box(0, 0, 4, 4), obstacles));
+        }
+
+        [Test]
+        public void 躲障礙_沒有障礙物就跟只推範圍一樣()
+        {
+            var point = new Vector2(-2, 5);
+            FloatBoundingBox area = Box(0, 0, 10, 10);
+            AssertVectorEqual(ViewportMath.OffsetToKeepInside(point, area),
+                              ViewportMath.OffsetToKeepInsideAvoiding(point, area, new FloatBoundingBox[0]));
+            AssertVectorEqual(ViewportMath.OffsetToKeepInside(point, area),
+                              ViewportMath.OffsetToKeepInsideAvoiding(point, area, null));
+        }
+
         private static void AssertVectorEqual(Vector2 expected, Vector2 actual,
                                               string message = null)
         {
