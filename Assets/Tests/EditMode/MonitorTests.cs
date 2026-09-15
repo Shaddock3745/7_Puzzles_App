@@ -14,7 +14,7 @@ namespace Tangram.Core.Tests
     /// </summary>
     public class MonitorTests
     {
-        /// <summary>跟 <c>SkillRatingTests</c> 同一組（r 0.5、T 90、P 0、K 20 × 10）。</summary>
+        /// <summary>跟 <c>SkillRatingTests</c> 同一組（r 0.5、T 90、P 30、K 20 × 10）。</summary>
         /// <returns>一份新的設定。</returns>
         private static SkillRatingSettings AgreedSettings() => new SkillRatingSettings
         {
@@ -22,7 +22,7 @@ namespace Tangram.Core.Tests
             ratingScale = 400.0,
             dragWeightRatio = 0.5,
             referenceSeconds = 90.0,
-            hintPenaltySeconds = 0.0,
+            hintPenaltySeconds = 30.0,
             baseKFactor = 20.0,
             demonstrationMultiplier = 10.0,
         };

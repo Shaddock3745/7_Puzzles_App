@@ -17,8 +17,8 @@ namespace Tangram.Core.Tests
     public class SkillRatingTests
     {
         /// <summary>
-        /// 2026-09-13 定案的那一組（r 0.5、T 90、P 0、基準 K 20 × 展示倍率 10）。
-        /// 「算給你看」那張表就是用這組算的。
+        /// 2026-09-13 定案的那一組（r 0.5、T 90、基準 K 20 × 展示倍率 10），P 在 2026-09-15 從 0 定成 30。
+        /// 「算給你看」那兩張表就是用這組算的。
         /// </summary>
         /// <returns>一份新的設定。</returns>
         private static SkillRatingSettings AgreedSettings() => new SkillRatingSettings
@@ -27,7 +27,7 @@ namespace Tangram.Core.Tests
             ratingScale = 400.0,
             dragWeightRatio = 0.5,
             referenceSeconds = 90.0,
-            hintPenaltySeconds = 0.0,
+            hintPenaltySeconds = 30.0,
             baseKFactor = 20.0,
             demonstrationMultiplier = 10.0,
         };
@@ -152,12 +152,47 @@ namespace Tangram.Core.Tests
             Assert.AreEqual(-200.0 * SkillRating.ExpectedPerformance(1200.0, 1000, 400.0), easy, 1e-9);
         }
 
+        /// <summary>
+        /// ⭐ <b>提示的「算給你看」那張表</b>（`待辦清單.md`〈ELO 公式定案〉〈提示〉，2026-09-15 定 P = 30）：實力 1200、題目 1200、展示 K 200。
+        /// 重點是第一列：卡住拿一次提示、70 秒解完 ≈ 自己 110 秒慢慢解完（0），不是大加分。
+        /// </summary>
+        [TestCase(70.0, 25.0, 1, 1.4084507, TestName = "公式_提示示範表_45秒拿一次70秒解完約等於0")]
+        [TestCase(110.0, 40.0, 2, -25.0, TestName = "公式_提示示範表_兩次110秒解完減25")]
+        [TestCase(150.0, 50.0, 3, -40.9836066, TestName = "公式_提示示範表_三次150秒解完減41")]
+        [TestCase(140.0, 100.0, 3, -33.3333333, TestName = "公式_提示示範表_三次而且一直在拖片減33")]
+        public void 公式_提示示範表(double foregroundSeconds, double dragSeconds, int hintsUsed, double expectedChange)
+        {
+            Assert.AreEqual(expectedChange,
+                            ChangeOf(1200.0, 1200, LevelOutcome.Solved, foregroundSeconds, dragSeconds, hintsUsed), 1e-6);
+        }
+
+        /// <summary>
+        /// ⭐ <b>用完三次提示解完，不會加分</b>（使用者 2026-09-15：「提示三片幾乎就能解了」）。
+        ///
+        /// 前提是提示的開放時間表：第三次要等前景 135 秒（間隔 45 × 3，<c>BoardActionButtons</c> 的預設）。
+        /// 最有利的情況是整局都在拖片（拖曳 = 前景，打折最多）而且 135 秒一到就解完：C = 135 × 0.5 ＋ 3 × 30 = 157.5 &gt; T，
+        /// 實力高過題目 50 分（E 最大的情況）也一樣。
+        /// ⚠️ <b>這條紅了代表 T、提示間隔、P 其中一個被改了而另外兩個沒跟上</b>——三個數字綁在一起。
+        /// </summary>
+        [Test]
+        public void 公式_用完三次提示解完不會加分()
+        {
+            const double thirdHintUnlockSeconds = 135.0;
+            foreach (double foreground in new[] { thirdHintUnlockSeconds, 150.0, 200.0, 400.0 })
+            foreach (double dragShare in new[] { 0.0, 0.3, 0.7, 1.0 })
+            foreach (double rating in new[] { 1150.0, 1200.0, 1250.0 })
+            {
+                double change = ChangeOf(rating, 1200, LevelOutcome.Solved, foreground, foreground * dragShare, 3);
+                Assert.LessOrEqual(change, 0.0,
+                    $"實力 {rating}、前景 {foreground}、拖曳 {foreground * dragShare}、提示 3 次：加了 {change} 分");
+            }
+        }
+
         /// <summary>提示加在時間代價上：一次提示等於多想 P 秒。</summary>
         [Test]
         public void 公式_提示加在時間代價上()
         {
             SkillRatingSettings settings = AgreedSettings();
-            settings.hintPenaltySeconds = 30.0;
 
             RatingUpdate withoutHints = SkillRating.Settle(1200.0, 1200, LevelOutcome.Solved, 90.0, 40.0, 0, settings, TestRange());
             RatingUpdate withTwoHints = SkillRating.Settle(1200.0, 1200, LevelOutcome.Solved, 90.0, 40.0, 2, settings, TestRange());
