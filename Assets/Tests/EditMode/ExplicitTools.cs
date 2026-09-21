@@ -36,5 +36,9 @@ namespace Tangram.Data.Tests
         /// <summary>縮圖牆（對照牆）的資料與網頁匯出，寫到系統暫存資料夾。約 35 秒。</summary>
         [Test, Explicit("縮圖牆匯出：要數十秒")]
         public void ExportThumbnailWall() => new ThumbnailWallExportTests().縮圖牆_匯出兩千個形狀();
+
+        /// <summary>求解器完整驗證：38 個形狀全部檢查，13 個凸多邊形的解數釘住，印出解數表。Debug 約 2 分半（2026-09-21）。</summary>
+        [Test, Explicit("求解器完整驗證：Debug 約 2 分半")]
+        public void SolverTable() => new TangramSolverTests().求解器_全部形狀驗證並印出解數表();
     }
 }
