@@ -350,6 +350,7 @@ P2-7 是**整條流程**的樣板：量數據 → 四條路砍成兩條 → 六�
 | 開發進度 | <https://claude.ai/code/artifact/94f5f82c-868a-4149-af9b-35701eab6eac> |
 | 互動設計 | <https://claude.ai/code/artifact/e32f7dae-886a-4ad2-bc95-33761bc180ce> |
 | 七巧板特徵對照牆（縮圖牆的第一個畫面，2026-09-11） | <https://claude.ai/code/artifact/76ef3b7f-d0ec-4294-9516-4315d556b7ba> |
+| 系統架構與說明（**給協作者**，2026-09-22 快照；含「能說與不能說」表，功能狀態變了要跟著更新） | <https://claude.ai/artifact/Y6D9zpzLzgm3G8UuGMPeEd> |
 
 ⚠️ **對照牆不是文件，是工具**：內容是出題器生出來的資料，不能手改。要更新就重跑
 `ThumbnailWallExportTests`（會同時產出資料與已經塞好資料的網頁 `%TEMP%\tangram_feature_wall.html`），
