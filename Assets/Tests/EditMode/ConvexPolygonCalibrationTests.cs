@@ -53,12 +53,12 @@ namespace Tangram.Data.Tests
         [Test]
         public void 指紋_每一題重算的puzzleKey都跟存檔一致()
         {
-            IReadOnlyList<CalibrationEntries.Entry> entries = CalibrationEntries.All();
+            IReadOnlyList<PuzzleLibrary.Entry> entries = CalibrationEntries.All();
 
             Assert.AreEqual(CalibrationEntries.ExpectedEntryCount, entries.Count,
                 "素材檔的筆數不對——有人動過 calibration_entries.jsonl，下面每一條都在量別的東西");
 
-            foreach (CalibrationEntries.Entry entry in entries)
+            foreach (PuzzleLibrary.Entry entry in entries)
                 Assert.AreEqual(entry.Arrangement.PuzzleKey, entry.Puzzle.Key,
                     $"「{entry.Name}」重算的 puzzleKey 跟存檔不一樣。" +
                     "先確認是不是動到了 BoundaryTracer 的追邊行為——那會讓所有題目的 key 一起變號");
@@ -71,18 +71,18 @@ namespace Tangram.Data.Tests
         /// 1 個三角形、6 個四邊形、2 個五邊形、4 個六邊形）。⚠️ <b>它跟權重一點關係都沒有</b>——
         /// 權重怎麼調都不該動到它，所以這一條紅了，要去看的是幾何那層（追邊、共線邊合併、轉角數），不是難度。
         ///
-        /// 💡 分組不看名字，看「沒有凹角也沒有洞」，理由在 <see cref="CalibrationEntries.Entry.IsConvex"/>。
+        /// 💡 分組不看名字，看「沒有凹角也沒有洞」，理由在 <see cref="PuzzleLibrary.Entry.IsConvex"/>。
         /// </summary>
         [Test]
         public void 幾何_十三個凸多邊形的轉角數分布對得上文獻()
         {
-            List<CalibrationEntries.Entry> convexPolygons = CalibrationEntries.ConvexPolygons();
+            IReadOnlyList<PuzzleLibrary.Entry> convexPolygons = CalibrationEntries.ConvexPolygons();
 
             Assert.AreEqual(CalibrationEntries.ExpectedConvexCount, convexPolygons.Count,
                 "凸多邊形的個數不是 13。要嘛素材被動過，要嘛凹角或洞的判定改了");
 
             var countByCornerCount = new Dictionary<int, int>();
-            foreach (CalibrationEntries.Entry entry in convexPolygons)
+            foreach (PuzzleLibrary.Entry entry in convexPolygons)
             {
                 int corners = entry.ShapeFeatures.CornerCount;
                 countByCornerCount.TryGetValue(corners, out int soFar);
@@ -107,7 +107,7 @@ namespace Tangram.Data.Tests
         public void 尺_十三個凸多邊形的難易順序沒有變()
         {
             DifficultyWeights weights = RepositoryFiles.LoadDifficultyWeights();
-            List<CalibrationEntries.Entry> convexPolygons = CalibrationEntries.ConvexPolygons();
+            IReadOnlyList<PuzzleLibrary.Entry> convexPolygons = CalibrationEntries.ConvexPolygons();
 
             Assert.AreEqual(HardestToEasiest.Length, convexPolygons.Count, "期待的順序表跟實際個數對不上");
 
@@ -115,7 +115,7 @@ namespace Tangram.Data.Tests
             string previousName = "（最難的那個之前）";
             foreach (string name in HardestToEasiest)
             {
-                CalibrationEntries.Entry entry = FindByName(convexPolygons, name);
+                PuzzleLibrary.Entry entry = FindByName(convexPolygons, name);
                 int score = entry.Score(weights);
 
                 Assert.LessOrEqual(score, previousScore,
@@ -141,7 +141,7 @@ namespace Tangram.Data.Tests
         public void 尺_古典大正方形仍然是2261分()
         {
             DifficultyWeights weights = RepositoryFiles.LoadDifficultyWeights();
-            CalibrationEntries.Entry classicSquare = FindByName(CalibrationEntries.ConvexPolygons(), "正方形");
+            PuzzleLibrary.Entry classicSquare = FindByName(CalibrationEntries.ConvexPolygons(), "正方形");
 
             Assert.AreEqual(ClassicSquareScore, classicSquare.Score(weights),
                 "古典大正方形的難度變了＝尺動了。確認是故意的之後，記得同步 開發進度.md 裡引用 2261 的地方");
@@ -167,18 +167,18 @@ namespace Tangram.Data.Tests
         public void 尺_具象題跟生成題用的是同一把尺()
         {
             DifficultyWeights weights = RepositoryFiles.LoadDifficultyWeights();
-            List<CalibrationEntries.Entry> figurativeShapes = CalibrationEntries.FigurativeShapes();
+            IReadOnlyList<PuzzleLibrary.Entry> figurativeShapes = CalibrationEntries.FigurativeShapes();
 
             Assert.AreEqual(
                 CalibrationEntries.ExpectedEntryCount - CalibrationEntries.ExpectedConvexCount,
                 figurativeShapes.Count, "具象題的個數不對");
 
             int easiestConvexScore = int.MaxValue;
-            foreach (CalibrationEntries.Entry entry in CalibrationEntries.ConvexPolygons())
+            foreach (PuzzleLibrary.Entry entry in CalibrationEntries.ConvexPolygons())
                 easiestConvexScore = System.Math.Min(easiestConvexScore, entry.Score(weights));
 
             int insideTargetRange = 0;
-            foreach (CalibrationEntries.Entry entry in figurativeShapes)
+            foreach (PuzzleLibrary.Entry entry in figurativeShapes)
             {
                 int score = entry.Score(weights);
 
@@ -199,10 +199,10 @@ namespace Tangram.Data.Tests
         /// <param name="entries">要找的範圍。</param>
         /// <param name="name">題目的名字。</param>
         /// <returns>那一題。找不到就讓測試失敗（素材被改名了）。</returns>
-        private static CalibrationEntries.Entry FindByName(
-            IReadOnlyList<CalibrationEntries.Entry> entries, string name)
+        private static PuzzleLibrary.Entry FindByName(
+            IReadOnlyList<PuzzleLibrary.Entry> entries, string name)
         {
-            foreach (CalibrationEntries.Entry entry in entries)
+            foreach (PuzzleLibrary.Entry entry in entries)
                 if (entry.Name == name) return entry;
 
             Assert.Fail($"素材裡找不到「{name}」——是不是改名了？");

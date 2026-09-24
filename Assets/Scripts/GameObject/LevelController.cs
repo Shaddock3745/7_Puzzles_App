@@ -4,6 +4,23 @@ using Tangram.Data;
 using UnityEngine;
 
 /// <summary>
+/// 這一場在玩哪一種題目（2026-09-23）。
+///
+/// <b>為什麼模式記在 <see cref="LevelController"/> 身上</b>：因為「下一題要什麼」只有它在回答。
+/// 記在別處的話，結束彈窗那顆「下一題」就得自己判斷要生還是要抽——
+/// 那等於把同一個決定放到兩個地方，而<b>兩個地方各自認定真相就是安靜的 bug</b>（見 <c>CLAUDE.md</c> 的坑）。
+/// 現在彈窗照樣只叫 <c>EnterNextLevel()</c>，一行都不用改。
+/// </summary>
+public enum GameMode
+{
+    /// <summary>照玩家實力當場生題（P2-7 ＋ P2-14），這是原本的遊玩迴圈。</summary>
+    GeneratedByRating,
+
+    /// <summary>從題庫隨機抽具象題（貓、船之類），一輪之內不重複。</summary>
+    Figurative
+}
+
+/// <summary>
 /// 進來一關、離開一關（互動設計 §14.3）。<b>它只驅動，不持有真相。</b>
 ///
 /// 真相在 <see cref="LevelSession"/>，而那個物件<b>不是這支的從屬</b>——
@@ -70,6 +87,28 @@ public class LevelController : MonoBehaviour
 
     /// <summary>ELO 設定檔在 <c>Resources</c> 裡的名字（不含副檔名）。</summary>
     private const string SkillRatingSettingsResourceName = "SkillRatingSettings";
+
+    /// <summary>
+    /// 題庫在 <c>Resources</c> 裡的名字（不含副檔名）。
+    ///
+    /// ⚠️ <b>檔案的副檔名必須是 <c>.txt</c></b>（或 <c>.json</c>／<c>.bytes</c>）。出題工具寫出來的是
+    /// <c>.jsonl</c>，而 <b>Unity 不把 <c>.jsonl</c> 當成文字資產</b>——那樣 <c>Resources.Load</c> 會回 null，
+    /// 而畫面上只會看到「讀不到題庫」，查不到真正的原因是副檔名。
+    /// </summary>
+    private const string PuzzleLibraryResourceName = "puzzle_library";
+
+    /// <summary>
+    /// 題庫，<b>第一次要抽具象題時才讀</b>（見 <see cref="EnsurePuzzleLibraryLoaded"/>）。讀不到是 null。
+    /// </summary>
+    private PuzzleLibrary puzzleLibrary;
+
+    /// <summary>具象題的洗牌袋：一輪之內不重複，抽完才重洗。跟題庫一起建。</summary>
+    private PuzzleShuffleBag figurativeBag;
+
+    /// <summary>
+    /// 這一場在玩哪一種題目。<b>預設是原本的遊玩迴圈</b>，所以沒有主畫面的場景（回饋收集、工具）行為不變。
+    /// </summary>
+    public GameMode CurrentMode { get; private set; } = GameMode.GeneratedByRating;
 
     // ⚠️ 2026-09-13（P2-14）拿掉了 startingTargetDifficulty 與 lastTargetDifficulty。
     // 「下一題要多難」的真相換成玩家的實力（LevelSession.Rating），起始值在 SkillRatingSettings.json。
@@ -241,11 +280,112 @@ public class LevelController : MonoBehaviour
     {
         SettleIfNeeded();
 
+        // ⭐ 模式的分派只有這一處（2026-09-23）。結束彈窗那兩顆「下一題」照樣叫這支，
+        // 它們不知道也不需要知道現在在玩哪一種
+        if (CurrentMode == GameMode.Figurative)
+        {
+            EnterRandomFigurativeLevel();
+            return;
+        }
+
         // 設定讀不到時 Awake 已經報過錯了，這裡不再報一次
         SkillRatingTracker rating = session?.Rating;
         if (rating == null) return;
 
         EnterNextLevel(rating.NextTargetDifficulty);
+    }
+
+    /// <summary>
+    /// 換一個模式，並且馬上進第一關（2026-09-23）。<b>主畫面那兩顆按鈕叫的就是這支。</b>
+    /// </summary>
+    /// <param name="mode">要玩哪一種。</param>
+    public void StartMode(GameMode mode)
+    {
+        CurrentMode = mode;
+        EnterNextLevel();
+    }
+
+    /// <summary>
+    /// 開場不要自己進關（2026-09-23）。<b>場景裡有主畫面時由主畫面在 <c>Awake</c> 叫這支。</b>
+    ///
+    /// <b>為什麼不叫人去取消勾選 <c>loadFirstLevelOnStart</c></b>：忘了取消的症狀是
+    /// 「主畫面後面已經偷偷開了一關」——看起來一切正常，直到發現第一次按按鈕時題目換了一題。
+    /// 用程式講一次，就不會有人忘記。
+    ///
+    /// ⚠️ 這支一定要在 <c>Awake</c> 裡叫：Unity 保證所有 <c>Awake</c> 都跑完才開始跑 <c>Start</c>，
+    /// 而自動進關是在 <see cref="Start"/> 裡。在 <c>Start</c> 裡叫就賭上了兩支誰先跑，那是未定義的。
+    /// </summary>
+    public void SuppressAutoStart() => loadFirstLevelOnStart = false;
+
+    /// <summary>
+    /// 從題庫隨機抽一題具象題進關（2026-09-23）。
+    ///
+    /// <b>難度當場算</b>，不是存在檔案裡的——理由見 <see cref="PuzzleLibrary"/>：
+    /// 存起來就有兩個來源，調權重時一定有一邊沒跟上。
+    ///
+    /// ⚠️ <b><c>allowRoll</c> 傳 <c>false</c></b>：跟生成題同一個理由，而且
+    /// <c>LevelSession.Load</c> 的說明本來就寫著「精選題傳 false」——具象題是人拼的，
+    /// 存進去的那個角度就是它該有的樣子（船是正的，轉了就不像船了）。
+    ///
+    /// ⚠️ <b>不帶出題紀錄</b>（<c>generation</c> 是 null）：那是給監控面板看「出題器叫了幾次、
+    /// 正中還是將就」的，抽題根本沒有那回事。面板那邊本來就處理「沒有紀錄」。
+    /// </summary>
+    private void EnterRandomFigurativeLevel()
+    {
+        if (difficultyWeights == null) return;      // Awake 已經報過錯
+        if (!EnsurePuzzleLibraryLoaded()) return;
+
+        levelIndex++;
+
+        PuzzleLibrary.Entry entry = puzzleLibrary.FigurativeShapes[figurativeBag.Next()];
+        int difficulty = entry.Score(difficultyWeights);
+
+        Debug.Log($"第 {levelIndex} 關：具象題「{entry.Name}」，難度 {difficulty}", this);
+
+        EnterLevel(entry.Puzzle, entry.Pieces, difficulty, allowRoll: false);
+    }
+
+    /// <summary>
+    /// 需要的話把題庫讀進來。<b>第一次要抽具象題時才讀</b>——38 題要跑幾百次輪廓追蹤，
+    /// 約零點幾秒；只玩生成題的人不該付這個成本。
+    ///
+    /// 讀不到就大聲報錯並回 <c>false</c>，跟權重、ELO 設定同一套規則（沒有退路，見 <see cref="difficultyWeights"/>）。
+    /// </summary>
+    /// <returns>題庫可以用了沒。</returns>
+    private bool EnsurePuzzleLibraryLoaded()
+    {
+        if (puzzleLibrary != null) return true;
+
+        TextAsset asset = Resources.Load<TextAsset>(PuzzleLibraryResourceName);
+        if (asset == null)
+        {
+            Debug.LogError(
+                $"Resources 裡沒有 {PuzzleLibraryResourceName}：具象題模式進不了關。" +
+                "⚠️ 先確認副檔名是 .txt——Unity 不把 .jsonl 當成文字資產，那樣這裡永遠是 null。", this);
+            return false;
+        }
+
+        try
+        {
+            puzzleLibrary = PuzzleLibrary.FromText(asset.text);
+        }
+        catch (System.ArgumentException exception)
+        {
+            // 訊息裡會講是第幾行讀不進來，原樣帶出來
+            Debug.LogError($"題庫讀不進來，具象題模式進不了關。{exception.Message}", this);
+            return false;
+        }
+
+        if (puzzleLibrary.FigurativeShapes.Count == 0)
+        {
+            Debug.LogError("題庫裡一題具象題都沒有（全部都是凸多邊形？），具象題模式進不了關。", this);
+            puzzleLibrary = null;
+            return false;
+        }
+
+        // 固定種子，跟出題器同一套理由：看到怪東西才重現得出來
+        figurativeBag = new PuzzleShuffleBag(puzzleLibrary.FigurativeShapes.Count, new System.Random(generatorSeed));
+        return true;
     }
 
     /// <summary>

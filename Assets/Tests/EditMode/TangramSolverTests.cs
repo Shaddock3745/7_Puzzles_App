@@ -108,7 +108,7 @@ namespace Tangram.Data.Tests
         [Test]
         public void 無解_正方形放一片走錯的大三角就確定死了()
         {
-            CalibrationEntries.Entry square = FindEntry("正方形");
+            PuzzleLibrary.Entry square = FindEntry("正方形");
             Region region = RegionOf(square);
 
             List<Placement[]> everySolution = SymmetricImagesOf(square.Pieces);
@@ -145,7 +145,7 @@ namespace Tangram.Data.Tests
         [Test]
         public void 殘局_正方形先放好五片也找得到而且位置對()
         {
-            CalibrationEntries.Entry square = FindEntry("正方形");
+            PuzzleLibrary.Entry square = FindEntry("正方形");
             var placed = new Dictionary<int, Placement>();
             for (int slot = 0; slot < square.Pieces.Length; slot++)
                 if (PiecePrototype.TangramSet[slot] != PieceKind.SmallTriangle) placed[slot] = square.Pieces[slot];
@@ -206,7 +206,7 @@ namespace Tangram.Data.Tests
         [Test]
         public void 防呆_已放的片種跟槽對不上就拒絕()
         {
-            CalibrationEntries.Entry square = FindEntry("正方形");
+            PuzzleLibrary.Entry square = FindEntry("正方形");
             Region region = RegionOf(square);
 
             // 0 號槽是大三角，塞一片中三角（2 號槽的）進去
@@ -230,11 +230,11 @@ namespace Tangram.Data.Tests
         [Test, Explicit("求解器完整驗證：Debug 約 2 分半")]
         public void 求解器_全部形狀驗證並印出解數表()
         {
-            IReadOnlyList<CalibrationEntries.Entry> all = CalibrationEntries.All();
-            List<CalibrationEntries.Entry> convexPolygons = CalibrationEntries.ConvexPolygons();
+            IReadOnlyList<PuzzleLibrary.Entry> all = CalibrationEntries.All();
+            IReadOnlyList<PuzzleLibrary.Entry> convexPolygons = CalibrationEntries.ConvexPolygons();
 
             TestContext.WriteLine("名稱\t找一組(秒)\t窮舉(秒)\t固定方向解數\t本質不同解數\t對稱數\t搜尋節點\t搜完了嗎");
-            foreach (CalibrationEntries.Entry entry in all)
+            foreach (PuzzleLibrary.Entry entry in all)
             {
                 var solver = new TangramSolver(RegionOf(entry));
                 var clock = Stopwatch.StartNew();
@@ -265,9 +265,9 @@ namespace Tangram.Data.Tests
         /// 每一組手拼的解都要出現在它那個形狀的窮舉結果裡（用 <see cref="Canonical.ArrangementKey"/> 比）。
         /// 而且每個形狀都要搜完——被切斷的話「找不到」就不代表漏解。
         /// </summary>
-        private static void AssertKnownSolutionsFound(IEnumerable<CalibrationEntries.Entry> entries)
+        private static void AssertKnownSolutionsFound(IEnumerable<PuzzleLibrary.Entry> entries)
         {
-            foreach (CalibrationEntries.Entry entry in entries)
+            foreach (PuzzleLibrary.Entry entry in entries)
             {
                 EnumerationResult result = EnumerationOf(entry);
                 Assert.IsTrue(result.IsComplete, $"「{entry.Name}」在預設上限內沒搜完");
@@ -285,9 +285,9 @@ namespace Tangram.Data.Tests
         /// 每一組解都是真的解：片種對得上槽、七片都在區域內、兩兩不重疊、面積 32、連通、編碼往返。
         /// 防的是「剪枝寫錯，把不合法的東西當成解」。
         /// </summary>
-        private static void AssertEverySolutionLegal(IEnumerable<CalibrationEntries.Entry> entries)
+        private static void AssertEverySolutionLegal(IEnumerable<PuzzleLibrary.Entry> entries)
         {
-            foreach (CalibrationEntries.Entry entry in entries)
+            foreach (PuzzleLibrary.Entry entry in entries)
             {
                 Region region = RegionOf(entry);
                 foreach (Placement[] solution in EnumerationOf(entry).DistinctSolutions)
@@ -311,9 +311,9 @@ namespace Tangram.Data.Tests
         }
 
         /// <summary>凸多邊形的兩種解數要等於 <see cref="ConvexPolygonSolutionCounts"/> 釘住的值。</summary>
-        private static void AssertConvexSolutionCounts(IEnumerable<CalibrationEntries.Entry> entries)
+        private static void AssertConvexSolutionCounts(IEnumerable<PuzzleLibrary.Entry> entries)
         {
-            foreach (CalibrationEntries.Entry entry in entries)
+            foreach (PuzzleLibrary.Entry entry in entries)
             {
                 Assert.IsTrue(ConvexPolygonSolutionCounts.TryGetValue(entry.Name, out var expected),
                     $"「{entry.Name}」不在期待的解數表裡——素材是不是改名了？");
@@ -327,9 +327,9 @@ namespace Tangram.Data.Tests
         }
 
         /// <summary>固定方向的解數 ＝ 對稱數 × 本質不同的解數。理由見 <see cref="解數_固定方向除以本質不同等於對稱數"/>。</summary>
-        private static void AssertSymmetryConsistent(IEnumerable<CalibrationEntries.Entry> entries)
+        private static void AssertSymmetryConsistent(IEnumerable<PuzzleLibrary.Entry> entries)
         {
-            foreach (CalibrationEntries.Entry entry in entries)
+            foreach (PuzzleLibrary.Entry entry in entries)
             {
                 EnumerationResult result = EnumerationOf(entry);
                 int symmetryOrder = SymmetryOrderOf(entry.Pieces);
@@ -344,7 +344,7 @@ namespace Tangram.Data.Tests
         // 共用的小工具
         // ─────────────────────────────────────────────────────────────
 
-        private static EnumerationResult EnumerationOf(CalibrationEntries.Entry entry)
+        private static EnumerationResult EnumerationOf(PuzzleLibrary.Entry entry)
         {
             if (enumerationByName.TryGetValue(entry.Name, out EnumerationResult cached)) return cached;
             EnumerationResult result = new TangramSolver(RegionOf(entry)).EnumerateAll();
@@ -355,20 +355,20 @@ namespace Tangram.Data.Tests
         /// <summary>
         /// 手拼那組解的外框，放在<b>跟解同一個座標系</b>（原點不動）——這樣已知的解直接就是這個區域裡的一組鋪法，不用平移。
         /// </summary>
-        private static Region RegionOf(CalibrationEntries.Entry entry) =>
+        private static Region RegionOf(PuzzleLibrary.Entry entry) =>
             Region.FromPuzzle(entry.Puzzle, ExactVector2.Zero);
 
-        private static CalibrationEntries.Entry FindEntry(string name)
+        private static PuzzleLibrary.Entry FindEntry(string name)
         {
-            foreach (CalibrationEntries.Entry entry in CalibrationEntries.All())
+            foreach (PuzzleLibrary.Entry entry in CalibrationEntries.All())
                 if (entry.Name == name) return entry;
             Assert.Fail($"素材裡找不到「{name}」——是不是改名了？");
             return null;
         }
 
-        private static List<CalibrationEntries.Entry> Entries(params string[] names)
+        private static IReadOnlyList<PuzzleLibrary.Entry> Entries(params string[] names)
         {
-            var entries = new List<CalibrationEntries.Entry>();
+            var entries = new List<PuzzleLibrary.Entry>();
             foreach (string name in names) entries.Add(FindEntry(name));
             return entries;
         }

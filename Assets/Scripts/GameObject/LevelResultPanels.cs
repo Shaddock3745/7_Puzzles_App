@@ -57,6 +57,9 @@ public class LevelResultPanels : MonoBehaviour
     [Tooltip("過關狀態與擋片區的來源。留空的話 Awake 會自己找。")]
     [SerializeField] private TouchInputController inputController;
 
+    [Tooltip("「退出」要叫它顯示主畫面。留空的話 Awake 會自己找；場景裡沒有主畫面時「退出」維持舊行為（關掉程式）。")]
+    [SerializeField] private MainMenuPanel mainMenu;
+
     [Tooltip("「下一關」要叫它換關。留空的話 Awake 會自己找。")]
     [SerializeField] private LevelController levelController;
 
@@ -79,6 +82,9 @@ public class LevelResultPanels : MonoBehaviour
     {
         if (inputController == null) inputController = FindFirstObjectByType<TouchInputController>();
         if (levelController == null) levelController = FindFirstObjectByType<LevelController>();
+
+        // ⚠️ 找不到不報錯：回饋收集場景與出題工具場景都沒有主畫面，那裡「退出」維持舊行為
+        if (mainMenu == null) mainMenu = FindFirstObjectByType<MainMenuPanel>();
 
         if (inputController == null)
             Debug.LogError("LevelResultPanels 找不到 TouchInputController：彈窗永遠不會出現。", this);
@@ -150,7 +156,7 @@ public class LevelResultPanels : MonoBehaviour
         SetShown(abandonedPanel, inputController != null && inputController.IsLevelAbandoned);
 
         // 方向。兩行都寫同一句——哪一個彈窗開著，看到的就是那一行
-        string trend = TrendTextOf(LevelSession.Current?.Data?.Settlement);
+        string trend = TrendTextFor(levelController, LevelSession.Current?.Data?.Settlement);
         SetText(completeTrendText, trend);
         SetText(abandonedTrendText, trend);
     }
@@ -162,8 +168,14 @@ public class LevelResultPanels : MonoBehaviour
     /// </summary>
     /// <param name="settlement">這一局的結算明細，可能沒有。</param>
     /// <returns>要顯示的文字。</returns>
-    private static string TrendTextOf(RatingUpdate? settlement)
+    private static string TrendTextFor(LevelController levelController, RatingUpdate? settlement)
     {
+        // ⭐ 具象題是隨機抽的，「下一題會難一點」在那個模式裡是假的（2026-09-23）。
+        // ⚠️ 這一行不能省：實力照樣有結算（具象題的難度跟生成題在同一把尺上），
+        // 所以 settlement 是有值的——不判模式的話它會理直氣壯地講一句不成立的話
+        if (levelController != null && levelController.CurrentMode == GameMode.Figurative)
+            return "再來一題";
+
         if (!settlement.HasValue) return string.Empty;
 
         switch (settlement.Value.Trend)
@@ -195,7 +207,9 @@ public class LevelResultPanels : MonoBehaviour
     /// <summary>
     /// 「退出」被按下。接在 Unity <c>Button.onClick</c> 上。
     ///
-    /// ⚠️ <b>目前是關掉程式，之後會變成回主畫面</b>（那時候才真的需要換場景）。
+    /// ⭐ <b>2026-09-23 起：場景裡有主畫面的話就回主畫面</b>（可以換模式），
+    /// 沒有主畫面才維持舊行為關掉程式。⚠️ <b>盤面刻意不卸載</b>——主畫面是同場景的 Panel，
+    /// 蓋在上面而已，所以那個 Panel 一定要不透明。真的要卸載盤面是換場景那條路，見類別說明。
     ///
     /// ⚠️ <c>Application.Quit()</c> <b>在 Editor 裡完全不做事</b>，
     /// 所以測試時會以為按鈕壞了。Editor 走「停止播放」那條才看得出反應。
@@ -204,6 +218,12 @@ public class LevelResultPanels : MonoBehaviour
     /// </summary>
     public void OnExitPressed()
     {
+        if (mainMenu != null)
+        {
+            mainMenu.Show();
+            return;
+        }
+
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.isPlaying = false;
 #else
