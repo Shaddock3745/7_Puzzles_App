@@ -38,8 +38,10 @@ public class BoardView : MonoBehaviour
 
     [Header("盒子與暫放的片要躲開的按鈕排")]
     [Tooltip("按鈕排的父物件（例如掛 Horizontal Layout Group 的那個），它的矩形就是按鈕區（2026-09-15）。"
-             + "盒子區：中心在螢幕上半的壓低上緣、下半的抬高下緣（整條）。暫放的片：只躲這個矩形本身。停用的跳過。"
-             + "⚠️ 這個物件的大小要固定：跟著按鈕出現／消失變大變小的話，盒子會當場縮放、正在拖的片會被放回原位。")]
+             + "盒子區：中心在螢幕上半的壓低上緣、下半的抬高下緣（整條）。暫放的片：只躲這個矩形本身。"
+             + "⚠️ 2026-09-24 起「停用的照躲」：抽屜打開時整排會隱藏，版面不該跟著變。"
+             + "⚠️ 這個物件的大小要固定（anchors 釘死，不要讓 Layout Group 或 ContentSizeFitter 決定）："
+             + "大小會變的話，盒子會當場縮放、正在拖的片會被放回原位；而且隱藏中量到的值會不準。")]
     [SerializeField] private RectTransform[] avoidedButtonAreas = Array.Empty<RectTransform>();
 
     [Tooltip("盒子與暫放的片跟按鈕排之間留多少，單位 dp。")]
@@ -148,11 +150,47 @@ public class BoardView : MonoBehaviour
         buttonAreaRanges.Clear();
         foreach (RectTransform area in avoidedButtonAreas)
         {
-            if (area == null || !area.gameObject.activeInHierarchy) continue;
-            if (!UiScreenRect.TryGet(area, out Rect screenRect)) continue;
+            if (area == null) continue;
+            if (!TryGetAvoidedButtonRect(area, out Rect screenRect)) continue;
             buttonAreaRanges.Add(new ScreenVerticalRange(screenRect.yMin, screenRect.yMax));
         }
     }
+
+    /// <summary>
+    /// 一排按鈕在螢幕上的矩形。
+    ///
+    /// ⭐ <b>停用的照樣要躲</b>（2026-09-24）：抽屜打開時整排按鈕會隱藏（<see cref="ButtonGroupVisibility"/>），
+    /// 但<b>版面不能跟著變</b>——跳過停用的話盒子區會在抽屜開闔時變大變小，
+    /// 症狀是「每開關一次抽屜，盒子跟盤上的片就跳一下」。
+    /// 擋片區那邊剛好相反（隱藏就不該擋），兩邊的需求不同是刻意的，見類別說明。
+    ///
+    /// ⚠️ <b>前提是這幾個物件的大小固定</b>：停用中的 <c>RectTransform</c> 不會有人幫它重算 layout，
+    /// 大小由 Layout Group 或 <c>ContentSizeFitter</c> 決定的話，量到的會是隱藏前那一刻的值。
+    /// 所以量出來不合理（寬或高 ≤ 0）時<b>警告一次</b>——不管原因是什麼，結果不對就出聲，
+    /// 不然版面會安靜地少躲一排。
+    /// </summary>
+    /// <param name="area">按鈕排的父物件。</param>
+    /// <param name="screenRect">它在螢幕上的矩形（像素，原點左下）。</param>
+    /// <returns>量得出來而且合理才是 true。</returns>
+    private bool TryGetAvoidedButtonRect(RectTransform area, out Rect screenRect)
+    {
+        // ⚠️ 不能用畫布的相機換算，除錯記錄 012
+        if (!UiScreenRect.TryGet(area, out screenRect)) return false;
+        if (screenRect.width > 0f && screenRect.height > 0f) return true;
+
+        if (!hasWarnedButtonAreaIsDegenerate)
+        {
+            Debug.LogWarning(
+                $"{area.name} 的矩形量出來是 {screenRect.width} × {screenRect.height}，版面沒有躲開它。" +
+                "按鈕排的大小要用 anchors 釘死，不要交給 Layout Group 或 ContentSizeFitter 決定" +
+                "——停用中的物件不會重算 layout。", this);
+            hasWarnedButtonAreaIsDegenerate = true;
+        }
+        return false;
+    }
+
+    /// <summary>矩形量不出來的警告只印一次，不然每幀洗一行。</summary>
+    private bool hasWarnedButtonAreaIsDegenerate;
 
     /// <summary>
     /// <b>暫放的片可以待的範圍</b>與<b>要躲開的按鈕排</b>（都是世界座標，2026-09-15）。
@@ -166,6 +204,8 @@ public class BoardView : MonoBehaviour
     /// 所以片被按鈕蓋住大半、只露出一小條，在手機上就等於救不回來（滑鼠點得到，所以在 Editor 看不出來）。
     /// ⭐ <b>看按鈕排的父物件，不看個別按鈕顯示了沒</b>：提示鈕、放棄鈕是玩到一半才冒出來的，
     /// 看顯示中的按鈕的話，片暫放在那裡之後按鈕出現就把它蓋住了；而且選取時旋轉鈕出現也不會讓片突然被推走。
+    /// ⭐ <b>連「整排被隱藏」也不看</b>（2026-09-24）：抽屜打開時整排會退場，但版面不該跟著變，
+    /// 見 <see cref="TryGetAvoidedButtonRect"/>。
     /// ⭐ <b>只躲那個矩形，不是整條螢幕寬</b>：左下兩排只佔左半邊，右下角照樣可以放片。
     ///
     /// 每次叫都現算、不存：版面解與按鈕排都會變，存了就多一份要同步的東西。
@@ -195,8 +235,10 @@ public class BoardView : MonoBehaviour
         float buttonMarginPixels = ScreenMetrics.ToPixels(buttonAreaMarginDp);
         foreach (RectTransform buttonArea in avoidedButtonAreas)
         {
-            if (buttonArea == null || !buttonArea.gameObject.activeInHierarchy) continue;
-            if (!UiScreenRect.TryGet(buttonArea, out Rect screenRect)) continue;   // ⚠️ 不能用畫布的相機換算，除錯記錄 012
+            if (buttonArea == null) continue;
+
+            // ⭐ 停用的照躲（2026-09-24）：理由跟盒子區同一條，見 TryGetAvoidedButtonRect
+            if (!TryGetAvoidedButtonRect(buttonArea, out Rect screenRect)) continue;
 
             screenRect.xMin -= buttonMarginPixels;
             screenRect.yMin -= buttonMarginPixels;
