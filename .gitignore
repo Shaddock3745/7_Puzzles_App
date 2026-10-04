@@ -6,6 +6,12 @@
 # See: https://github.com/github/gitignore/tree/main/Global
 #
 .utmp/
+
+# 含親筆簽名與個資的報名文件（切結書、學生證、在學證明）不進版控，即使 repo 是私有的
+/繳交文件/*切結書*
+/繳交文件/*學生證*
+/繳交文件/*在學證明*
+
 /[Ll]ibrary/
 /[Tt]emp/
 /[Oo]bj/
