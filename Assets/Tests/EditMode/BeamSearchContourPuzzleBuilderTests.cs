@@ -64,6 +64,7 @@ namespace Tangram.Data.Tests
         /// <summary>
         /// ⭐ <b>結果一定合法</b>：七片、片種對得上槽、互不重疊、題目就是從這七片描出來的。
         /// 這是逼近跟「修輪廓」最大的差別——候選本來就全部合法，所以結果永遠拼得出來。
+        /// 💡 這組參數有開平移微調（預設 2 輪），所以這一條同時在驗「微調只動輪廓、不動任何一片」。
         /// </summary>
         [Test]
         public void 結果一定合法_七片不重疊而且題目就是它們描出來的()
@@ -116,6 +117,33 @@ namespace Tangram.Data.Tests
             Assert.AreEqual(built.Puzzle.Key, Puzzle.FromPlacements(built.ReferenceSolution).Key);
         }
 
+        /// <summary>
+        /// ⭐ <b>微調設成 0 輪 ＝ 第一版，一模一樣</b>（2026-10-14 第二版）。防的是「加微調的時候順手改壞了原本那條路」。
+        /// 數字是加微調之前，用第一版在經典大正方形、N = 10、回 3 個時記下來的。
+        /// IoU 是兩個整數的比，所以可以用極小的容差比。
+        /// </summary>
+        [Test]
+        public void 微調設成0輪時結果跟第一版一模一樣()
+        {
+            var settings = new ContourApproximationSettings(beamWidth: 10, resultCount: 3, refinementRounds: 0);
+            IReadOnlyList<ContourApproximation> results =
+                new BeamSearchContourPuzzleBuilder(settings).Approximate(ClassicSquareOutline());
+
+            (double intersectionOverUnion, string key)[] firstVersion =
+            {
+                (0.9008189262966333, "9a7f041529bb6a1e2bf4b91bb747354f"),
+                (0.899090909090909, "69e4115268677ead27eb14e603b92dd2"),
+                (0.8655649843680214, "e984d8eee23fd89c85834942e443b73d"),
+            };
+
+            Assert.AreEqual(firstVersion.Length, results.Count);
+            for (int i = 0; i < firstVersion.Length; i++)
+            {
+                Assert.AreEqual(firstVersion[i].intersectionOverUnion, results[i].IntersectionOverUnion, 1e-12, $"第 {i + 1} 名的 IoU");
+                Assert.AreEqual(firstVersion[i].key, results[i].Puzzle.Key, $"第 {i + 1} 名的形狀");
+            }
+        }
+
         [Test]
         public void 不收null輪廓()
         {
@@ -132,6 +160,7 @@ namespace Tangram.Data.Tests
             Assert.Throws<ArgumentOutOfRangeException>(() => new ContourApproximationSettings(outsidePenalty: -1.0));
             Assert.Throws<ArgumentOutOfRangeException>(() => new ContourApproximationSettings(offsetSpacing: 0.0));
             Assert.Throws<ArgumentOutOfRangeException>(() => new ContourApproximationSettings(resultCount: 0));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new ContourApproximationSettings(refinementRounds: -1));
         }
 
         // ───────── [Explicit] 驗收工具 ─────────
@@ -139,59 +168,92 @@ namespace Tangram.Data.Tests
         /// <summary>
         /// ⭐ <b>驗收：25 個具象題逼不逼得回來，加上協作者那隻貓</b>（2026-10-14）。英文入口 <c>ExplicitTools.ApproximatorTable</c>。
         ///
-        /// 每個具象題印：最好的 IoU、第 1 名是不是就是原本的形狀、前幾名裡有沒有原本的形狀、花了幾秒。
-        /// 另外匯出一張網頁 <c>%TEMP%\tangram_approximation.html</c>：每個形狀一格，紅線是目標輪廓、色塊是逼出來的第 1 名，用眼睛看。
+        /// <b>兩組參數並排</b>（第二版起）：對照組＝不微調（等於第一版）、實驗組＝預設參數（微調 2 輪）。
+        /// 每個具象題印兩組的 IoU、第 1 名是不是原本的形狀、前幾名有沒有、花了幾秒。
+        /// 另外匯出網頁 <c>%TEMP%\tangram_approximation.html</c>：每個形狀一格、左右兩張圖（左對照、右實驗），
+        /// 紅線是目標輪廓、色塊是第 1 名。
         ///
         /// ⚠️ 時間是 Debug 的（約比 Release 慢 13 倍，見 <c>CLAUDE.md</c>〈怎麼跑測試〉），只能拿來比相對快慢。
         /// </summary>
         [Test, Explicit("逼近搜尋驗收：要跑好幾分鐘")]
         public void 逼近_具象題與掃描樣本的成績表()
         {
-            ContourApproximationSettings settings = ContourApproximationSettings.Default;
-            var builder = new BeamSearchContourPuzzleBuilder(settings);
-            var panels = new List<string>();
+            ContourApproximationSettings experiment = ContourApproximationSettings.Default;
+            var control = new ContourApproximationSettings(
+                experiment.BeamWidth, experiment.CellSize, experiment.OutsidePenalty, experiment.OffsetSpacing,
+                experiment.ResultCount, refinementRounds: 0);
+            var builders = new[] { new BeamSearchContourPuzzleBuilder(control), new BeamSearchContourPuzzleBuilder(experiment) };
+            string[] labels = { "對照", "實驗" };
 
-            TestContext.WriteLine($"參數：{settings}");
-            TestContext.WriteLine("名稱\tIoU\t第1名就是原形狀\t前幾名有原形狀\t秒");
+            TestContext.WriteLine($"對照：{control}");
+            TestContext.WriteLine($"實驗：{experiment}");
+            TestContext.WriteLine("名稱\t對照IoU\t實驗IoU\t對照逼回\t實驗逼回\t對照秒\t實驗秒");
 
-            int recoveredFirst = 0, recoveredAny = 0;
-            double sumIntersectionOverUnion = 0.0, totalSeconds = 0.0;
+            var rows = new List<string>();
+            var recoveredFirst = new int[2];
+            var recoveredAny = new int[2];
+            var sumIntersectionOverUnion = new double[2];
+            var totalSeconds = new double[2];
             IReadOnlyList<PuzzleLibrary.Entry> figurative = CalibrationEntries.FigurativeShapes();
 
             foreach (PuzzleLibrary.Entry entry in figurative)
             {
                 RecognizedContour outline = OutlineOf(entry.Puzzle);
-                var clock = Stopwatch.StartNew();
-                IReadOnlyList<ContourApproximation> results = builder.Approximate(outline);
-                double seconds = clock.Elapsed.TotalSeconds;
+                var best = new ContourApproximation[2];
+                var marks = new string[2];
+                var seconds = new double[2];
 
-                ContourApproximation best = results[0];
-                bool first = best.Puzzle.Key == entry.Puzzle.Key;
-                bool any = results.Any(result => result.Puzzle.Key == entry.Puzzle.Key);
-                if (first) recoveredFirst++;
-                if (any) recoveredAny++;
-                sumIntersectionOverUnion += best.IntersectionOverUnion;
-                totalSeconds += seconds;
+                for (int arm = 0; arm < 2; arm++)
+                {
+                    var clock = Stopwatch.StartNew();
+                    IReadOnlyList<ContourApproximation> results = builders[arm].Approximate(outline);
+                    seconds[arm] = clock.Elapsed.TotalSeconds;
 
-                TestContext.WriteLine($"{entry.Name}\t{best.IntersectionOverUnion:0.000}\t{(first ? "是" : "")}\t{(any ? "有" : "")}\t{seconds:0.0}");
-                panels.Add(Panel(entry.Name, outline, best, first ? "逼回原形狀" : any ? "前幾名有原形狀" : ""));
+                    // ⚠️ 2026-10-14 第二版跑出過 1.016（共用邊上的格子被兩片各算一次）。超過 1 一定是計數錯了，直接失敗
+                    foreach (ContourApproximation result in results)
+                        Assert.LessOrEqual(result.IntersectionOverUnion, 1.0, $"{entry.Name}（{labels[arm]}）的 IoU 超過 1：格子被重複計算了");
+
+                    best[arm] = results[0];
+                    bool first = best[arm].Puzzle.Key == entry.Puzzle.Key;
+                    bool any = results.Any(result => result.Puzzle.Key == entry.Puzzle.Key);
+                    if (first) recoveredFirst[arm]++;
+                    if (any) recoveredAny[arm]++;
+                    sumIntersectionOverUnion[arm] += best[arm].IntersectionOverUnion;
+                    totalSeconds[arm] += seconds[arm];
+                    marks[arm] = first ? "是" : any ? "前幾名" : "";
+                }
+
+                TestContext.WriteLine($"{entry.Name}\t{best[0].IntersectionOverUnion:0.000}\t{best[1].IntersectionOverUnion:0.000}\t" +
+                                      $"{marks[0]}\t{marks[1]}\t{seconds[0]:0.0}\t{seconds[1]:0.0}");
+                rows.Add(Row(entry.Name, outline, best, marks, labels));
             }
 
-            TestContext.WriteLine($"具象題 {figurative.Count} 個：平均 IoU {sumIntersectionOverUnion / figurative.Count:0.000}，" +
-                                  $"第 1 名就是原形狀 {recoveredFirst} 個，前幾名有 {recoveredAny} 個，合計 {totalSeconds:0.0} 秒");
+            for (int arm = 0; arm < 2; arm++)
+                TestContext.WriteLine($"{labels[arm]}：具象題 {figurative.Count} 個平均 IoU {sumIntersectionOverUnion[arm] / figurative.Count:0.000}，" +
+                                      $"第 1 名就是原形狀 {recoveredFirst[arm]} 個，前幾名有 {recoveredAny[arm]} 個，合計 {totalSeconds[arm]:0.0} 秒");
 
             // 協作者那隻貓：沒有標準答案，只看 IoU 與圖
             RecognizedContour cat = RecognizedContour.FromJson(File.ReadAllText(RepositoryFiles.Find(ScanSampleRelativePath)));
-            var catClock = Stopwatch.StartNew();
-            IReadOnlyList<ContourApproximation> catResults = builder.Approximate(cat);
-            TestContext.WriteLine($"掃描樣本（U²-Net 的貓）：IoU {catResults[0].IntersectionOverUnion:0.000}，{catClock.Elapsed.TotalSeconds:0.0} 秒");
-            for (int i = 0; i < catResults.Count; i++)
-                panels.Insert(i, Panel($"掃描樣本 第 {i + 1} 名", cat, catResults[i], ""));
+            var catBest = new ContourApproximation[2];
+            for (int arm = 0; arm < 2; arm++)
+            {
+                var clock = Stopwatch.StartNew();
+                catBest[arm] = builders[arm].Approximate(cat)[0];
+                TestContext.WriteLine($"掃描樣本（U²-Net 的貓）{labels[arm]}：IoU {catBest[arm].IntersectionOverUnion:0.000}，{clock.Elapsed.TotalSeconds:0.0} 秒");
+            }
+            rows.Insert(0, Row("掃描樣本（U²-Net 的貓）", cat, catBest, new[] { "", "" }, labels));
 
             string path = Path.Combine(Path.GetTempPath(), "tangram_approximation.html");
-            File.WriteAllText(path, Page(settings, panels), new UTF8Encoding(false));
+            File.WriteAllText(path, Page($"對照：{control}<br>實驗：{experiment}", rows), new UTF8Encoding(false));
             TestContext.WriteLine($"圖：{path}");
         }
+
+        /// <summary>一列：同一個形狀，左邊對照組、右邊實驗組。</summary>
+        private static string Row(string title, RecognizedContour outline, ContourApproximation[] best, string[] marks, string[] labels) =>
+            $"<section><h2>{title}</h2><div class=\"pair\">" +
+            Panel(labels[0], outline, best[0], marks[0] == "是" ? "逼回原形狀" : marks[0] == "前幾名" ? "前幾名有原形狀" : "") +
+            Panel(labels[1], outline, best[1], marks[1] == "是" ? "逼回原形狀" : marks[1] == "前幾名" ? "前幾名有原形狀" : "") +
+            "</div></section>";
 
         /// <summary>一格：紅線是目標輪廓（已經平移到題目座標），色塊是七片。</summary>
         private static string Panel(string title, RecognizedContour outline, ContourApproximation result, string note)
@@ -225,13 +287,14 @@ namespace Tangram.Data.Tests
             return $"<figure>{svg}<figcaption><b>{title}</b>　IoU {result.IntersectionOverUnion:0.000}<br>{note}</figcaption></figure>";
         }
 
-        private static string Page(ContourApproximationSettings settings, List<string> panels) =>
+        private static string Page(string settingsDescription, List<string> rows) =>
             "<!doctype html><html lang=\"zh-Hant\"><head><meta charset=\"utf-8\"><title>逼近搜尋驗收</title><style>" +
             "body{font-family:sans-serif;background:#fafafa;margin:16px}" +
-            ".grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}" +
-            "figure{margin:0;background:#fff;border:1px solid #ddd;padding:8px}svg{width:100%;height:200px}" +
-            "figcaption{font-size:13px;margin-top:4px}</style></head><body>" +
-            $"<h1>逼近搜尋驗收</h1><p>{settings}　紅線＝目標輪廓、色塊＝逼出來的七片</p>" +
-            $"<div class=\"grid\">{string.Join("", panels)}</div></body></html>";
+            ".grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:12px}" +
+            "section{background:#fff;border:1px solid #ddd;padding:8px}h2{font-size:15px;margin:0 0 4px}" +
+            ".pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}" +
+            "figure{margin:0}svg{width:100%;height:180px}figcaption{font-size:13px;margin-top:4px}</style></head><body>" +
+            $"<h1>逼近搜尋驗收</h1><p>{settingsDescription}<br>紅線＝目標輪廓、色塊＝逼出來的第 1 名；每列左邊對照、右邊實驗</p>" +
+            $"<div class=\"grid\">{string.Join("", rows)}</div></body></html>";
     }
 }

@@ -206,7 +206,7 @@ dotnet test Tools/DotnetTests -- "NUnit.Where=name == RescaleDifficultyWeights"
 | P2-5 批次統計（約 20 秒） | `BatchStatistics` | `批次統計_一千題的特徵分布量得出來` |
 | 縮圖牆匯出（約 35 秒） | `ExportThumbnailWall` | `縮圖牆_匯出兩千個形狀` |
 | 求解器完整驗證＋解數表（Debug 約 2 分半，2026-09-21） | `SolverTable` | `求解器_全部形狀驗證並印出解數表` |
-| 逼近搜尋驗收：25 個具象題＋掃描樣本，另外匯出 `%TEMP%\tangram_approximation.html`（Debug 約 70 秒，2026-10-14） | `ApproximatorTable` | `逼近_具象題與掃描樣本的成績表` |
+| 逼近搜尋驗收：25 個具象題＋掃描樣本，對照與實驗兩組並排，另外匯出 `%TEMP%\tangram_approximation.html`（Debug 約 3 分鐘，2026-10-14） | `ApproximatorTable` | `逼近_具象題與掃描樣本的成績表` |
 
 ⚠️ **窮舉這類重計算在 Debug 比 Release 慢大約 13 倍**（2026-09-21 量的，求解器）。`dotnet test` 與 Unity 的 Test Runner 都是非最佳化模式，
 所以**日常測試只放便宜的形狀**，完整的放 `[Explicit]`。要量「實際有多快」請在 scratchpad 開 Release 的主控台程式，不要看測試的耗時。

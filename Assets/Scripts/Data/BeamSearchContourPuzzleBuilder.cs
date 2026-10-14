@@ -31,34 +31,44 @@ namespace Tangram.Data
         /// <summary>最後回幾個相異的形狀。</summary>
         public readonly int ResultCount;
 
+        /// <summary>
+        /// ⭐ <b>平移微調做幾輪</b>（2026-10-14 第二版）。每一步留下 N 條路之後，各自在目前的平移附近試 8 個方向，
+        /// 第一輪步長是平移間隔的一半，每輪減半。<b>0 ＝ 不微調，等於第一版</b>（拿來對照）。
+        /// 預設 2 輪：再細就比格子小很多，分數只會跟著格子邊界隨機跳。
+        /// </summary>
+        public readonly int RefinementRounds;
+
         /// <param name="beamWidth">每一步留幾條路，至少 1。</param>
         /// <param name="cellSize">格子邊長，必須是正數。</param>
         /// <param name="outsidePenalty">伸到外面一格扣幾分，不能是負數。</param>
         /// <param name="offsetSpacing">第一片平移的取樣間隔，必須是正數。</param>
         /// <param name="resultCount">回幾個形狀，至少 1。</param>
+        /// <param name="refinementRounds">平移微調做幾輪，不能是負數；0 ＝ 不微調。</param>
         /// <exception cref="ArgumentOutOfRangeException">任何一個參數超出範圍。</exception>
         public ContourApproximationSettings(int beamWidth = 100, double cellSize = 0.125, double outsidePenalty = 1.0,
-                                            double offsetSpacing = 0.25, int resultCount = 5)
+                                            double offsetSpacing = 0.25, int resultCount = 5, int refinementRounds = 2)
         {
             if (beamWidth < 1) throw new ArgumentOutOfRangeException(nameof(beamWidth), beamWidth, "至少要留 1 條路。");
             if (!(cellSize > 0.0)) throw new ArgumentOutOfRangeException(nameof(cellSize), cellSize, "格子邊長必須是正數。");
             if (!(outsidePenalty >= 0.0)) throw new ArgumentOutOfRangeException(nameof(outsidePenalty), outsidePenalty, "懲罰不能是負數。");
             if (!(offsetSpacing > 0.0)) throw new ArgumentOutOfRangeException(nameof(offsetSpacing), offsetSpacing, "平移間隔必須是正數。");
             if (resultCount < 1) throw new ArgumentOutOfRangeException(nameof(resultCount), resultCount, "至少要回 1 個。");
+            if (refinementRounds < 0) throw new ArgumentOutOfRangeException(nameof(refinementRounds), refinementRounds, "微調輪數不能是負數。");
 
             BeamWidth = beamWidth;
             CellSize = cellSize;
             OutsidePenalty = outsidePenalty;
             OffsetSpacing = offsetSpacing;
             ResultCount = resultCount;
+            RefinementRounds = refinementRounds;
         }
 
-        /// <summary>2026-10-14 中文邏輯裡定的起始值：N = 100、格子 1/8、懲罰 1、平移間隔 0.25、回 5 個。</summary>
+        /// <summary>起始值：N = 100、格子 1/8、懲罰 1、平移間隔 0.25、回 5 個、微調 2 輪。</summary>
         public static ContourApproximationSettings Default => new ContourApproximationSettings();
 
         /// <returns>給報告看的一行。</returns>
         public override string ToString() =>
-            $"N={BeamWidth} 格子={CellSize} 懲罰={OutsidePenalty} 平移間隔={OffsetSpacing}";
+            $"N={BeamWidth} 格子={CellSize} 懲罰={OutsidePenalty} 平移間隔={OffsetSpacing} 微調={RefinementRounds}輪";
     }
 
     /// <summary>逼近出來的一個形狀。</summary>
@@ -103,6 +113,8 @@ namespace Tangram.Data
     ///   片的座標維持精確（鐵則一）。輪廓裡每隔一段取一個點，讓大三角的重心對上它</item>
     /// <item><b>之後每一片</b>：照固定順序（大到小）列出所有貼得上、不重疊的擺法（貼邊與碰點都收），
     ///   打分、去重、留前 N 個</item>
+    /// <item><b>平移微調</b>（第二版）：每一步留下 N 條路之後，各自把輪廓往 8 個方向小移一點，
+    ///   整組重算分數，有比較好就移過去。<b>只動輪廓、不動任何一片</b>，所以合法性不受影響</item>
     /// <item><b>收尾</b>：算 IoU、同一個形狀只留一個、回前幾名</item>
     /// </list>
     ///
@@ -111,8 +123,8 @@ namespace Tangram.Data
     ///
     /// ⚠️ <b>浮點只用來打分與排名</b>，挑出來的永遠是精確的 <see cref="Placement"/>。
     ///
-    /// ⚠️ <b>刻意沒做的</b>（「最笨」的意思，先看失敗長怎樣再決定加哪一樣）：重要部位加權、洞、審美門檻、
-    /// 非同步、最後微調平移。細節在 <c>待辦清單.md</c>〈掃描模式：還沒做的〉第 6 條。
+    /// ⚠️ <b>刻意沒做的</b>（先看失敗長怎樣再決定加哪一樣）：重要部位加權、洞、審美門檻、非同步。
+    /// 細節在 <c>待辦清單.md</c>〈掃描模式：還沒做的〉第 6 條。
     /// </summary>
     public sealed class BeamSearchContourPuzzleBuilder : IContourPuzzleBuilder
     {
@@ -152,12 +164,85 @@ namespace Tangram.Data
             if (contour == null) throw new ArgumentNullException(nameof(contour));
 
             var raster = new OutlineRaster(contour.ModelOutline, settings.CellSize);
-            List<SearchState> beam = FirstPieceStates(raster);
+            List<SearchState> beam = Refine(FirstPieceStates(raster), raster);
 
             for (int depth = 1; depth < SlotOrder.Length && beam.Count > 0; depth++)
-                beam = Expand(beam, depth, raster);
+                beam = Refine(Expand(beam, depth, raster), raster);
 
             return Finish(beam, raster);
+        }
+
+        // ───────── 平移微調（第二版）─────────
+
+        /// <summary>
+        /// 微調時試的 8 個方向。<b>順序是固定的</b>：分數平手時取先試到的那個，搜尋才可重現。
+        /// </summary>
+        private static readonly (int x, int y)[] RefinementDirections =
+        {
+            (1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)
+        };
+
+        /// <summary>
+        /// 對<b>留下來的那 N 條路</b>各做一次平移微調。不對全部子狀態做：子狀態有幾萬個，成本差幾百倍。
+        /// </summary>
+        private List<SearchState> Refine(List<SearchState> beam, OutlineRaster raster)
+        {
+            if (settings.RefinementRounds == 0) return beam;
+
+            var refined = new List<SearchState>(beam.Count);
+            foreach (SearchState state in beam) refined.Add(Refine(state, raster));
+            return refined;
+        }
+
+        /// <summary>
+        /// 一條路的微調：在目前的平移周圍試 8 個方向，<b>已經放好的每一片都用新的平移重算</b>，
+        /// 有比現在高的就移到最高的那個；步長每輪減半。
+        ///
+        /// ⚠️ <b>只動輪廓，不動任何一片</b>——片的擺法是精確的，結果照樣保證拼得出來。
+        /// 分數一樣時留在原地（嚴格大於才移），8 個方向平手時取 <see cref="RefinementDirections"/> 裡先出現的。
+        /// </summary>
+        private SearchState Refine(SearchState state, OutlineRaster raster)
+        {
+            var polygons = new PiecePolygon[state.Placements.Length];
+            for (int i = 0; i < polygons.Length; i++) polygons[i] = PiecePolygon.From(state.Placements[i]);
+
+            double currentX = state.OffsetX, currentY = state.OffsetY;
+            int currentInside = state.InsideCells, currentOutside = state.OutsideCells;
+            double currentScore = state.Score;
+            double step = settings.OffsetSpacing / 2.0;
+
+            for (int round = 0; round < settings.RefinementRounds; round++, step /= 2.0)
+            {
+                double bestX = currentX, bestY = currentY, bestScore = currentScore;
+                int bestInside = currentInside, bestOutside = currentOutside;
+
+                foreach ((int x, int y) direction in RefinementDirections)
+                {
+                    double candidateX = currentX + direction.x * step;
+                    double candidateY = currentY + direction.y * step;
+
+                    int inside = 0, outside = 0;
+                    foreach (PiecePolygon polygon in polygons)
+                    {
+                        (int pieceInside, int pieceOutside) = raster.Count(polygon, candidateX, candidateY);
+                        inside += pieceInside;
+                        outside += pieceOutside;
+                    }
+
+                    double score = inside - outside * settings.OutsidePenalty;
+                    if (score > bestScore)
+                    {
+                        bestX = candidateX; bestY = candidateY; bestScore = score;
+                        bestInside = inside; bestOutside = outside;
+                    }
+                }
+
+                currentX = bestX; currentY = bestY; currentScore = bestScore;
+                currentInside = bestInside; currentOutside = bestOutside;
+            }
+
+            return new SearchState(state.Placements, state.OffsetIndex, currentX, currentY,
+                                   currentInside, currentOutside, settings.OutsidePenalty);
         }
 
         // ───────── 第一片 ─────────
@@ -479,18 +564,38 @@ namespace Tangram.Data
                 return points;
             }
 
-            /// <summary>點在不在凸多邊形裡（逆時針，含邊上）。</summary>
+            /// <summary>
+            /// 點在不在凸多邊形裡（逆時針）。
+            ///
+            /// ⚠️ <b>落在邊上的點只算給其中一片</b>（2026-10-14，第二版跑出 IoU 1.016 才發現）：
+            /// 原本「含邊上」的寫法，格子中心剛好落在兩片共用的邊上時，兩片都算到那一格——同一格算兩次，
+            /// IoU 會超過 1。平移微調會把輪廓移到 1/16、1/32 這種位置，讓格子中心大量對上整數座標的邊，
+            /// <b>而且微調會偏好這種位置</b>（重複算到的格子讓分數變高），所以結果被系統性地污染。
+            ///
+            /// 規則：在邊上的點，只有邊的方向「往上，或水平往左」時才算在裡面。共用的邊在相鄰兩片裡方向剛好相反，
+            /// 所以<b>恰好一片</b>拿到那一格。（三片以上共用的頂點剛好落在格子中心時還是可能重複，但要中心正好壓在頂點上，可以忽略。）
+            /// </summary>
             private static bool ConvexContains(double[] x, double[] y, double pointX, double pointY)
             {
+                const double tolerance = 1e-9;
                 int count = x.Length;
                 for (int i = 0; i < count; i++)
                 {
                     int next = (i + 1) % count;
-                    double cross = (x[next] - x[i]) * (pointY - y[i]) - (y[next] - y[i]) * (pointX - x[i]);
-                    if (cross < -1e-12) return false;
+                    double edgeX = x[next] - x[i], edgeY = y[next] - y[i];
+                    double cross = edgeX * (pointY - y[i]) - edgeY * (pointX - x[i]);
+                    if (cross < -tolerance) return false;
+                    if (cross <= tolerance && !OwnsBoundary(edgeX, edgeY, tolerance)) return false;
                 }
                 return true;
             }
+
+            /// <summary>
+            /// 落在這條邊上的點算不算這一片的：往上的邊、或水平往左的邊才算。
+            /// 方向反過來的那條邊（相鄰那片的同一條）剛好相反，所以兩片之間只有一片拿到。
+            /// </summary>
+            private static bool OwnsBoundary(double edgeX, double edgeY, double tolerance) =>
+                edgeY > tolerance || (Math.Abs(edgeY) <= tolerance && edgeX < 0.0);
 
             /// <summary>點在不在任意多邊形裡（射線法，奇偶規則）。輪廓不是凸的，所以不能用上面那支。</summary>
             private static bool ContainsPoint(IReadOnlyList<Vector2> polygon, double pointX, double pointY)
