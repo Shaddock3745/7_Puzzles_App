@@ -119,7 +119,7 @@ Unity 6000.3.7f1 的**七巧板拼圖遊戲**，參加 2026 大專校院資訊�
 |---|---|
 | 階段 | **P0 完成；P1 實質收工（12/13）；P2 進行中**（2026-09-10 開工，**十五張卡完成 10 張 ＋ P2-8a**；剩下的 P2-8b、P2-9 ～ P2-12 都可以延到決賽前）⏭️ P1-11 併進 P2-9 |
 | 完成幾項、幾支程式、幾個測試 | 看 `開發進度.md` 的「現況」——**只有那裡是準的**，其他文件一律不抄這些數字 |
-| 看板 | GitHub Projects：`P0_Skeleton`、`P1_Prototype`（<https://github.com/users/Shaddock3745/projects/1>、`/2`）、**`P2_Algorithm`**（issue #22 起）、`P4_Polishing`（`/9`），與 ⭐ **`P5_Finals`**（`/10`，2026-10-14 開，決賽準備，issue #36 起），repo `Shaddock3745/7_Puzzles_App`。**編號對照與現況見 `開發進度.md` 的〈看板怎麼接下去〉**，`gh issue list --state all` 隨時可重查 |
+| 看板 | GitHub Projects：`P0_Skeleton`、`P1_Prototype`（<https://github.com/users/Shaddock3745/projects/1>、`/2`）、**`P2_Algorithm`**（issue #22 起）、`P4_Polishing`（`/9`），與 ⭐ **`P5_Finals`**（`/10`，2026-10-14 開，決賽準備，issue #36 起）、**`Collab_Contour`**（`/11`，協作者要交的東西，標籤「協作者」，**由負責人維護**），repo `Shaddock3745/7_Puzzles_App`。**編號對照與現況見 `開發進度.md` 的〈看板怎麼接下去〉**，`gh issue list --state all` 隨時可重查 |
 | ⚠️ commit 怎麼關 issue | 光寫 `#12` 只會**連結**，不會關。要關必須寫 `Closes #12`（或 `Fixes` / `Resolves`），而且多個要各寫一次——`Closes #9 #10` 只會關掉第一個 |
 
 ### P1 已完成的項目：去哪查
