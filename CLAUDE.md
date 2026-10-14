@@ -119,7 +119,7 @@ Unity 6000.3.7f1 的**七巧板拼圖遊戲**，參加 2026 大專校院資訊�
 |---|---|
 | 階段 | **P0 完成；P1 實質收工（12/13）；P2 進行中**（2026-09-10 開工，**十五張卡完成 10 張 ＋ P2-8a**；剩下的 P2-8b、P2-9 ～ P2-12 都可以延到決賽前）⏭️ P1-11 併進 P2-9 |
 | 完成幾項、幾支程式、幾個測試 | 看 `開發進度.md` 的「現況」——**只有那裡是準的**，其他文件一律不抄這些數字 |
-| 看板 | GitHub Projects：`P0_Skeleton`、`P1_Prototype`（<https://github.com/users/Shaddock3745/projects/1>、`/2`）與 **`P2_Algorithm`**（issue #22 起），repo `Shaddock3745/7_Puzzles_App`。**編號對照與現況見 `開發進度.md` 的〈看板怎麼接下去〉**，`gh issue list --state all` 隨時可重查 |
+| 看板 | GitHub Projects：`P0_Skeleton`、`P1_Prototype`（<https://github.com/users/Shaddock3745/projects/1>、`/2`）、**`P2_Algorithm`**（issue #22 起）、`P4_Polishing`（`/9`），與 ⭐ **`P5_Finals`**（`/10`，2026-10-14 開，決賽準備，issue #36 起），repo `Shaddock3745/7_Puzzles_App`。**編號對照與現況見 `開發進度.md` 的〈看板怎麼接下去〉**，`gh issue list --state all` 隨時可重查 |
 | ⚠️ commit 怎麼關 issue | 光寫 `#12` 只會**連結**，不會關。要關必須寫 `Closes #12`（或 `Fixes` / `Resolves`），而且多個要各寫一次——`Closes #9 #10` 只會關掉第一個 |
 
 ### P1 已完成的項目：去哪查
@@ -259,7 +259,7 @@ dotnet test Tools/DotnetTests -- "NUnit.Where=name == RescaleDifficultyWeights"
 - **`gh` CLI 已安裝**（v2.100.0，`C:\Program Files\GitHub CLI\`）。已登入 `Shaddock3745`。⚠️ 四件事：
   - **登入類指令（`gh auth login` / `refresh`）一律交給使用者跑**，不要代勞
   - **動 GitHub 之前先問**——關 issue、開 issue、移看板欄位別人看得到，跟改本地檔案不同
-  - ⚠️ **兩台機器的 scope 不一樣。** 先確認再動：`gh auth status` 會列出來。這一台（2026-09-09 裝的）是 `gist, read:org, repo, workflow`——**沒有 `project`**，所以 **issue 動得了、看板欄位動不了**。實務上用不到，因為**關 issue 時 Projects 會自動把卡片移進 Done**。真的需要再請使用者跑 `gh auth refresh -s project`
+  - ⚠️ **兩台機器的 scope 不一樣。** 先確認再動：`gh auth status` 會列出來。這一台（2026-09-09 裝的）原本沒有 `project`，**2026-10-14 查過已經有了**（`gist, project, read:org, repo, workflow`），開 project、加卡片、改欄位都動得了。另一台如果沒有：關 issue 時 Projects 會自動把卡片移進 Done，其他的再請使用者跑 `gh auth refresh -s project`。💡 開新 project 用 `gh project copy` 從舊的複製，**Testing 欄才會跟著來**（新建的預設只有 Todo／In Progress／Done）
   - ⚠️ **剛裝完的那個 session PATH 是舊的**，`gh` 會 command not found（Git Bash 與 PowerShell 都是）。用完整路徑 `"C:\Program Files\GitHub CLI\gh.exe"` 呼叫就好，不用叫使用者重開
 - ⚠️ **PowerShell 5.1 會把原生程式的 stderr 包成 ErrorRecord**，所以 `gh` 成功時也可能顯示成紅字的 `NativeCommandError`（例如 `✓ Closed issue ...` 就是印到 stderr 的）。**看訊息內容判斷，不要看有沒有紅字**
 - **Git Bash 裡沒有 `python`，也沒有 `node`** → 要寫腳本只能用 PowerShell；改檔案優先用 Edit/Write 工具（CJK 內容用 heredoc 有編碼風險）
