@@ -76,6 +76,18 @@ namespace Tangram.Core
         /// </summary>
         public readonly GenerationRecord? Generation;
 
+        /// <summary>
+        /// 這一局<b>要不要結算實力</b>（2026-10-14，掃描模式）。預設 true，<b>只有掃描題是 false</b>。
+        ///
+        /// 掃描題不算的理由：難度是逼近出來的，不是照實力挑的；而且玩家可以一直掃同一個東西刷分。
+        ///
+        /// ⭐ <b>為什麼記在這一關身上，不看 <c>LevelController.CurrentMode</c></b>：結算是在<b>換關前</b>補做的，
+        /// 而那時候模式可能已經換了——玩完掃描題回主畫面按挑戰模式，<c>StartMode</c> 先改模式、
+        /// 再進下一關、進關前才補結算，看模式的話那一局掃描題就會被當成挑戰題算進去，而且不報錯。
+        /// 每關一份，換關整包換掉，所以不會殘留。
+        /// </summary>
+        public readonly bool CountsTowardRating;
+
         // ───────── 提示（2026-09-15，互動設計 §9、待辦清單〈提示〉）─────────
 
         /// <summary>一關最多幾次提示。</summary>
@@ -224,9 +236,10 @@ namespace Tangram.Core
         /// <param name="difficulty">這一題的難度值，由出題的人算好，見 <see cref="Difficulty"/>。</param>
         /// <param name="allowRoll">允不允許 roll 相機。</param>
         /// <param name="generation">出題紀錄，不是出題器生的題目就不給。</param>
+        /// <param name="countsTowardRating">要不要結算實力，見 <see cref="CountsTowardRating"/>。</param>
         public LevelData(Puzzle puzzle, ExactVector2 boxOrigin, Region boxRegion,
                          Placement[] referenceSolution, int difficulty, bool allowRoll,
-                         GenerationRecord? generation = null)
+                         GenerationRecord? generation = null, bool countsTowardRating = true)
         {
             Puzzle = puzzle;
             BoxOrigin = boxOrigin;
@@ -236,6 +249,7 @@ namespace Tangram.Core
             Board = new BoardState();
             Difficulty = difficulty;
             Generation = generation;
+            CountsTowardRating = countsTowardRating;
             IsSolved = false;
 
             // 一關的開頭七片都在抽屜裡。換關是整包換掉（見類別說明），
@@ -919,8 +933,11 @@ namespace Tangram.Core
         /// <param name="generation">
         /// 出題紀錄（P2-15）。<b>選填</b>：只有照難度生的那條路會給，回饋場景、練習題不給，呼叫端一行都不用改。
         /// </param>
+        /// <param name="countsTowardRating">
+        /// 要不要結算實力（2026-10-14）。<b>選填、預設 true</b>，只有掃描題傳 false，見 <see cref="LevelData.CountsTowardRating"/>。
+        /// </param>
         public void Load(Puzzle puzzle, IReadOnlyList<Placement> referenceSolution, int difficulty, bool allowRoll,
-                         GenerationRecord? generation = null)
+                         GenerationRecord? generation = null, bool countsTowardRating = true)
         {
             ExactVector2 boxOrigin = BoxOriginFor(puzzle);
             Region boxRegion = Region.FromPuzzle(puzzle, boxOrigin);
@@ -931,7 +948,8 @@ namespace Tangram.Core
             for (int i = 0; i < referenceSolution.Count; i++)
                 translated[i] = referenceSolution[i].Translated(boxOrigin);
 
-            Data = new LevelData(puzzle, boxOrigin, boxRegion, translated, difficulty, allowRoll, generation);
+            Data = new LevelData(puzzle, boxOrigin, boxRegion, translated, difficulty, allowRoll, generation,
+                                 countsTowardRating);
         }
 
         /// <summary>

@@ -17,7 +17,14 @@ public enum GameMode
     GeneratedByRating,
 
     /// <summary>從題庫隨機抽具象題（貓、船之類），一輪之內不重複。</summary>
-    Figurative
+    Figurative,
+
+    /// <summary>
+    /// 拍照 → 辨識模組取輪廓 → 照輪廓出題（2026-10-14，名稱暫定）。
+    /// ⚠️ <b>不結算實力</b>，「下一題」是再掃一次。
+    /// ⚠️ <b>現在相機、辨識、出題三段都是假的</b>，見 <c>ContourScanning.cs</c> 與 <c>ContourPuzzleBuilder.cs</c>。
+    /// </summary>
+    Scan
 }
 
 /// <summary>
@@ -104,6 +111,35 @@ public class LevelController : MonoBehaviour
 
     /// <summary>具象題的洗牌袋：一輪之內不重複，抽完才重洗。跟題庫一起建。</summary>
     private PuzzleShuffleBag figurativeBag;
+
+    // ───────── 掃描模式（2026-10-14）─────────
+
+    /// <summary>
+    /// 假的辨識模組要回的樣本 JSON，在 <c>Resources</c> 裡的名字（不含副檔名）。
+    /// 💡 <c>.json</c> 本來就是 Unity 的文字資產，不用像題庫那樣改成 <c>.txt</c>。
+    /// </summary>
+    private const string ScanSampleResourceName = "ScanSamples/u2net_unity_contour";
+
+    /// <summary>
+    /// ⚠️ 假的出題器固定回的那一題。<b>找不到就退到第一題具象題</b>——反正是假的，
+    /// 為了名字對不上而整個掃描模式進不了關不值得。
+    /// </summary>
+    private const string FixedScanPuzzleName = "貓1";
+
+    /// <summary>掃描（相機＋辨識模組）。<b>第一次要掃描時才建</b>，見 <see cref="EnsureScanPipeline"/>。</summary>
+    private IContourScanner contourScanner;
+
+    /// <summary>輪廓 → 題目。跟 <see cref="contourScanner"/> 一起建。</summary>
+    private IContourPuzzleBuilder contourPuzzleBuilder;
+
+    /// <summary>
+    /// ⭐ <b>掃描沒有進關就結束了</b>（取消或失敗）。主畫面訂閱它，把自己顯示回來。
+    ///
+    /// <b>為什麼用事件，不直接叫主畫面</b>：主畫面已經指向這支（按鈕要叫 <see cref="StartMode"/>），
+    /// 這支再指回去就是環。這裡也沒有順序問題要防（只有一個訂閱者、做的事只有顯示自己），
+    /// 所以不違反類別說明裡「換關不發事件」那一條。
+    /// </summary>
+    public event System.Action ScanAborted;
 
     /// <summary>
     /// 這一場在玩哪一種題目。<b>預設是原本的遊玩迴圈</b>，所以沒有主畫面的場景（回饋收集、工具）行為不變。
@@ -288,6 +324,13 @@ public class LevelController : MonoBehaviour
             return;
         }
 
+        // 掃描模式的「下一題」＝再掃一次（2026-10-14 定）。進關要等掃描回來，所以這裡只是開始
+        if (CurrentMode == GameMode.Scan)
+        {
+            BeginScan();
+            return;
+        }
+
         // 設定讀不到時 Awake 已經報過錯了，這裡不再報一次
         SkillRatingTracker rating = session?.Rating;
         if (rating == null) return;
@@ -296,7 +339,8 @@ public class LevelController : MonoBehaviour
     }
 
     /// <summary>
-    /// 換一個模式，並且馬上進第一關（2026-09-23）。<b>主畫面那兩顆按鈕叫的就是這支。</b>
+    /// 換一個模式，並且馬上進第一關（2026-09-23）。<b>主畫面那幾顆按鈕叫的就是這支。</b>
+    /// ⚠️ 掃描模式不是「馬上」：要等掃描回來才進關，取消或失敗會發 <see cref="ScanAborted"/>。
     /// </summary>
     /// <param name="mode">要玩哪一種。</param>
     public void StartMode(GameMode mode)
@@ -388,6 +432,123 @@ public class LevelController : MonoBehaviour
         return true;
     }
 
+    // ───────── 掃描模式（2026-10-14）─────────
+
+    /// <summary>
+    /// 開始一次掃描。<b>進關要等 <see cref="OnScanFinished"/></b>，這裡只負責開頭。
+    ///
+    /// 上一次還沒回來就什麼都不做——玩家連按兩下不該開兩次相機。
+    /// </summary>
+    private void BeginScan()
+    {
+        if (difficultyWeights == null) return;      // Awake 已經報過錯
+
+        if (!EnsureScanPipeline())
+        {
+            AbortScan();
+            return;
+        }
+
+        if (contourScanner.IsScanning) return;
+        contourScanner.BeginScan(OnScanFinished);
+    }
+
+    /// <summary>
+    /// 掃描回來了：讀輪廓 → 出題 → 進關。<b>任何一步失敗都回主畫面</b>，不留在一個沒有題目的畫面上。
+    /// </summary>
+    /// <param name="result">掃描的結果。</param>
+    private void OnScanFinished(ContourScanResult result)
+    {
+        // ⚠️ 等待的期間模式可能換掉了（真的相機開著的時候玩家可能回主畫面選別的）。
+        // 那時候這個結果已經沒人要了，進關的話會蓋掉玩家剛選的那一題
+        if (CurrentMode != GameMode.Scan) return;
+
+        if (result.Status == ContourScanStatus.Cancelled)
+        {
+            Debug.Log("掃描取消，回主畫面。", this);
+            AbortScan();
+            return;
+        }
+
+        if (result.Status == ContourScanStatus.Failed)
+        {
+            Debug.LogWarning($"掃描失敗，回主畫面：{result.FailureReason}", this);
+            AbortScan();
+            return;
+        }
+
+        RecognizedContour contour;
+        try
+        {
+            contour = RecognizedContour.FromJson(result.ContourJson);
+        }
+        catch (System.ArgumentException exception)
+        {
+            // 訊息會講是哪裡不合法（截斷、點太少、面積是零……），原樣帶出來
+            Debug.LogWarning($"辨識模組交回來的輪廓讀不進來，回主畫面。{exception.Message}", this);
+            AbortScan();
+            return;
+        }
+
+        ContourPuzzle built = contourPuzzleBuilder.Build(contour);
+        if (built == null)
+        {
+            Debug.LogWarning($"這條輪廓（{contour.PixelPoints.Count} 個點）逼近不出題目，回主畫面。", this);
+            AbortScan();
+            return;
+        }
+
+        levelIndex++;
+
+        // 難度當場算，跟具象題同一套（見 ContourPuzzle 為什麼不帶難度）。
+        // 掃描題不結算，算它只是為了監控面板與 log 看得到
+        int difficulty = DifficultyEvaluator.Score(built.Puzzle, built.ReferenceSolution, difficultyWeights);
+
+        Debug.Log($"第 {levelIndex} 關：掃描題「{built.Name}」，輪廓 {contour.PixelPoints.Count} 個點" +
+                  $"（{contour.ImageWidth}×{contour.ImageHeight}），難度 {difficulty}，不結算實力", this);
+
+        // allowRoll 傳 false：跟具象題同一個理由——照片裡是正的貓，題目也要是正的
+        EnterLevel(built.Puzzle, built.ReferenceSolution, difficulty, allowRoll: false,
+                   countsTowardRating: false);
+    }
+
+    /// <summary>掃描沒有進關就結束了：讓主畫面顯示回來。</summary>
+    private void AbortScan() => ScanAborted?.Invoke();
+
+    /// <summary>
+    /// 需要的話把掃描的三段建起來。<b>第一次要掃描時才建</b>，只玩別的模式的人不付這個成本。
+    ///
+    /// ⚠️ <b>三段現在都是假的</b>：不開相機、辨識模組回固定的樣本 JSON、出題器回固定的一題具象題。
+    /// 換成真的時只改這一支裡的 <c>new</c>，其他地方一行都不用動。
+    /// </summary>
+    /// <returns>掃描可以用了沒。</returns>
+    private bool EnsureScanPipeline()
+    {
+        if (contourScanner != null) return true;
+
+        // 假的出題器要從題庫拿題目。讀不到時 EnsurePuzzleLibraryLoaded 已經報過錯
+        if (!EnsurePuzzleLibraryLoaded()) return false;
+
+        PuzzleLibrary.Entry fixedEntry = null;
+        foreach (PuzzleLibrary.Entry entry in puzzleLibrary.FigurativeShapes)
+            if (entry.Name == FixedScanPuzzleName) { fixedEntry = entry; break; }
+
+        if (fixedEntry == null)
+        {
+            fixedEntry = puzzleLibrary.FigurativeShapes[0];
+            Debug.LogWarning($"題庫裡沒有「{FixedScanPuzzleName}」，假的出題器改回「{fixedEntry.Name}」。", this);
+        }
+
+        // 樣本讀不到不在這裡擋：假的辨識模組拿到 null 會回「失敗」，走的就是真的模組失敗時那條路
+        TextAsset sample = Resources.Load<TextAsset>(ScanSampleResourceName);
+        if (sample == null)
+            Debug.LogError($"Resources 裡沒有 {ScanSampleResourceName}.json：假的辨識模組每次都會回失敗。", this);
+
+        contourScanner = new NoCameraContourScanner(new SampleFileContourRecognizer(sample != null ? sample.text : null, this));
+        contourPuzzleBuilder = new FixedContourPuzzleBuilder(fixedEntry);
+        return true;
+    }
+
     /// <summary>
     /// 進下一關，<b>指定目標難度</b>（P2-7）。
     ///
@@ -465,11 +626,14 @@ public class LevelController : MonoBehaviour
     /// 出題紀錄（P2-15），給監控面板看。<b>選填</b>：只有 <see cref="EnterNextLevel(int)"/> 會給，
     /// 回饋收集場景的題單與練習題不給。
     /// </param>
+    /// <param name="countsTowardRating">
+    /// 要不要結算實力（2026-10-14）。<b>選填、預設 true</b>，只有掃描題傳 false，見 <c>LevelData.CountsTowardRating</c>。
+    /// </param>
     public void EnterLevel(Puzzle puzzle, IReadOnlyList<Placement> referenceSolution, int difficulty, bool allowRoll,
-                           GenerationRecord? generation = null)
+                           GenerationRecord? generation = null, bool countsTowardRating = true)
     {
         // 1. 載入：算原點、建 Region、換掉整包資料
-        session.Load(puzzle, referenceSolution, difficulty, allowRoll, generation);
+        session.Load(puzzle, referenceSolution, difficulty, allowRoll, generation, countsTowardRating);
         LevelData level = session.Data;
 
         // 2. 設盒子 → 相機這時候才算得出來。**一定要排在第 3、4 步之前**

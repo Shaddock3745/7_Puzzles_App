@@ -173,7 +173,9 @@ public class LevelResultPanels : MonoBehaviour
         // ⭐ 具象題是隨機抽的，「下一題會難一點」在那個模式裡是假的（2026-09-23）。
         // ⚠️ 這一行不能省：實力照樣有結算（具象題的難度跟生成題在同一把尺上），
         // 所以 settlement 是有值的——不判模式的話它會理直氣壯地講一句不成立的話
-        if (levelController != null && levelController.CurrentMode == GameMode.Figurative)
+        // 掃描模式（2026-10-14）是反過來的情況：根本不結算，settlement 永遠沒有值，不判模式的話會一直空白
+        if (levelController != null &&
+            (levelController.CurrentMode == GameMode.Figurative || levelController.CurrentMode == GameMode.Scan))
             return "再來一題";
 
         if (!settlement.HasValue) return string.Empty;

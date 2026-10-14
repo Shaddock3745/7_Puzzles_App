@@ -16,6 +16,13 @@ namespace Tangram.Core
         /// <summary>有關卡但沒有題目——出題工具那個空方框。</summary>
         NoPuzzle,
 
+        /// <summary>
+        /// 這一關<b>不結算實力</b>（<see cref="LevelData.CountsTowardRating"/> 是 false，目前只有掃描題，2026-10-14）。
+        /// <b>玩完沒有都停在這裡</b>——不分這一條的話，玩完會掉進 <see cref="AwaitingSettlement"/> 而且一直停著，
+        /// 看起來就是「被守衛擋下了」那個 bug 訊號，其實是正常的。
+        /// </summary>
+        NotRated,
+
         /// <summary>還在玩。</summary>
         Playing,
 
@@ -62,6 +69,7 @@ namespace Tangram.Core
         /// <summary>
         /// ⭐ <b>預覽</b>：照<b>現在的實力</b>，這一題的預期表現 E。只在 <see cref="MonitorState.Playing"/> 且有實力紀錄時有值。
         /// 讓評審在玩家還沒解完之前就看到「系統認為你有 52% 的表現」。
+        /// <see cref="MonitorState.NotRated"/> 時也沒有值：這一局根本不會拿它來比。
         /// ⚠️ 結算之後刻意沒有值：那時實力已經更新了，拿新的實力算這一題的 E 會跟結算明細裡的 E 不一樣，兩個數字並排會讓人以為算錯。
         /// </summary>
         public readonly double? PreviewExpectedPerformance;
@@ -149,7 +157,9 @@ namespace Tangram.Core
             if (level.Puzzle == null)
                 return new LevelMonitorReport(MonitorState.NoPuzzle, level, null, rating, null, foreground, nextTarget, targetRange);
 
-            MonitorState state = !level.IsFinished ? MonitorState.Playing
+            // ⚠️ 不算實力的要排在最前面：它玩完也不會有明細，往下判就會變成「結算中」
+            MonitorState state = !level.CountsTowardRating ? MonitorState.NotRated
+                : !level.IsFinished ? MonitorState.Playing
                 : !level.Settlement.HasValue ? MonitorState.AwaitingSettlement
                 : MonitorState.Settled;
 

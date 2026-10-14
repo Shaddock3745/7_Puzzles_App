@@ -215,7 +215,7 @@ public class MonitorWindow : EditorWindow
     /// <returns>一行文字。</returns>
     private static string GenerationText(GenerationRecord? generation, int levelDifficulty)
     {
-        if (!generation.HasValue) return "非生成題（回饋題單、練習題或手動載入）";
+        if (!generation.HasValue) return "非生成題（回饋題單、練習題、具象題、掃描題或手動載入）";
 
         GenerationRecord record = generation.Value;
         switch (record.Outcome)
@@ -342,11 +342,17 @@ public class MonitorWindow : EditorWindow
 
         switch (report.State)
         {
+            // 掃描題（2026-10-14）：統計照樣顯示，但沒有預期表現也沒有結算——這一局不會拿來比
+            case MonitorState.NotRated:
+                EditorGUILayout.LabelField("狀態",
+                    !level.IsFinished ? "進行中" : level.IsSolved ? "已過關" : "已放棄");
+                DrawRoundStatistics(report);
+                EditorGUILayout.HelpBox("這一關不結算實力（掃描題）。", MessageType.None);
+                break;
+
             case MonitorState.Playing:
                 EditorGUILayout.LabelField("狀態", "進行中");
-                EditorGUILayout.LabelField("時間",
-                    $"前景 {report.ForegroundSecondsSoFar:F1} 秒　拖曳 {level.DragSeconds:F1} 秒（{level.DragCount} 次）　" +
-                    $"提示 {level.HintsUsed} 次　清空 {level.ClearCount} 次");
+                DrawRoundStatistics(report);
 
                 if (report.Rating != null && report.PreviewExpectedPerformance.HasValue)
                 {
@@ -369,6 +375,15 @@ public class MonitorWindow : EditorWindow
                 DrawSettlement(level.Settlement.Value, settings, report.TargetRange);
                 break;
         }
+    }
+
+    /// <summary>局內統計那一行。進行中與不結算的關卡共用。</summary>
+    private static void DrawRoundStatistics(LevelMonitorReport report)
+    {
+        LevelData level = report.Level;
+        EditorGUILayout.LabelField("時間",
+            $"前景 {report.ForegroundSecondsSoFar:F1} 秒　拖曳 {level.DragSeconds:F1} 秒（{level.DragCount} 次）　" +
+            $"提示 {level.HintsUsed} 次　清空 {level.ClearCount} 次");
     }
 
     /// <summary>

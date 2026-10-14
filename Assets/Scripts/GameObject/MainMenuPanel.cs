@@ -6,6 +6,8 @@ using UnityEngine;
 /// <list type="bullet">
 /// <item><b>挑戰模式</b>——照實力當場生題，就是原本的遊玩迴圈（P2-7 ＋ P2-14）</item>
 /// <item><b>圖形模式</b>——從題庫隨機抽具象題（貓、船之類），一輪之內不重複</item>
+/// <item><b>掃描模式</b>（2026-10-14，名稱暫定）——拍照、取輪廓、照輪廓出題。⚠️ 現在三段都是假的，
+/// 見 <see cref="GameMode.Scan"/>。掃描取消或失敗時這裡會自己顯示回來（<see cref="LevelController.ScanAborted"/>）</item>
 /// </list>
 ///
 /// <b>跟 <see cref="LevelResultPanels"/> 同一個形狀</b>：不做事，只負責「什麼時候顯示」與
@@ -25,6 +27,7 @@ using UnityEngine;
 /// 不然從彈窗按「回主畫面」之後，彈窗會蓋在主畫面上</item>
 /// <item>兩顆的 <c>onClick</c> 分別接到 <see cref="OnChallengeModePressed"/> /
 /// <see cref="OnFigurativeModePressed"/></item>
+/// <item>（2026-10-14）第三顆「掃描模式」的 <c>onClick</c> 接到 <see cref="OnScanModePressed"/></item>
 /// <item>⚠️ <b>這支腳本掛在另一個物件上，不能掛在 Panel 身上</b>——
 /// 停用的物件不跑 <c>Update</c> 也收不到別人叫它的機會，藏起來就再也開不回來
 /// （除錯記錄 004 踩過一次）</item>
@@ -67,6 +70,14 @@ public class MainMenuPanel : MonoBehaviour
         // ⚠️ 一定要在 Awake 裡講。自動進關是在 LevelController.Start 裡，
         // 而 Unity 保證所有 Awake 跑完才開始跑 Start——在 Start 裡講就賭上了兩支誰先跑
         levelController.SuppressAutoStart();
+
+        // 掃描沒進關就結束（取消、失敗）時把主畫面顯示回來。不訂閱的話玩家會停在一個被藏起來的主畫面後面
+        levelController.ScanAborted += Show;
+    }
+
+    private void OnDestroy()
+    {
+        if (levelController != null) levelController.ScanAborted -= Show;
     }
 
     /// <summary>
@@ -121,6 +132,13 @@ public class MainMenuPanel : MonoBehaviour
     /// <summary>「圖形模式」被按下。接在 Unity <c>Button.onClick</c> 上。</summary>
     /// <remarks>第一次按會多花零點幾秒讀題庫，之後就不會了。</remarks>
     public void OnFigurativeModePressed() => StartMode(GameMode.Figurative);
+
+    /// <summary>「掃描模式」被按下。接在 Unity <c>Button.onClick</c> 上（2026-10-14）。</summary>
+    /// <remarks>
+    /// 進關要等掃描回來（假的掃描是下一幀），這中間主畫面已經藏起來了。
+    /// 掃描取消或失敗會經由 <see cref="LevelController.ScanAborted"/> 叫回 <see cref="Show"/>。
+    /// </remarks>
+    public void OnScanModePressed() => StartMode(GameMode.Scan);
 
     /// <summary>
     /// 先藏起自己再進關。

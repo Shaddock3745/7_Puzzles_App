@@ -114,6 +114,8 @@ namespace Tangram.Core
         /// <b>不結算的情況</b>（全部回 false、實力不動）：
         /// <list type="bullet">
         /// <item>沒有這一關，或<b>沒有題目</b>（出題工具那個空方框，難度是 0——拿 0 去算預期表現會出事）</item>
+        /// <item><b>這一關說了不算</b>（<see cref="LevelData.CountsTowardRating"/>，目前只有掃描題，2026-10-14）。
+        ///   ⚠️ 不會留下結算明細，所以彈窗上的方向會是空白——彈窗那邊要自己換一句話</item>
         /// <item><b>還沒結束</b>。關掉 App 走人永遠走到這裡，所以那種不算輸（2026-09-10 定）</item>
         /// <item><b>已經結算過</b>。不擋的話同一局會被算兩遍</item>
         /// <item>⚠️ <b>計時還在跑</b>。前景秒數只在「停止」時才累加，還在跑就讀它，拿到的是少算的時間、
@@ -137,6 +139,7 @@ namespace Tangram.Core
 
             update = default;
             if (level == null || level.Puzzle == null) return false;
+            if (!level.CountsTowardRating) return false;
             if (!level.IsFinished || level.Settlement.HasValue || level.IsTiming) return false;
 
             update = SkillRating.Settle(

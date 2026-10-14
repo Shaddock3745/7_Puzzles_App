@@ -346,6 +346,33 @@ namespace Tangram.Core.Tests
             Assert.AreEqual(1200.0, session.Rating.CurrentRating);
         }
 
+        /// <summary>
+        /// 說了不算的一關（掃描題，2026-10-14）結束了也不結算，實力不動、也不留明細。
+        /// </summary>
+        [Test]
+        public void 結算_不算實力的一關不結算()
+        {
+            var session = new LevelSession { Rating = new SkillRatingTracker(AgreedSettings(), 1200.0) };
+            Placement[] solution = Fixtures.ClassicSquare();
+            session.Load(Puzzle.FromPlacements(solution), solution, 1200, allowRoll: false, countsTowardRating: false);
+
+            session.Data.StartForegroundTiming(0.0);
+            session.Data.MarkAbandoned(100.0);
+
+            Assert.IsFalse(session.Data.CountsTowardRating);
+            Assert.IsFalse(session.Rating.TrySettle(session.Data, TestRange(), out _));
+            Assert.IsFalse(session.Data.Settlement.HasValue);
+            Assert.AreEqual(1200.0, session.Rating.CurrentRating);
+            Assert.AreEqual(0, session.Rating.History.Count, "走勢裡不該多一筆");
+        }
+
+        /// <summary>沒特別講的話照舊要結算——回饋場景、挑戰模式、圖形模式都沒改呼叫端。</summary>
+        [Test]
+        public void 結算_預設是要算實力的()
+        {
+            Assert.IsTrue(FreshSession().Data.CountsTowardRating);
+        }
+
         /// <summary>⭐ <b>同一局只結算一次</b>——每幀都會叫，不擋的話實力每幀掉一次。</summary>
         [Test]
         public void 結算_同一局只結算一次()

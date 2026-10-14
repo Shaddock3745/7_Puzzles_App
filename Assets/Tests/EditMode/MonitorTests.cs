@@ -419,6 +419,33 @@ namespace Tangram.Core.Tests
         }
 
         /// <summary>
+        /// ⚠️ <b>不算實力的關卡（掃描題，2026-10-14）玩完也不能掉進「結算中」</b>——那是「被守衛擋下了」的 bug 訊號，
+        /// 每一局掃描題都亮的話，真的 bug 就看不出來了。也沒有預覽：這一局不會拿 E 來比。
+        /// </summary>
+        [Test]
+        public void 報告_不算實力的關卡_玩完沒有都是不結算()
+        {
+            var session = new LevelSession { Rating = new SkillRatingTracker(AgreedSettings(), 1200.0) };
+            Placement[] solution = Fixtures.ClassicSquare();
+            session.Load(Puzzle.FromPlacements(solution), solution, 1200, allowRoll: false, countsTowardRating: false);
+            LevelData level = session.Data;
+            level.StartForegroundTiming(0.0);
+
+            LevelMonitorReport playing = LevelMonitorReport.Build(session, null, null, 1.0);
+            Assert.AreEqual(MonitorState.NotRated, playing.State, "還在玩");
+            Assert.IsFalse(playing.PreviewExpectedPerformance.HasValue, "不結算的關卡不該有預覽");
+
+            PlaceAllPieces(level);
+            level.MarkSolvedIfAllOnBoard();
+            level.StopAllTiming(2.0);
+            session.Rating.TrySettle(level, TestRange(), out _);
+
+            LevelMonitorReport finished = LevelMonitorReport.Build(session, null, null, 3.0);
+            Assert.AreEqual(MonitorState.NotRated, finished.State, "玩完了");
+            Assert.IsFalse(finished.Settlement.HasValue);
+        }
+
+        /// <summary>
         /// 預覽只在還在玩、而且有實力紀錄時有值。
         /// ⚠️ 結算之後刻意沒有——那時實力已經更新了，拿新實力算的 E 會跟明細裡的 E 不一樣。
         /// </summary>
