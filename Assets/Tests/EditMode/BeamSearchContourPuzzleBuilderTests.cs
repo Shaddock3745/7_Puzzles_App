@@ -144,6 +144,33 @@ namespace Tangram.Data.Tests
             }
         }
 
+        /// <summary>
+        /// ⭐ <b>從第 1 片開始微調 ＝ 第二版，一模一樣</b>（2026-10-14 第三版）。跟上一條同一個用意：
+        /// 加「從第幾片開始」的時候不能改壞第二版那條路。數字是加這個參數之前，用第二版（微調 2 輪）記下來的。
+        /// </summary>
+        [Test]
+        public void 從第1片開始微調時結果跟第二版一模一樣()
+        {
+            var settings = new ContourApproximationSettings(beamWidth: 10, resultCount: 3, refinementRounds: 2,
+                                                            refinementStartPieceCount: 1);
+            IReadOnlyList<ContourApproximation> results =
+                new BeamSearchContourPuzzleBuilder(settings).Approximate(ClassicSquareOutline());
+
+            (double intersectionOverUnion, string key)[] secondVersion =
+            {
+                (0.9046333783175888, "10bde9cf110df35e8bd6acce686e29d5"),
+                (0.9035166816952209, "3f7ae4a9cb9f5972944885faf19b2dfa"),
+                (0.9030085316569376, "386bdc0b870e19f8c6782c633ca91df2"),
+            };
+
+            Assert.AreEqual(secondVersion.Length, results.Count);
+            for (int i = 0; i < secondVersion.Length; i++)
+            {
+                Assert.AreEqual(secondVersion[i].intersectionOverUnion, results[i].IntersectionOverUnion, 1e-12, $"第 {i + 1} 名的 IoU");
+                Assert.AreEqual(secondVersion[i].key, results[i].Puzzle.Key, $"第 {i + 1} 名的形狀");
+            }
+        }
+
         [Test]
         public void 不收null輪廓()
         {
@@ -161,6 +188,8 @@ namespace Tangram.Data.Tests
             Assert.Throws<ArgumentOutOfRangeException>(() => new ContourApproximationSettings(offsetSpacing: 0.0));
             Assert.Throws<ArgumentOutOfRangeException>(() => new ContourApproximationSettings(resultCount: 0));
             Assert.Throws<ArgumentOutOfRangeException>(() => new ContourApproximationSettings(refinementRounds: -1));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new ContourApproximationSettings(refinementStartPieceCount: 0));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new ContourApproximationSettings(refinementStartPieceCount: 8));
         }
 
         // ───────── [Explicit] 驗收工具 ─────────

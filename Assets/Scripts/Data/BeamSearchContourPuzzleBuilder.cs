@@ -38,16 +38,32 @@ namespace Tangram.Data
         /// </summary>
         public readonly int RefinementRounds;
 
+        /// <summary>
+        /// ⭐ <b>從第幾片開始微調</b>（2026-10-14 第三版），1 ～ 7：這一步放完之後，已放的片數 ≥ 它才微調。
+        /// 1 ＝ 第一片就微調（第二版）、7 ＝ 只在七片都放完時微調。<see cref="RefinementRounds"/> 是 0 時這個沒有作用。
+        ///
+        /// <b>為什麼要有它</b>：第二版魚2 掉了，推測是只有一兩片時，每條路都能把輪廓移到「這幾片剛好全在裡面」的位置，
+        /// 分數變得很接近、排名失去鑑別力，對的那條路被擠出前 N 名。片多了，輪廓才有足夠的形狀可以對。
+        ///
+        /// <b>預設 5</b>（2026-10-14 在 Release 掃了 1／3／5／7）：3 與 5 都讓魚2 回來（逼回 6 個、平均 IoU 0.923），
+        /// 平手時照事先講好的規則選比較快的 5。1（第二版）逼回 5 個、平均 0.915；7 逼回 6 個但平均 0.921。
+        /// </summary>
+        public readonly int RefinementStartPieceCount;
+
         /// <param name="beamWidth">每一步留幾條路，至少 1。</param>
         /// <param name="cellSize">格子邊長，必須是正數。</param>
         /// <param name="outsidePenalty">伸到外面一格扣幾分，不能是負數。</param>
         /// <param name="offsetSpacing">第一片平移的取樣間隔，必須是正數。</param>
         /// <param name="resultCount">回幾個形狀，至少 1。</param>
         /// <param name="refinementRounds">平移微調做幾輪，不能是負數；0 ＝ 不微調。</param>
+        /// <param name="refinementStartPieceCount">從第幾片開始微調，1 ～ 7。</param>
         /// <exception cref="ArgumentOutOfRangeException">任何一個參數超出範圍。</exception>
         public ContourApproximationSettings(int beamWidth = 100, double cellSize = 0.125, double outsidePenalty = 1.0,
-                                            double offsetSpacing = 0.25, int resultCount = 5, int refinementRounds = 2)
+                                            double offsetSpacing = 0.25, int resultCount = 5, int refinementRounds = 2,
+                                            int refinementStartPieceCount = 5)
         {
+            if (refinementStartPieceCount < 1 || refinementStartPieceCount > 7)
+                throw new ArgumentOutOfRangeException(nameof(refinementStartPieceCount), refinementStartPieceCount, "從第幾片開始微調要在 1 ～ 7。");
             if (beamWidth < 1) throw new ArgumentOutOfRangeException(nameof(beamWidth), beamWidth, "至少要留 1 條路。");
             if (!(cellSize > 0.0)) throw new ArgumentOutOfRangeException(nameof(cellSize), cellSize, "格子邊長必須是正數。");
             if (!(outsidePenalty >= 0.0)) throw new ArgumentOutOfRangeException(nameof(outsidePenalty), outsidePenalty, "懲罰不能是負數。");
@@ -61,14 +77,16 @@ namespace Tangram.Data
             OffsetSpacing = offsetSpacing;
             ResultCount = resultCount;
             RefinementRounds = refinementRounds;
+            RefinementStartPieceCount = refinementStartPieceCount;
         }
 
-        /// <summary>起始值：N = 100、格子 1/8、懲罰 1、平移間隔 0.25、回 5 個、微調 2 輪。</summary>
+        /// <summary>起始值：N = 100、格子 1/8、懲罰 1、平移間隔 0.25、回 5 個、微調 2 輪、從第 5 片開始。</summary>
         public static ContourApproximationSettings Default => new ContourApproximationSettings();
 
         /// <returns>給報告看的一行。</returns>
         public override string ToString() =>
-            $"N={BeamWidth} 格子={CellSize} 懲罰={OutsidePenalty} 平移間隔={OffsetSpacing} 微調={RefinementRounds}輪";
+            $"N={BeamWidth} 格子={CellSize} 懲罰={OutsidePenalty} 平移間隔={OffsetSpacing} " +
+            (RefinementRounds == 0 ? "不微調" : $"微調={RefinementRounds}輪（從第{RefinementStartPieceCount}片）");
     }
 
     /// <summary>逼近出來的一個形狀。</summary>
@@ -187,7 +205,10 @@ namespace Tangram.Data
         /// </summary>
         private List<SearchState> Refine(List<SearchState> beam, OutlineRaster raster)
         {
-            if (settings.RefinementRounds == 0) return beam;
+            if (settings.RefinementRounds == 0 || beam.Count == 0) return beam;
+
+            // 同一步的路片數都一樣，看第一條就好
+            if (beam[0].Placements.Length < settings.RefinementStartPieceCount) return beam;
 
             var refined = new List<SearchState>(beam.Count);
             foreach (SearchState state in beam) refined.Add(Refine(state, raster));
