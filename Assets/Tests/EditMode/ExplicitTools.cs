@@ -40,5 +40,9 @@ namespace Tangram.Data.Tests
         /// <summary>求解器完整驗證：38 個形狀全部檢查，13 個凸多邊形的解數釘住，印出解數表。Debug 約 2 分半（2026-09-21）。</summary>
         [Test, Explicit("求解器完整驗證：Debug 約 2 分半")]
         public void SolverTable() => new TangramSolverTests().求解器_全部形狀驗證並印出解數表();
+
+        /// <summary>逼近搜尋驗收：25 個具象題逼不逼得回來＋掃描樣本，另外匯出 %TEMP%\tangram_approximation.html（2026-10-14）。</summary>
+        [Test, Explicit("逼近搜尋驗收：要跑好幾分鐘")]
+        public void ApproximatorTable() => new BeamSearchContourPuzzleBuilderTests().逼近_具象題與掃描樣本的成績表();
     }
 }

@@ -389,7 +389,12 @@ namespace Tangram.Data
         /// <param name="kind">要放的片種。</param>
         /// <param name="placedSoFar">已經放好的片，同時是錨點來源與重疊比對對象。</param>
         /// <returns>兩層合法擺放：貼著邊的、只碰到一點的。都可能是空的。</returns>
-        private static (List<Placement> edgeContact, List<Placement> pointContact)
+        /// <remarks>
+        /// ⭐ <b>2026-10-14 從 private 改成 internal</b>：逼近搜尋（<see cref="BeamSearchContourPuzzleBuilder"/>）的每一步
+        /// 就是這一支——「貼著已放的片、不重疊」的定義只能有一份，抄第二份的話哪天改了一邊，兩邊的候選就不一樣了。
+        /// 行為沒有改。
+        /// </remarks>
+        internal static (List<Placement> edgeContact, List<Placement> pointContact)
             CollectLegalPlacements(PieceKind kind, IReadOnlyList<Placement> placedSoFar)
         {
             // ⚠️ 錨點要去重。相鄰的片共用貼合處的節點，不去重的話同一個點會被算好幾次，
