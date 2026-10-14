@@ -7,7 +7,7 @@ using UnityEngine;
 namespace Tangram.Data.Tests
 {
     /// <summary>
-    /// <see cref="RecognizedContour"/> 與 <see cref="FixedContourPuzzleBuilder"/>（2026-10-14，掃描模式）。
+    /// <see cref="RecognizedContour"/>（2026-10-14，掃描模式）。
     ///
     /// <b>這一支在看什麼</b>：協作者交的那份樣本讀不讀得進來、換到模型座標之後是不是
     /// 「面積 32、重心在原點、逆時針、y 朝上、沒變形」，以及壞掉的輸入會不會被擋下來。
@@ -221,33 +221,7 @@ namespace Tangram.Data.Tests
             Assert.Throws<ArgumentException>(() => RecognizedContour.FromJson(json));
         }
 
-        // ───────── 假的出題器 ─────────
-
-        /// <summary>
-        /// 假的出題器回的是題庫那一題，<b>參考解是複本</b>——交出去被改了不能污染題庫。
-        /// </summary>
-        [Test]
-        public void 假出題器_回固定那一題_參考解是複本()
-        {
-            PuzzleLibrary library = PuzzleLibrary.FromText(File.ReadAllText(RepositoryFiles.Find("Assets/Resources/puzzle_library.txt")));
-            PuzzleLibrary.Entry entry = library.FigurativeShapes[0];
-            var builder = new FixedContourPuzzleBuilder(entry);
-
-            ContourPuzzle built = builder.Build(RecognizedContour.FromJson(SampleJson()));
-
-            Assert.AreEqual(entry.Name, built.Name);
-            Assert.AreSame(entry.Puzzle, built.Puzzle);
-            Assert.AreNotSame(entry.Pieces, built.ReferenceSolution, "參考解要複製一份");
-            CollectionAssert.AreEqual(entry.Pieces, built.ReferenceSolution);
-        }
-
-        [Test]
-        public void 假出題器_不收null輪廓()
-        {
-            PuzzleLibrary library = PuzzleLibrary.FromText(File.ReadAllText(RepositoryFiles.Find("Assets/Resources/puzzle_library.txt")));
-            var builder = new FixedContourPuzzleBuilder(library.FigurativeShapes[0]);
-
-            Assert.Throws<ArgumentNullException>(() => builder.Build(null));
-        }
+        // 💡 原本這裡還有兩條測假出題器（FixedContourPuzzleBuilder）的，2026-10-14 換成 beam search 之後連同假出題器一起刪了。
+        //    逼近的測試在 BeamSearchContourPuzzleBuilderTests。
     }
 }

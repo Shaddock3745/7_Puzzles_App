@@ -6,7 +6,7 @@ using UnityEngine;
 /// <list type="bullet">
 /// <item><b>挑戰模式</b>——照實力當場生題，就是原本的遊玩迴圈（P2-7 ＋ P2-14）</item>
 /// <item><b>圖形模式</b>——從題庫隨機抽具象題（貓、船之類），一輪之內不重複</item>
-/// <item><b>掃描模式</b>（2026-10-14，名稱暫定）——拍照、取輪廓、照輪廓出題。⚠️ 現在三段都是假的，
+/// <item><b>掃描模式</b>（2026-10-14，名稱暫定）——拍照、取輪廓、照輪廓出題。⚠️ 相機與辨識還是假的（出題是真的），
 /// 見 <see cref="GameMode.Scan"/>。掃描取消或失敗時這裡會自己顯示回來（<see cref="LevelController.ScanAborted"/>）</item>
 /// </list>
 ///

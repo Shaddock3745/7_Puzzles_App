@@ -6,14 +6,14 @@ namespace Tangram.Data
     /// ⭐ <b>輪廓 → 題目</b>（2026-10-14，掃描模式的第三段）。
     ///
     /// 給一條辨識出來的輪廓，回一道<b>拼得出來、而且長得像它</b>的題目。
-    /// 真的做法是逼近搜尋（<c>待辦清單.md</c>〈2026-09-17 重啟〉：甲是拿題庫比 IoU，丙是 beam search），
-    /// <b>兩個都還沒寫</b>，現在只有 <see cref="FixedContourPuzzleBuilder"/> 這個假的。
+    /// 實作是 <see cref="BeamSearchContourPuzzleBuilder"/>（逼近搜尋）。
     ///
-    /// <b>為什麼要開介面</b>：掃描流程現在就要接通，而逼近是另一件 2～4 天的事。
-    /// 開了介面，之後換掉假的那一個就好，<c>LevelController</c> 一行都不用動。
+    /// <b>為什麼要開介面</b>：掃描流程是先用假實作接通的，逼近後來才寫；開了介面，換掉時 <c>LevelController</c>
+    /// 只改建出題器那一行。⚠️ 2026-10-14 換成 beam search 之後，原本固定回「貓1」的假實作 <c>FixedContourPuzzleBuilder</c>
+    /// 已經刪掉（git 歷史裡找得回來）。之後要換別的逼近方法（例如甲：拿題庫比 IoU）照樣實作這個介面。
     ///
-    /// ⚠️ <b>現在是同步的</b>。beam search 在手機上可能要好幾秒——到時候如果凍住畫面太久，
-    /// 這個介面要改成非同步（跟 <c>IContourScanner</c> 一樣用回呼），呼叫端也要跟著改。
+    /// ⚠️ <b>現在是同步的</b>。PC 的 Release 約 0.7 秒，手機會更久——凍住畫面的問題排在 P5-2（#37）
+    /// 跟挑戰模式的換關一起用背景執行緒處理，到時候這個介面可能要改成非同步，呼叫端也要跟著改。
     /// </summary>
     public interface IContourPuzzleBuilder
     {
@@ -51,35 +51,6 @@ namespace Tangram.Data
             Name = name;
             Puzzle = puzzle ?? throw new ArgumentNullException(nameof(puzzle));
             ReferenceSolution = referenceSolution ?? throw new ArgumentNullException(nameof(referenceSolution));
-        }
-    }
-
-    /// <summary>
-    /// ⚠️ <b>假實作</b>：不看輪廓，永遠回題庫裡固定的那一題。
-    ///
-    /// 用途只有一個：讓「掃描 → 讀輪廓 → 出題 → 進關」整條先跑得通。
-    /// 逼近搜尋寫好之後就換掉，<b>不要拿它的結果去講「辨識出來像不像」</b>。
-    /// </summary>
-    public sealed class FixedContourPuzzleBuilder : IContourPuzzleBuilder
-    {
-        private readonly PuzzleLibrary.Entry entry;
-
-        /// <param name="entry">永遠回這一題。</param>
-        /// <exception cref="ArgumentNullException"><paramref name="entry"/> 是 null。</exception>
-        public FixedContourPuzzleBuilder(PuzzleLibrary.Entry entry)
-        {
-            this.entry = entry ?? throw new ArgumentNullException(nameof(entry));
-        }
-
-        /// <inheritdoc/>
-        /// <exception cref="ArgumentNullException"><paramref name="contour"/> 是 null。</exception>
-        public ContourPuzzle Build(RecognizedContour contour)
-        {
-            // 雖然不看，還是要求有——假實作比真的寬鬆的話，換掉的那天才會冒出「原來這裡會傳 null」
-            if (contour == null) throw new ArgumentNullException(nameof(contour));
-
-            // ⚠️ 複製一份參考解：Entry.Pieces 是題庫共用的那一份陣列，交出去之後被改就污染了題庫
-            return new ContourPuzzle(entry.Name, entry.Puzzle, (Placement[])entry.Pieces.Clone());
         }
     }
 }

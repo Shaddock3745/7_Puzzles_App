@@ -22,7 +22,7 @@ public enum GameMode
     /// <summary>
     /// 拍照 → 辨識模組取輪廓 → 照輪廓出題（2026-10-14，名稱暫定）。
     /// ⚠️ <b>不結算實力</b>，「下一題」是再掃一次。
-    /// ⚠️ <b>現在相機、辨識、出題三段都是假的</b>，見 <c>ContourScanning.cs</c> 與 <c>ContourPuzzleBuilder.cs</c>。
+    /// ⚠️ <b>相機與辨識還是假的</b>（見 <c>ContourScanning.cs</c>），出題是真的 beam search 逼近（2026-10-14 起）。
     /// </summary>
     Scan
 }
@@ -119,12 +119,6 @@ public class LevelController : MonoBehaviour
     /// 💡 <c>.json</c> 本來就是 Unity 的文字資產，不用像題庫那樣改成 <c>.txt</c>。
     /// </summary>
     private const string ScanSampleResourceName = "ScanSamples/u2net_unity_contour";
-
-    /// <summary>
-    /// ⚠️ 假的出題器固定回的那一題。<b>找不到就退到第一題具象題</b>——反正是假的，
-    /// 為了名字對不上而整個掃描模式進不了關不值得。
-    /// </summary>
-    private const string FixedScanPuzzleName = "貓1";
 
     /// <summary>掃描（相機＋辨識模組）。<b>第一次要掃描時才建</b>，見 <see cref="EnsureScanPipeline"/>。</summary>
     private IContourScanner contourScanner;
@@ -490,22 +484,42 @@ public class LevelController : MonoBehaviour
             return;
         }
 
-        ContourPuzzle built = contourPuzzleBuilder.Build(contour);
-        if (built == null)
+        // ⚠️ 逼近是同步的，畫面會凍住（PC Release 約 0.7 秒，Editor 的 Debug 模式可能好幾秒，手機還沒量）。
+        // 刻意先接受：挑戰模式換關也會凍住，兩件一起排在 P5-2（#37）用背景執行緒處理，這裡另開一條會變成兩套。
+        // 所以這一版只做一件事：把花了幾秒印出來，讓 P5-2 有實際數字
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        ContourPuzzle built;
+        int difficulty;
+        try
         {
-            Debug.LogWarning($"這條輪廓（{contour.PixelPoints.Count} 個點）逼近不出題目，回主畫面。", this);
+            built = contourPuzzleBuilder.Build(contour);
+            if (built == null)
+            {
+                Debug.LogWarning($"這條輪廓（{contour.PixelPoints.Count} 個點）逼近不出題目，回主畫面。", this);
+                AbortScan();
+                return;
+            }
+
+            // 難度當場算，跟具象題同一套（見 ContourPuzzle 為什麼不帶難度）。
+            // 掃描題不結算，算它只是為了監控面板與 log 看得到
+            difficulty = DifficultyEvaluator.Score(built.Puzzle, built.ReferenceSolution, difficultyWeights);
+        }
+        catch (System.Exception exception)
+        {
+            // ⚠️ 一定要接住：這裡是掃描的回呼，主畫面已經藏起來了——例外沒接住的話，玩家會停在一個
+            // 沒有主畫面也沒有題目的畫面上。已知會丟的是難度特徵（面積不是 32、外框有零寬度的刺時），
+            // 理論上碰不到（候選跟出題器同一套），但輸入是使用者的照片，所以不賭
+            Debug.LogError("逼近或算難度時出事了，回主畫面。例外的完整內容在下一行。", this);
+            Debug.LogException(exception, this);
             AbortScan();
             return;
         }
 
         levelIndex++;
 
-        // 難度當場算，跟具象題同一套（見 ContourPuzzle 為什麼不帶難度）。
-        // 掃描題不結算，算它只是為了監控面板與 log 看得到
-        int difficulty = DifficultyEvaluator.Score(built.Puzzle, built.ReferenceSolution, difficultyWeights);
-
-        Debug.Log($"第 {levelIndex} 關：掃描題「{built.Name}」，輪廓 {contour.PixelPoints.Count} 個點" +
-                  $"（{contour.ImageWidth}×{contour.ImageHeight}），難度 {difficulty}，不結算實力", this);
+        Debug.Log($"第 {levelIndex} 關：{built.Name}，逼近花了 {clock.Elapsed.TotalSeconds:0.00} 秒，" +
+                  $"輪廓 {contour.PixelPoints.Count} 個點（{contour.ImageWidth}×{contour.ImageHeight}），" +
+                  $"難度 {difficulty}，不結算實力", this);
 
         // allowRoll 傳 false：跟具象題同一個理由——照片裡是正的貓，題目也要是正的
         EnterLevel(built.Puzzle, built.ReferenceSolution, difficulty, allowRoll: false,
@@ -518,26 +532,16 @@ public class LevelController : MonoBehaviour
     /// <summary>
     /// 需要的話把掃描的三段建起來。<b>第一次要掃描時才建</b>，只玩別的模式的人不付這個成本。
     ///
-    /// ⚠️ <b>三段現在都是假的</b>：不開相機、辨識模組回固定的樣本 JSON、出題器回固定的一題具象題。
+    /// ⚠️ <b>前兩段還是假的</b>：不開相機、辨識模組回固定的樣本 JSON。
+    /// <b>出題那段是真的</b>（2026-10-14 起）：beam search 逼近，見 <see cref="BeamSearchContourPuzzleBuilder"/>。
     /// 換成真的時只改這一支裡的 <c>new</c>，其他地方一行都不用動。
+    ///
+    /// 💡 回傳 bool 是給真的相機留的（例如裝置沒有相機、權限被拒）；現在永遠是 true。
     /// </summary>
     /// <returns>掃描可以用了沒。</returns>
     private bool EnsureScanPipeline()
     {
         if (contourScanner != null) return true;
-
-        // 假的出題器要從題庫拿題目。讀不到時 EnsurePuzzleLibraryLoaded 已經報過錯
-        if (!EnsurePuzzleLibraryLoaded()) return false;
-
-        PuzzleLibrary.Entry fixedEntry = null;
-        foreach (PuzzleLibrary.Entry entry in puzzleLibrary.FigurativeShapes)
-            if (entry.Name == FixedScanPuzzleName) { fixedEntry = entry; break; }
-
-        if (fixedEntry == null)
-        {
-            fixedEntry = puzzleLibrary.FigurativeShapes[0];
-            Debug.LogWarning($"題庫裡沒有「{FixedScanPuzzleName}」，假的出題器改回「{fixedEntry.Name}」。", this);
-        }
 
         // 樣本讀不到不在這裡擋：假的辨識模組拿到 null 會回「失敗」，走的就是真的模組失敗時那條路
         TextAsset sample = Resources.Load<TextAsset>(ScanSampleResourceName);
@@ -545,7 +549,9 @@ public class LevelController : MonoBehaviour
             Debug.LogError($"Resources 裡沒有 {ScanSampleResourceName}.json：假的辨識模組每次都會回失敗。", this);
 
         contourScanner = new NoCameraContourScanner(new SampleFileContourRecognizer(sample != null ? sample.text : null, this));
-        contourPuzzleBuilder = new FixedContourPuzzleBuilder(fixedEntry);
+
+        // 預設參數（N = 100、從第 5 片開始微調……）是驗收工具量過的，見 ContourApproximationSettings
+        contourPuzzleBuilder = new BeamSearchContourPuzzleBuilder();
         return true;
     }
 
