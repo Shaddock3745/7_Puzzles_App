@@ -70,6 +70,14 @@ namespace Tangram.Core
         /// <summary>七片。層內的先後才用 <see cref="SortingOrder"/> 算。</summary>
         public const string PieceSortingLayer = "Piece";
 
+        /// <summary>
+        /// 掃描題的照片對照（2026-10-14，<c>ScanPhotoView</c>）。<b>蓋在片上面、在抽屜與按鈕下面</b>，
+        /// 所以夾在 <see cref="PieceSortingLayer"/> 與 <see cref="GameUiSortingLayer"/> 中間。
+        /// ⚠️ 這一層要在 Tag Manager 裡手動建；沒建的話 Unity 會默默把照片放到 <c>Default</c> 層、被盒子蓋住，
+        /// 不報錯（除錯記錄 005）——所以 <c>ScanPhotoView</c> 啟動時會檢查。
+        /// </summary>
+        public const string ScanPhotoSortingLayer = "ScanPhoto";
+
         /// <summary>遊戲中的 UI：待用區抽屜、箭頭、回收框，以及四顆按鈕的 Canvas。</summary>
         public const string GameUiSortingLayer = "GameUI";
 

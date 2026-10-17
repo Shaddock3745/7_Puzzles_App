@@ -11,6 +11,11 @@ namespace Tangram.Data
     /// 不是 <c>協作交接_影片與輪廓.md</c> 第三節原本講好的 <c>rings</c> 格式——讀檔的程式是我們寫，
     /// 照他交的讀比叫他改快。差別：欄位叫 <c>points</c>／<c>width</c>／<c>height</c>、<b>只有外框沒有洞</b>、沒有名字。
     ///
+    /// ⚠️ <b>座標是 y 朝上</b>（Unity 的習慣，原點在圖的左下角）——<b>不是</b>交接文件約定的 y 朝下（2026-10-17 更正）。
+    /// 原本照 y 朝下讀、又翻了一次，結果整隻貓上下顛倒；盒子與照片從同一份 JSON 算，所以兩個一起倒、彼此還對得上，
+    /// 直到照片對照疊在畫面上才看出來（除錯記錄 015）。照 y 朝上換算，點的範圍正好對上附圖那隻貓——
+    /// 之前懷疑的「樣本跟附圖對不上」也是同一個原因。檔名 <c>u2net_unity_contour</c> 本身就是線索。
+    ///
     /// <b>為什麼放 <c>Data</c></b>：一行畫面程式都沒有，放這裡才進得了 <c>dotnet test</c>。
     /// 拿到 JSON 字串之前的事（相機、辨識模組）在 <c>GameObject/ContourScanning.cs</c>。
     ///
@@ -40,7 +45,7 @@ namespace Tangram.Data
             /// <summary>點的數量。拿來檢查檔案有沒有被截斷。</summary>
             public int pointCount;
 
-            /// <summary>外框的點，<b>照片的像素座標、y 朝下</b>。</summary>
+            /// <summary>外框的點，<b>照片的像素座標、y 朝上</b>（原點在左下）。</summary>
             public PointDto[] points;
         }
 
@@ -51,7 +56,7 @@ namespace Tangram.Data
             /// <summary>像素座標，往右是正。</summary>
             public double x;
 
-            /// <summary>像素座標，<b>往下是正</b>。</summary>
+            /// <summary>像素座標，<b>往上是正</b>（0 是圖的最下面）。</summary>
             public double y;
         }
 
@@ -74,7 +79,7 @@ namespace Tangram.Data
         public readonly int ImageHeight;
 
         /// <summary>
-        /// 原始的點，<b>照片的像素座標、y 朝下</b>，順序照檔案（去掉重複點之後）。
+        /// 原始的點，<b>照片的像素座標、y 朝上</b>，順序照檔案（去掉重複點之後）。
         /// 之後要把題目疊回照片上畫時用得到。
         /// </summary>
         public readonly IReadOnlyList<Vector2> PixelPoints;
@@ -82,7 +87,7 @@ namespace Tangram.Data
         /// <summary>
         /// ⭐ <b>逼近搜尋要的那一份</b>：模型座標的外框。
         /// <list type="bullet">
-        /// <item><b>y 朝上</b>（照片的 y 朝下，翻過來）</item>
+        /// <item><b>y 朝上</b>，跟照片的像素座標同方向，<b>不翻</b></item>
         /// <item><b>面積剛好 <see cref="ModelArea"/></b>，等比縮放，不變形</item>
         /// <item><b>重心在原點</b></item>
         /// <item><b>逆時針</b>，跟專案裡其他多邊形一樣</item>
@@ -91,12 +96,88 @@ namespace Tangram.Data
         /// </summary>
         public readonly IReadOnlyList<Vector2> ModelOutline;
 
-        private RecognizedContour(int imageWidth, int imageHeight, List<Vector2> pixelPoints, List<Vector2> modelOutline)
+        // ───────── 像素 → 輪廓座標的換算（2026-10-14，照片對照要用）─────────
+        //
+        // ⭐ 算輪廓與換照片用的是同一組數字：存起來，不重算。分兩份算的話哪天改了一邊，
+        // 照片就會跟輪廓錯開，而且不報錯。
+
+        /// <summary>輪廓的面積重心 x，像素單位。</summary>
+        private readonly double centroidX;
+
+        /// <summary>輪廓的面積重心 y，像素單位（y 朝上）。</summary>
+        private readonly double centroidY;
+
+        /// <summary>一個像素等於幾個模型單位：√(32 ÷ 輪廓的像素面積)。</summary>
+        public readonly double ModelUnitsPerPixel;
+
+        private RecognizedContour(int imageWidth, int imageHeight, List<Vector2> pixelPoints)
         {
             ImageWidth = imageWidth;
             ImageHeight = imageHeight;
             PixelPoints = pixelPoints.AsReadOnly();
-            ModelOutline = modelOutline.AsReadOnly();
+
+            (double signedArea, double x, double y) = MeasureArea(pixelPoints);
+            centroidX = x;
+            centroidY = y;
+            // 面積跟長度的平方成正比，所以長度乘上 √(目標 ÷ 現在)
+            ModelUnitsPerPixel = Math.Sqrt(ModelArea / Math.Abs(signedArea));
+
+            var outline = new List<Vector2>(pixelPoints.Count);
+            foreach (Vector2 point in pixelPoints) outline.Add(PixelToModel(point.x, point.y));
+
+            // 順時針就反過來，讓輪廓一律逆時針。只有順序變，形狀與位置不變
+            if (signedArea < 0.0) outline.Reverse();
+            ModelOutline = outline.AsReadOnly();
+        }
+
+        /// <summary>
+        /// 照片上的一個點（像素座標、y 朝上）換成輪廓座標（模型單位、y 朝上、重心在原點）：移重心、等比縮放，<b>不翻</b>。
+        /// <see cref="ModelOutline"/> 就是把每個 <see cref="PixelPoints"/> 丟進這一支算出來的。
+        /// </summary>
+        /// <param name="pixelX">像素 x。</param>
+        /// <param name="pixelY">像素 y（往上是正）。</param>
+        /// <returns>輪廓座標。</returns>
+        public Vector2 PixelToModel(double pixelX, double pixelY) =>
+            new Vector2((float)((pixelX - centroidX) * ModelUnitsPerPixel),
+                        (float)((pixelY - centroidY) * ModelUnitsPerPixel));
+
+        /// <summary>
+        /// 整張圖（0 ～ 寬、0 ～ 高）在輪廓座標裡佔的範圍。照片是長方形、換算只有縮放平移，
+        /// 所以結果還是一個<b>正的長方形</b>：像素 (0, 0) 是圖的左下角，(寬, 高) 是右上角。
+        /// </summary>
+        /// <returns>左下角與右上角。</returns>
+        public (Vector2 minimum, Vector2 maximum) ImageBoundsInModel() =>
+            (PixelToModel(0.0, 0.0), PixelToModel(ImageWidth, ImageHeight));
+
+        /// <summary>
+        /// 照片大小的剪影：每個像素（中心）在不在輪廓裡。照片對照的<b>替身</b>用它畫（2026-10-14）。
+        ///
+        /// 索引是 <c>row × 寬 + column</c>，<b>第 0 列是照片最上面那一列</b>（照一般看圖的順序）。
+        /// ⚠️ 像素座標是 y 朝上，所以第 row 列的中心是 y ＝ 高 − (row ＋ 0.5)。
+        /// ⚠️ Unity 貼圖的第 0 列是最下面，轉成貼圖時要上下對調。
+        /// </summary>
+        /// <returns>長度 寬 × 高 的陣列，true ＝ 在輪廓裡。</returns>
+        public bool[] SilhouetteMask()
+        {
+            var mask = new bool[ImageWidth * ImageHeight];
+            for (int row = 0; row < ImageHeight; row++)
+                for (int column = 0; column < ImageWidth; column++)
+                    mask[row * ImageWidth + column] = ContainsPixel(column + 0.5, ImageHeight - (row + 0.5));
+            return mask;
+        }
+
+        /// <summary>點在不在輪廓裡（像素座標，射線法、奇偶規則）。</summary>
+        private bool ContainsPixel(double x, double y)
+        {
+            bool inside = false;
+            for (int i = 0, previous = PixelPoints.Count - 1; i < PixelPoints.Count; previous = i++)
+            {
+                double xi = PixelPoints[i].x, yi = PixelPoints[i].y;
+                double xj = PixelPoints[previous].x, yj = PixelPoints[previous].y;
+                if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi)
+                    inside = !inside;
+            }
+            return inside;
         }
 
         /// <summary>
@@ -139,7 +220,12 @@ namespace Tangram.Data
             if (pixelPoints.Count < 3)
                 throw new ArgumentException($"輪廓只有 {pixelPoints.Count} 個不重複的點，至少要 3 個。");
 
-            return new RecognizedContour(dto.width, dto.height, pixelPoints, ToModelOutline(pixelPoints));
+            // 面積是零就擋掉，不然縮放倍率是無限大。放在建構之前，建構子裡才能放心地除
+            double signedArea = MeasureArea(pixelPoints).signedArea;
+            if (Math.Abs(signedArea) < MinimumPixelArea)
+                throw new ArgumentException($"輪廓的面積是 {Math.Abs(signedArea):0.###} 像素²，點可能全部共線。");
+
+            return new RecognizedContour(dto.width, dto.height, pixelPoints);
         }
 
         /// <summary>
@@ -174,56 +260,29 @@ namespace Tangram.Data
             Math.Abs(left.x - right.x) < 1e-6 && Math.Abs(left.y - right.y) < 1e-6;
 
         /// <summary>
-        /// 像素座標 → 模型座標：翻 y、移重心、等比縮放到面積 32、轉成逆時針。
+        /// 有向面積與面積重心，鞋帶公式一起算。像素座標是 y 朝上，所以逆時針的面積是正的。
         ///
-        /// 中間一律用 <c>double</c> 算，最後才轉 <c>float</c>——像素值到幾百，平方之後
-        /// 用 <c>float</c> 算面積會丟掉好幾位。
+        /// 中間一律用 <c>double</c> 算——像素值到幾百，平方之後用 <c>float</c> 算面積會丟掉好幾位。
         /// </summary>
         /// <param name="pixelPoints">去掉重複點之後的像素座標，至少 3 個。</param>
-        /// <returns>模型座標的外框。</returns>
-        /// <exception cref="ArgumentException">面積是零（點全部共線）。</exception>
-        private static List<Vector2> ToModelOutline(List<Vector2> pixelPoints)
+        /// <returns>有向面積（像素²），與重心（像素座標）。面積是零時重心沒有意義。</returns>
+        private static (double signedArea, double centroidX, double centroidY) MeasureArea(List<Vector2> pixelPoints)
         {
             int count = pixelPoints.Count;
-
-            // 先翻 y：照片 y 朝下、模型 y 朝上。平移量無所謂（等一下會移重心），所以直接取負號
-            var flippedX = new double[count];
-            var flippedY = new double[count];
-            for (int i = 0; i < count; i++)
-            {
-                flippedX[i] = pixelPoints[i].x;
-                flippedY[i] = -(double)pixelPoints[i].y;
-            }
-
-            // 鞋帶公式：有向面積與重心一起算。翻過 y 之後，逆時針的面積是正的
-            double doubledArea = 0.0, centroidX = 0.0, centroidY = 0.0;
+            double doubledArea = 0.0, sumX = 0.0, sumY = 0.0;
             for (int i = 0; i < count; i++)
             {
                 int next = (i + 1) % count;
-                double cross = flippedX[i] * flippedY[next] - flippedX[next] * flippedY[i];
+                double x0 = pixelPoints[i].x, y0 = pixelPoints[i].y;
+                double x1 = pixelPoints[next].x, y1 = pixelPoints[next].y;
+                double cross = x0 * y1 - x1 * y0;
                 doubledArea += cross;
-                centroidX += (flippedX[i] + flippedX[next]) * cross;
-                centroidY += (flippedY[i] + flippedY[next]) * cross;
+                sumX += (x0 + x1) * cross;
+                sumY += (y0 + y1) * cross;
             }
 
-            double area = doubledArea / 2.0;
-            if (Math.Abs(area) < MinimumPixelArea)
-                throw new ArgumentException($"輪廓的面積是 {Math.Abs(area):0.###} 像素²，點可能全部共線。");
-
-            centroidX /= 3.0 * doubledArea;
-            centroidY /= 3.0 * doubledArea;
-
-            // 面積跟長度的平方成正比，所以長度乘上 √(目標 ÷ 現在)
-            double scale = Math.Sqrt(ModelArea / Math.Abs(area));
-
-            var outline = new List<Vector2>(count);
-            for (int i = 0; i < count; i++)
-                outline.Add(new Vector2((float)((flippedX[i] - centroidX) * scale),
-                                        (float)((flippedY[i] - centroidY) * scale)));
-
-            // 順時針就反過來。只有順序變，形狀與位置不變
-            if (area < 0.0) outline.Reverse();
-            return outline;
+            if (doubledArea == 0.0) return (0.0, 0.0, 0.0);
+            return (doubledArea / 2.0, sumX / (3.0 * doubledArea), sumY / (3.0 * doubledArea));
         }
     }
 }

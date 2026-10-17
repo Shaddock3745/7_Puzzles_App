@@ -168,7 +168,8 @@ namespace Tangram.Data
             if (results.Count == 0) return null;
 
             ContourApproximation best = results[0];
-            return new ContourPuzzle($"掃描題（IoU {best.IntersectionOverUnion:0.00}）", best.Puzzle, best.PiecesBySlot);
+            return new ContourPuzzle($"掃描題（IoU {best.IntersectionOverUnion:0.00}）", best.Puzzle, best.PiecesBySlot,
+                                     best.OutlineOffset);
         }
 
         /// <summary>

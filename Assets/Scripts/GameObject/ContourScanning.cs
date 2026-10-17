@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using Tangram.Data;
 using UnityEngine;
 
 // ⭐ 掃描模式的前兩段（2026-10-14）：相機 → 辨識模組 → 輪廓 JSON。
@@ -41,26 +42,37 @@ public readonly struct ContourScanResult
     /// <summary>失敗的原因，給 log 與之後的畫面訊息用。<b>只有 <see cref="ContourScanStatus.Failed"/> 時有值</b>。</summary>
     public readonly string FailureReason;
 
-    private ContourScanResult(ContourScanStatus status, string contourJson, string failureReason)
+    /// <summary>
+    /// 拍到的照片（2026-10-14，照片對照用）。<b>可以是 null</b>（辨識模組那一層不帶照片；掃描那一層才會補上）。
+    ///
+    /// ⚠️ <b>必須是辨識模組看到的那一張、而且已經轉正</b>——照片跟 JSON 的像素座標要是同一套，
+    /// 照片對照才疊得準（相機畫面的旋轉、鏡射要在這之前處理掉）。
+    /// ⚠️ 這是執行時建的貼圖，<b>收到的人負責保管與釋放</b>（遊戲裡交給 <c>ScanPhotoView</c>，用不到就 <c>Destroy</c>）。
+    /// </summary>
+    public readonly Texture2D Photo;
+
+    private ContourScanResult(ContourScanStatus status, string contourJson, string failureReason, Texture2D photo)
     {
         Status = status;
         ContourJson = contourJson;
         FailureReason = failureReason;
+        Photo = photo;
     }
 
     /// <param name="contourJson">辨識模組交回來的 JSON 原文。</param>
+    /// <param name="photo">拍到的照片，可以是 null。</param>
     /// <returns>成功的結果。</returns>
-    public static ContourScanResult Succeeded(string contourJson) =>
-        new ContourScanResult(ContourScanStatus.Succeeded, contourJson, null);
+    public static ContourScanResult Succeeded(string contourJson, Texture2D photo = null) =>
+        new ContourScanResult(ContourScanStatus.Succeeded, contourJson, null, photo);
 
     /// <returns>玩家取消的結果。</returns>
     public static ContourScanResult Cancelled() =>
-        new ContourScanResult(ContourScanStatus.Cancelled, null, null);
+        new ContourScanResult(ContourScanStatus.Cancelled, null, null, null);
 
     /// <param name="reason">失敗的原因。</param>
     /// <returns>失敗的結果。</returns>
     public static ContourScanResult Failed(string reason) =>
-        new ContourScanResult(ContourScanStatus.Failed, null, reason);
+        new ContourScanResult(ContourScanStatus.Failed, null, reason, null);
 }
 
 /// <summary>
@@ -139,7 +151,12 @@ public sealed class SampleFileContourRecognizer : IContourRecognizer
 }
 
 /// <summary>
-/// ⚠️ <b>假的掃描</b>：不開相機，直接叫辨識模組（照片傳 null），結果原樣轉回去。
+/// ⚠️ <b>假的掃描</b>：不開相機，直接叫辨識模組（照片傳 null）。
+///
+/// <b>照片用替身</b>（2026-10-14，照片對照要用）：辨識成功之後，用那份 JSON 畫一張跟原圖同尺寸的剪影
+/// （背景深灰、輪廓裡白色、不畫描邊）當成「拍到的照片」附在結果上。
+/// ⭐ 替身跟 JSON 是同一個來源，所以照片對照時<b>剪影一定要剛好疊在輪廓上——對不準就是換算鏈的 bug</b>，
+/// 不用等協作者交真的照片就能驗完。
 ///
 /// 真的相機做好之後換掉它；辨識模組那一層可以照樣沿用。
 /// </summary>
@@ -168,7 +185,53 @@ public sealed class NoCameraContourScanner : IContourScanner
         {
             // ⚠️ 先放掉旗標再轉交：收到結果的人可能馬上又開始下一次掃描
             IsScanning = false;
-            onFinished(result);
+            onFinished(result.Status == ContourScanStatus.Succeeded
+                ? ContourScanResult.Succeeded(result.ContourJson, StandInPhoto(result.ContourJson))
+                : result);
         });
+    }
+
+    /// <summary>背景（輪廓外）的顏色。</summary>
+    private static readonly Color32 StandInBackground = new Color32(64, 64, 64, 255);
+
+    /// <summary>剪影（輪廓裡）的顏色。</summary>
+    private static readonly Color32 StandInSilhouette = new Color32(255, 255, 255, 255);
+
+    /// <summary>
+    /// 用 JSON 畫替身照片。JSON 讀不進來就不畫（回 null）——讀不進來這件事 <c>LevelController</c> 會自己報，這裡不重複。
+    /// </summary>
+    /// <param name="contourJson">辨識模組交回來的 JSON。</param>
+    /// <returns>剪影貼圖；讀不進來時是 null。</returns>
+    private static Texture2D StandInPhoto(string contourJson)
+    {
+        RecognizedContour contour;
+        try
+        {
+            contour = RecognizedContour.FromJson(contourJson);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+
+        int width = contour.ImageWidth, height = contour.ImageHeight;
+        bool[] mask = contour.SilhouetteMask();
+        var pixels = new Color32[width * height];
+
+        // ⚠️ 剪影的第 0 列是照片最上面，Unity 貼圖的第 0 列是最下面——上下對調，照片才是正的
+        for (int row = 0; row < height; row++)
+            for (int column = 0; column < width; column++)
+                pixels[(height - 1 - row) * width + column] =
+                    mask[row * width + column] ? StandInSilhouette : StandInBackground;
+
+        var texture = new Texture2D(width, height, TextureFormat.RGBA32, false)
+        {
+            name = "掃描照片替身（JSON 剪影）",
+            wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Bilinear,
+        };
+        texture.SetPixels32(pixels);
+        texture.Apply(false, false);
+        return texture;
     }
 }

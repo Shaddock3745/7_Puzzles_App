@@ -28,7 +28,7 @@ namespace Tangram.Data.Tests
         /// <summary>
         /// 把一個題目的外框變成輪廓——拿已知答案的形狀當目標用。
         ///
-        /// 💡 走的是 <see cref="RecognizedContour.FromJson"/> 那條真的路：外框頂點的 y 取負號就是「照片座標、y 朝下」，
+        /// 💡 走的是 <see cref="RecognizedContour.FromJson"/> 那條真的路：協作者的 JSON 是 y 朝上（2026-10-17 更正），跟模型同方向，所以外框頂點直接當像素座標，
         /// 照協作者的格式組成 JSON。像素座標是負的也沒關係，讀檔那邊不檢查範圍（之後反正要移重心、縮放）。
         /// 有好幾個外環時取面積最大的那個；洞不管（目前的逼近本來就只看外框）。
         /// </summary>
@@ -49,7 +49,7 @@ namespace Tangram.Data.Tests
             {
                 if (i > 0) builder.Append(',');
                 builder.Append("{\"x\":").Append(vertices[i].X.ToDouble().ToString("R", CultureInfo.InvariantCulture))
-                       .Append(",\"y\":").Append((-vertices[i].Y.ToDouble()).ToString("R", CultureInfo.InvariantCulture))
+                       .Append(",\"y\":").Append(vertices[i].Y.ToDouble().ToString("R", CultureInfo.InvariantCulture))
                        .Append('}');
             }
             builder.Append("]}");
@@ -115,6 +115,10 @@ namespace Tangram.Data.Tests
 
             Assert.AreEqual(best.Puzzle.Key, built.Puzzle.Key, "同一組參數應該得到同一個結果（搜尋要可重現）");
             Assert.AreEqual(built.Puzzle.Key, Puzzle.FromPlacements(built.ReferenceSolution).Key);
+
+            // 照片對照要用的平移量要一起帶過去（2026-10-14），不然照片疊不回盒子上
+            Assert.AreEqual(best.OutlineOffset.x, built.OutlineOffset.x, 0f);
+            Assert.AreEqual(best.OutlineOffset.y, built.OutlineOffset.y, 0f);
         }
 
         /// <summary>

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -22,7 +23,7 @@ namespace Tangram.Data.Tests
         /// <summary>照協作者的格式組一份 JSON。</summary>
         /// <param name="width">圖片寬度。</param>
         /// <param name="height">圖片高度。</param>
-        /// <param name="points">像素座標的點，y 朝下。</param>
+        /// <param name="points">像素座標的點，y 朝上（跟協作者的 JSON 一樣）。</param>
         /// <param name="pointCount">檔案自己報的點數；不給就用實際的點數。</param>
         private static string ContourJson(int width, int height, (double x, double y)[] points, int? pointCount = null)
         {
@@ -91,28 +92,29 @@ namespace Tangram.Data.Tests
         // ───────── 座標轉換 ─────────
 
         /// <summary>
-        /// ⚠️ <b>y 一定要翻</b>：照片的 y 朝下。不翻的話貓會倒過來，而且面積、重心都還是對的——只有這一條抓得到。
-        /// 用一個直角在照片<b>左上角</b>的三角形：翻過來之後直角還是要在左上（x 最小、y 最大）。
+        /// ⚠️ <b>y 不能翻</b>：協作者的 JSON 是 y 朝上（Unity 的習慣，2026-10-17 更正，除錯記錄 015）。
+        /// 翻了的話貓會倒過來，而且面積、重心都還是對的——只有這一條抓得到。
+        /// 用一個直角在<b>左下角</b>的三角形（y 朝上時 (10, 10) 是左下）：換完之後直角還是要在左下（x 最小、y 最小）。
         /// </summary>
         [Test]
-        public void 轉換_y有翻過來()
+        public void 轉換_y朝上不翻()
         {
             string json = ContourJson(100, 100, new[] { (10.0, 10.0), (50.0, 10.0), (10.0, 50.0) });
 
             IReadOnlyList<Vector2> outline = RecognizedContour.FromJson(json).ModelOutline;
 
-            float minimumX = float.MaxValue, maximumY = float.MinValue;
+            float minimumX = float.MaxValue, minimumY = float.MaxValue;
             foreach (Vector2 point in outline)
             {
                 minimumX = Math.Min(minimumX, point.x);
-                maximumY = Math.Max(maximumY, point.y);
+                minimumY = Math.Min(minimumY, point.y);
             }
 
-            int cornersAtTopLeft = 0;
+            int cornersAtBottomLeft = 0;
             foreach (Vector2 point in outline)
-                if (Math.Abs(point.x - minimumX) < 1e-4 && Math.Abs(point.y - maximumY) < 1e-4) cornersAtTopLeft++;
+                if (Math.Abs(point.x - minimumX) < 1e-4 && Math.Abs(point.y - minimumY) < 1e-4) cornersAtBottomLeft++;
 
-            Assert.AreEqual(1, cornersAtTopLeft, "直角應該在左上；沒翻 y 的話它會跑到左下");
+            Assert.AreEqual(1, cornersAtBottomLeft, "直角應該在左下；翻了 y 的話它會跑到左上（貓會倒過來）");
         }
 
         /// <summary>等比縮放：20 × 10 的長方形縮完還是 2 : 1，不能被拉成正方形。</summary>
@@ -138,7 +140,7 @@ namespace Tangram.Data.Tests
         [Test]
         public void 轉換_兩種繞向都變成逆時針()
         {
-            // 照片座標（y 朝下）裡，這兩組一組順時針一組逆時針
+            // 這兩組一組順時針一組逆時針
             var clockwise = new[] { (0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0) };
             var counterClockwise = new[] { (0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0) };
 
@@ -219,6 +221,95 @@ namespace Tangram.Data.Tests
         {
             string json = ContourJson(0, 100, new[] { (0.0, 0.0), (10.0, 0.0), (0.0, 10.0) });
             Assert.Throws<ArgumentException>(() => RecognizedContour.FromJson(json));
+        }
+
+        // ───────── 像素 → 輪廓座標（照片對照，2026-10-14）─────────
+
+        /// <summary>
+        /// ⭐ <b>每個輪廓點換過去都落在 <see cref="RecognizedContour.ModelOutline"/> 上</b>。
+        /// 照片對照靠的就是這條：照片用 <see cref="RecognizedContour.PixelToModel"/> 換，輪廓也是用它換的，
+        /// 兩邊是同一套數字——哪天有人把其中一邊改成自己算，這條會紅。
+        /// </summary>
+        [Test]
+        public void 換算_每個輪廓點換過去都落在輪廓上()
+        {
+            RecognizedContour contour = RecognizedContour.FromJson(SampleJson());
+
+            foreach (Vector2 pixel in contour.PixelPoints)
+            {
+                Vector2 model = contour.PixelToModel(pixel.x, pixel.y);
+                bool found = false;
+                foreach (Vector2 outlinePoint in contour.ModelOutline)
+                    if (Math.Abs(outlinePoint.x - model.x) < 1e-6 && Math.Abs(outlinePoint.y - model.y) < 1e-6) { found = true; break; }
+                Assert.IsTrue(found, $"像素點 {pixel} 換過去是 {model}，不在輪廓上");
+            }
+        }
+
+        /// <summary>
+        /// 整張圖在輪廓座標裡是一個正的長方形：寬高比跟原圖一樣、大小是像素數 × 縮放倍率，
+        /// 而且像素 (0, 0) 落在長方形的左下角（y 朝上，原點在圖的左下）。
+        /// </summary>
+        [Test]
+        public void 換算_整張圖是正的長方形而且原點在左下()
+        {
+            string json = ContourJson(200, 100, new[] { (20.0, 10.0), (180.0, 10.0), (180.0, 90.0), (20.0, 90.0) });
+            RecognizedContour contour = RecognizedContour.FromJson(json);
+
+            (Vector2 minimum, Vector2 maximum) = contour.ImageBoundsInModel();
+            double width = maximum.x - minimum.x, height = maximum.y - minimum.y;
+
+            Assert.AreEqual(2.0, width / height, 1e-5, "寬高比要跟原圖（200 × 100）一樣");
+            Assert.AreEqual(200 * contour.ModelUnitsPerPixel, width, 1e-4);
+
+            Vector2 origin = contour.PixelToModel(0, 0);
+            Assert.AreEqual(minimum.x, origin.x, 1e-5);
+            Assert.AreEqual(minimum.y, origin.y, 1e-5, "像素 y = 0 是圖的最下面，要對到長方形最下面");
+        }
+
+        // ───────── 剪影（照片替身，2026-10-14）─────────
+
+        /// <summary>邊長 80 的正方形，每個像素中心都清楚地在裡或外，所以剛好是 6400 個。</summary>
+        [Test]
+        public void 剪影_正方形的像素數剛好等於面積()
+        {
+            string json = ContourJson(100, 100, new[] { (10.0, 10.0), (90.0, 10.0), (90.0, 90.0), (10.0, 90.0) });
+            bool[] mask = RecognizedContour.FromJson(json).SilhouetteMask();
+
+            Assert.AreEqual(100 * 100, mask.Length);
+            Assert.AreEqual(80 * 80, mask.Count(inside => inside));
+        }
+
+        /// <summary>
+        /// ⚠️ <b>第 0 列是照片最上面</b>，而像素座標是 y 朝上——兩者剛好相反，弄錯的話替身照片會上下顛倒、跟輪廓錯開。
+        /// 用一個直角在左下角的三角形（y 朝上時 (0, 0) 是左下）：最下面那列的左邊在裡面，最上面那列的左邊在外面。
+        /// </summary>
+        [Test]
+        public void 剪影_第0列是照片最上面()
+        {
+            string json = ContourJson(100, 100, new[] { (0.0, 0.0), (60.0, 0.0), (0.0, 60.0) });
+            bool[] mask = RecognizedContour.FromJson(json).SilhouetteMask();
+
+            Assert.IsTrue(mask[99 * 100 + 5], "最下面那列（第 99 列）的左邊應該在三角形裡");
+            Assert.IsFalse(mask[0 * 100 + 5], "最上面那列（第 0 列）的左邊應該在三角形外");
+        }
+
+        /// <summary>貓的剪影像素數跟輪廓的像素面積差不到一圈邊緣（周長）。</summary>
+        [Test]
+        public void 剪影_貓的像素數接近輪廓面積()
+        {
+            RecognizedContour contour = RecognizedContour.FromJson(SampleJson());
+            int count = contour.SilhouetteMask().Count(inside => inside);
+
+            double doubledArea = 0.0, perimeter = 0.0;
+            IReadOnlyList<Vector2> points = contour.PixelPoints;
+            for (int i = 0; i < points.Count; i++)
+            {
+                Vector2 current = points[i], next = points[(i + 1) % points.Count];
+                doubledArea += (double)current.x * next.y - (double)next.x * current.y;
+                perimeter += Vector2.Distance(current, next);
+            }
+
+            Assert.AreEqual(Math.Abs(doubledArea) / 2.0, count, perimeter, "差太多：剪影跟輪廓不是同一個形狀");
         }
 
         // 💡 原本這裡還有兩條測假出題器（FixedContourPuzzleBuilder）的，2026-10-14 換成 beam search 之後連同假出題器一起刪了。

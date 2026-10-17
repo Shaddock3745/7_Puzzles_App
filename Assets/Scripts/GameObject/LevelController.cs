@@ -54,6 +54,9 @@ public class LevelController : MonoBehaviour
     [Tooltip("待用區抽屜。換關時要叫它把七片的姿態重設。沒有也能跑。")]
     [SerializeField] private TrayView trayView;
 
+    [Tooltip("掃描題的照片對照（2026-10-14）。沒有也能跑，只是看不到照片。")]
+    [SerializeField] private ScanPhotoView scanPhotoView;
+
     [Tooltip("勾起來的話 Start 會自動載入第一關。⚠️ 2026-09-12 從 loadClassicSquareOnStart 改名——場景裡的舊值會失效並退回預設的 true，而那就是原本的值。")]
     [SerializeField] private bool loadFirstLevelOnStart = true;
 
@@ -163,6 +166,7 @@ public class LevelController : MonoBehaviour
         // 這兩個是選用的，所以找不到不報錯——場景可能刻意不要拖曳（例如只看盒子）
         if (dragController == null) dragController = FindFirstObjectByType<TouchInputController>();
         if (trayView == null) trayView = FindFirstObjectByType<TrayView>();
+        if (scanPhotoView == null) scanPhotoView = FindFirstObjectByType<ScanPhotoView>();
 
         // ⚠️ 找不到就要大聲講。原本這裡只是讓 EnterLevel 用 null 檢查跳過，
         // 結果症狀是「相機不會自己 fit、盒子不會出現」而且**沒有任何訊息**——
@@ -455,7 +459,11 @@ public class LevelController : MonoBehaviour
     {
         // ⚠️ 等待的期間模式可能換掉了（真的相機開著的時候玩家可能回主畫面選別的）。
         // 那時候這個結果已經沒人要了，進關的話會蓋掉玩家剛選的那一題
-        if (CurrentMode != GameMode.Scan) return;
+        if (CurrentMode != GameMode.Scan)
+        {
+            DiscardPhoto(result.Photo);
+            return;
+        }
 
         if (result.Status == ContourScanStatus.Cancelled)
         {
@@ -480,6 +488,7 @@ public class LevelController : MonoBehaviour
         {
             // 訊息會講是哪裡不合法（截斷、點太少、面積是零……），原樣帶出來
             Debug.LogWarning($"辨識模組交回來的輪廓讀不進來，回主畫面。{exception.Message}", this);
+            DiscardPhoto(result.Photo);
             AbortScan();
             return;
         }
@@ -496,6 +505,7 @@ public class LevelController : MonoBehaviour
             if (built == null)
             {
                 Debug.LogWarning($"這條輪廓（{contour.PixelPoints.Count} 個點）逼近不出題目，回主畫面。", this);
+                DiscardPhoto(result.Photo);
                 AbortScan();
                 return;
             }
@@ -511,6 +521,7 @@ public class LevelController : MonoBehaviour
             // 理論上碰不到（候選跟出題器同一套），但輸入是使用者的照片，所以不賭
             Debug.LogError("逼近或算難度時出事了，回主畫面。例外的完整內容在下一行。", this);
             Debug.LogException(exception, this);
+            DiscardPhoto(result.Photo);
             AbortScan();
             return;
         }
@@ -524,6 +535,39 @@ public class LevelController : MonoBehaviour
         // allowRoll 傳 false：跟具象題同一個理由——照片裡是正的貓，題目也要是正的
         EnterLevel(built.Puzzle, built.ReferenceSolution, difficulty, allowRoll: false,
                    countsTowardRating: false);
+
+        HandPhotoToView(result.Photo, contour, built);
+    }
+
+    /// <summary>
+    /// 把照片與它該畫在哪交給照片對照（2026-10-14）。<b>一定要在 <see cref="EnterLevel"/> 之後</b>——
+    /// 照片要綁的是「進關之後的那一關」，而且要用那一關的盒子原點。
+    ///
+    /// 換算鏈：圖的四個角（像素）→ 輪廓座標（<c>RecognizedContour.ImageBoundsInModel</c>）
+    /// → 題目座標（加 <c>ContourPuzzle.OutlineOffset</c>）→ 盤面座標（加盒子原點）。
+    /// ⚠️ 盒子原點現在恆為 0，但照參考解的做法照樣加——不加的話哪天改了原點規則，照片會整張偏掉而且不報錯。
+    /// </summary>
+    private void HandPhotoToView(Texture2D photo, RecognizedContour contour, ContourPuzzle built)
+    {
+        if (photo == null) return;
+        if (scanPhotoView == null)
+        {
+            DiscardPhoto(photo);        // 沒有人畫，也沒有人會釋放它
+            return;
+        }
+
+        LevelData level = session.Data;
+        Vector2 shift = built.OutlineOffset + level.BoxOrigin.ToVector2();
+        (Vector2 minimum, Vector2 maximum) = contour.ImageBoundsInModel();
+        scanPhotoView.SetPhoto(level, photo, minimum + shift, maximum + shift);
+    }
+
+    /// <summary>
+    /// 掃描結果帶來的照片用不到了（沒進關、或沒有人畫）：釋放掉。執行時建的貼圖不釋放會一直佔記憶體。
+    /// </summary>
+    private static void DiscardPhoto(Texture2D photo)
+    {
+        if (photo != null) Destroy(photo);
     }
 
     /// <summary>掃描沒有進關就結束了：讓主畫面顯示回來。</summary>

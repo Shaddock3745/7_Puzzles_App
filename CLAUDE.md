@@ -234,7 +234,7 @@ dotnet test Tools/DotnetTests -- "NUnit.Where=name == RescaleDifficultyWeights"
 | **共線邊只在邊界度數 = 2 時合併** | 捏點度數是 4，合併會毀掉拓樸 |
 | **`Canonical.PuzzleKey` 要跑 16 次輪廓追蹤** | 不便宜，算過就存起來。盒子模式下遊玩迴圈已經不用它了 |
 | **`Serialization.FromDto` 不重算 key** | 相信檔案裡存的 |
-| ⚠️ **繪製順序：先 sorting layer 再 order** | 層清單在 `ProjectSettings/TagManager.asset`（`Box → Piece → GameUI → CompleteUI`；提示覆蓋片刻意**不另開層**，住在 `Piece` 層、order 夾在未吸附與拖曳中之間，拖著的片才壓得過它），層名常數在 `PieceSorting`。**跨系統的先後由 layer 決定，order 只在自己那層裡有意義**。<br>⚠️ 新增任何會生 renderer 的東西時**記得設層**——沒設會留在 `Default`，症狀是**被別的東西蓋住而且不報錯**（除錯記錄 005）。⚠️ 也不要靠「挑一個夠大的 order」壓過別人，那不是排序是巧合 |
+| ⚠️ **繪製順序：先 sorting layer 再 order** | 層清單在 `ProjectSettings/TagManager.asset`（`Box → Piece → ScanPhoto → GameUI → CompleteUI`；⚠️ `ScanPhoto` 是 2026-10-14 照片對照加的，**要在 Unity 的 Tag Manager 手動建**，`ScanPhotoView` 啟動時會檢查；提示覆蓋片刻意**不另開層**，住在 `Piece` 層、order 夾在未吸附與拖曳中之間，拖著的片才壓得過它），層名常數在 `PieceSorting`。**跨系統的先後由 layer 決定，order 只在自己那層裡有意義**。<br>⚠️ 新增任何會生 renderer 的東西時**記得設層**——沒設會留在 `Default`，症狀是**被別的東西蓋住而且不報錯**（除錯記錄 005）。⚠️ 也不要靠「挑一個夠大的 order」壓過別人，那不是排序是巧合 |
 | **`Region.ContainsPolygon` 只管出界，不管重疊** | 合法擺放要它與 `Geometry.ConvexOverlap` 兩個都過 |
 | **`Region` 內部有兩套座標系** | 原座標與 ×2。中點只在 ×2 那邊算，混用會差一個 2 倍而且不報錯 |
 | **兩個地方各自認定「真相」= 安靜的 bug**（`PiecePreview` 的教訓） | `PiecePreview` 每幀無條件把 `Rotation`/`IsFlipped`/`IsSnapped` 蓋回 Inspector 滑桿值，而控制器也在寫——症狀是「旋轉鈕按了完全沒反應」，不報錯（除錯記錄 003）。**P1-5 已經把它刪掉。**<br>⚠️ **判準不是「誰寫哪個欄位」**——`TrayView` 與控制器都會寫 `IsVisible`，那沒問題，因為真相只有一份（`LevelData`），控制器只是在改完真相的同一刻順手同步。新增任何會碰 `PieceView` 的東西時先問：**這個欄位的真相在哪？我是在改真相，還是在畫真相？** |

@@ -1,4 +1,5 @@
 using System;
+using UnityEngine;
 
 namespace Tangram.Data
 {
@@ -42,15 +43,24 @@ namespace Tangram.Data
         /// <summary>這個題目的一組解，<b>在題目自己的座標系</b>。提示與盒子填色都靠它。</summary>
         public readonly Placement[] ReferenceSolution;
 
+        /// <summary>
+        /// 輪廓要平移多少才對得上這一題：<b>題目座標 ＝ 輪廓座標 ＋ 這個量</b>（模型單位，2026-10-14）。
+        /// 照片對照要靠它把照片疊回盒子上——像素 →（<see cref="RecognizedContour.PixelToModel"/>）輪廓座標
+        /// →（這個）題目座標 →（加盒子原點）盤面座標。
+        /// </summary>
+        public readonly Vector2 OutlineOffset;
+
         /// <param name="name">給訊息看的名字。</param>
         /// <param name="puzzle">題目。</param>
         /// <param name="referenceSolution">七片的參考解。</param>
+        /// <param name="outlineOffset">輪廓 → 題目座標的平移量，見 <see cref="OutlineOffset"/>。</param>
         /// <exception cref="ArgumentNullException">題目或參考解是 null。</exception>
-        public ContourPuzzle(string name, Puzzle puzzle, Placement[] referenceSolution)
+        public ContourPuzzle(string name, Puzzle puzzle, Placement[] referenceSolution, Vector2 outlineOffset)
         {
             Name = name;
             Puzzle = puzzle ?? throw new ArgumentNullException(nameof(puzzle));
             ReferenceSolution = referenceSolution ?? throw new ArgumentNullException(nameof(referenceSolution));
+            OutlineOffset = outlineOffset;
         }
     }
 }

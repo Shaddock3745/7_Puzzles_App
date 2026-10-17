@@ -47,6 +47,9 @@ TagManager:
   - name: Piece
     uniqueID: 2440616397
     locked: 0
+  - name: ScanPhoto
+    uniqueID: 1679226285
+    locked: 0
   - name: GameUI
     uniqueID: 3129993813
     locked: 0
