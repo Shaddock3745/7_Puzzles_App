@@ -3,17 +3,16 @@ using System.Collections;
 using Tangram.Data;
 using UnityEngine;
 
-// ⭐ 掃描模式的前兩段（2026-10-14）：相機 → 辨識模組 → 輪廓 JSON。
+// ⭐ 掃描模式的前兩段（2026-10-14）：取得照片 → 辨識模組 → 輪廓 JSON。
 //
-//   主畫面「掃描模式」→ IContourScanner（開相機、拍照）→ IContourRecognizer（照片 → JSON）
+//   主畫面「掃描模式」→ 選擇視窗 → IContourScanner ┬ IPhotoSource（拍照或選檔，PhotoSources.cs）
+//                                                  └ IContourRecognizer（照片 → JSON，協作者的洞）
 //                    → RecognizedContour（讀 JSON）→ IContourPuzzleBuilder（出題）→ 進關
 //
 // 後兩段在 Data 層（RecognizedContour.cs、ContourPuzzleBuilder.cs），測得到；這兩段碰到相機與照片，只能在 Unity 裡跑。
 //
-// ⭐ 為什麼拆成兩個介面：協作者的模組最後可能是
-//   ① ONNX 模型，由我們在 Unity 裡開相機、跑推論 → 兩個介面都由我們實作
-//   ② 自帶相機畫面的 Android 元件 → IContourScanner 直接轉給他，IContourRecognizer 用不到
-// 兩種都接得上，現在不用先決定。
+// ⭐ 分工（2026-10-17 使用者定）：協作者只補 IContourRecognizer 這一個洞（給照片、回 JSON），
+// 相機與選檔由我們做。原本留著的「他自帶相機元件、整個 IContourScanner 交給他」那條路不走了。
 
 /// <summary>掃描的下場。</summary>
 public enum ContourScanStatus
@@ -76,29 +75,36 @@ public readonly struct ContourScanResult
 }
 
 /// <summary>
-/// ⭐ <b>辨識模組的接口</b>：給一張照片，回一份輪廓 JSON。
+/// ⭐ <b>辨識模組的接口</b>：給一張照片，回一份輪廓 JSON。<b>這就是協作者要補的洞</b>（2026-10-17 定）。
 ///
 /// <b>為什麼是非同步（回呼）</b>：手機上推論可能要好幾秒，做成同步的話換成真的那天整個畫面會凍住。
 ///
+/// <b>收到的照片保證</b>（<see cref="IPhotoSource"/> 的約定）：已經轉正、讀得到像素（RGBA32）、
+/// 長邊不超過 <see cref="PhotoTextures.MaximumLongSide"/>。
+///
 /// <b>實作要守的約定</b>：
 /// <list type="bullet">
+/// <item>⭐ <b>JSON 的 <c>width</c>／<c>height</c> 必須等於這張照片的寬高</b>，點落在這張照片的像素座標上、<b>y 朝上</b>
+///   （原點在左下，跟 Unity 貼圖一樣）。模型內部縮成 320 × 320 是模組自己的事，回來之前要換算回這張照片的尺寸——
+///   對不上的話照片對照會改畫剪影並寫警告（<c>LevelController.HandPhotoToView</c>）</item>
+/// <item>⚠️ <b>不要釋放、也不要改這張照片</b>：它之後還要拿去畫照片對照，由掃描那一層保管</item>
 /// <item>⚠️ <b>不能在 <see cref="Recognize"/> 裡面當場叫回呼</b>，至少等到下一幀——
 ///   叫的人還停在「開始辨識」那一行裡就收到「完成、進關」，執行順序跟真的完全不一樣</item>
 /// <item><b>回呼只能叫一次，而且要在主執行緒上叫</b>（之後要碰 Unity 的物件）</item>
 /// <item>只會回 <see cref="ContourScanStatus.Succeeded"/> 或 <see cref="ContourScanStatus.Failed"/>，
-///   取消是拍照那一層的事</item>
+///   取消是拍照那一層的事；成功時不用附照片（附了也會被忽略）</item>
 /// </list>
 /// </summary>
 public interface IContourRecognizer
 {
     /// <summary>辨識一張照片。</summary>
-    /// <param name="photo">拍到的照片。假實作不看，可以是 null。</param>
+    /// <param name="photo">照片，約定見介面說明。假實作不看。</param>
     /// <param name="onFinished">辨識完叫一次。</param>
     void Recognize(Texture2D photo, Action<ContourScanResult> onFinished);
 }
 
 /// <summary>
-/// ⭐ <b>呼叫辨識模組的接口</b>：開相機 → 玩家按快門 → 把照片交給辨識模組 → 收結果。
+/// ⭐ <b>呼叫辨識模組的接口</b>：取得照片 → 把照片交給辨識模組 → 收結果。
 /// 掃描模式只跟這一層講話，不直接碰相機或辨識模組。
 ///
 /// 約定跟 <see cref="IContourRecognizer"/> 一樣：不能當場回、回呼只叫一次、在主執行緒上叫。
@@ -118,6 +124,9 @@ public interface IContourScanner
 /// ⚠️ <b>假的辨識模組</b>：不看照片，永遠回同一份 JSON（<c>Resources/ScanSamples/</c> 裡協作者交的樣本）。
 ///
 /// <b>下一幀才回</b>，照 <see cref="IContourRecognizer"/> 的約定——所以它需要一個 <c>MonoBehaviour</c> 幫它跑協程。
+///
+/// ⚠️ 2026-10-17 起前面接的是真的照片，而這份樣本是 320 × 320——<b>尺寸一定對不上，照片對照會畫剪影</b>
+/// （見 <see cref="ContourStandInPhoto"/>），Console 每次都有一行警告，那是預期的。
 /// </summary>
 public sealed class SampleFileContourRecognizer : IContourRecognizer
 {
@@ -151,23 +160,24 @@ public sealed class SampleFileContourRecognizer : IContourRecognizer
 }
 
 /// <summary>
-/// ⚠️ <b>假的掃描</b>：不開相機，直接叫辨識模組（照片傳 null）。
+/// ⭐ <b>照片 → 輪廓的掃描</b>（2026-10-17，取代原本不開相機的假掃描）：先跟照片來源拿一張照片，再交給辨識模組。
 ///
-/// <b>照片用替身</b>（2026-10-14，照片對照要用）：辨識成功之後，用那份 JSON 畫一張跟原圖同尺寸的剪影
-/// （背景深灰、輪廓裡白色、不畫描邊）當成「拍到的照片」附在結果上。
-/// ⭐ 替身跟 JSON 是同一個來源，所以照片對照時<b>剪影一定要剛好疊在輪廓上——對不準就是換算鏈的 bug</b>，
-/// 不用等協作者交真的照片就能驗完。
+/// 遊戲裡有兩個：一個接拍照畫面、一個接相簿，<b>共用同一個辨識模組</b>（見 <c>LevelController.EnsureScanPipeline</c>）。
 ///
-/// 真的相機做好之後換掉它；辨識模組那一層可以照樣沿用。
+/// <b>照片誰保管</b>：拿到之後由這一層保管，辨識成功就跟 JSON 一起交出去（之後歸收到的人），
+/// 辨識失敗或出例外就在這裡釋放。辨識模組只借看，不釋放。
 /// </summary>
-public sealed class NoCameraContourScanner : IContourScanner
+public sealed class PhotoContourScanner : IContourScanner
 {
+    private readonly IPhotoSource photoSource;
     private readonly IContourRecognizer recognizer;
 
+    /// <param name="photoSource">照片從哪來。</param>
     /// <param name="recognizer">要叫的辨識模組。</param>
-    /// <exception cref="ArgumentNullException"><paramref name="recognizer"/> 是 null。</exception>
-    public NoCameraContourScanner(IContourRecognizer recognizer)
+    /// <exception cref="ArgumentNullException">任何一個是 null。</exception>
+    public PhotoContourScanner(IPhotoSource photoSource, IContourRecognizer recognizer)
     {
+        this.photoSource = photoSource ?? throw new ArgumentNullException(nameof(photoSource));
         this.recognizer = recognizer ?? throw new ArgumentNullException(nameof(recognizer));
     }
 
@@ -181,38 +191,76 @@ public sealed class NoCameraContourScanner : IContourScanner
         if (IsScanning) throw new InvalidOperationException("上一次掃描還沒回來。");
 
         IsScanning = true;
-        recognizer.Recognize(null, result =>
-        {
-            // ⚠️ 先放掉旗標再轉交：收到結果的人可能馬上又開始下一次掃描
-            IsScanning = false;
-            onFinished(result.Status == ContourScanStatus.Succeeded
-                ? ContourScanResult.Succeeded(result.ContourJson, StandInPhoto(result.ContourJson))
-                : result);
-        });
+        photoSource.Acquire(captured => OnPhotoCaptured(captured, onFinished));
     }
 
-    /// <summary>背景（輪廓外）的顏色。</summary>
-    private static readonly Color32 StandInBackground = new Color32(64, 64, 64, 255);
-
-    /// <summary>剪影（輪廓裡）的顏色。</summary>
-    private static readonly Color32 StandInSilhouette = new Color32(255, 255, 255, 255);
-
-    /// <summary>
-    /// 用 JSON 畫替身照片。JSON 讀不進來就不畫（回 null）——讀不進來這件事 <c>LevelController</c> 會自己報，這裡不重複。
-    /// </summary>
-    /// <param name="contourJson">辨識模組交回來的 JSON。</param>
-    /// <returns>剪影貼圖；讀不進來時是 null。</returns>
-    private static Texture2D StandInPhoto(string contourJson)
+    private void OnPhotoCaptured(PhotoCaptureResult captured, Action<ContourScanResult> onFinished)
     {
-        RecognizedContour contour;
+        if (captured.Status != ContourScanStatus.Succeeded)
+        {
+            Finish(onFinished, captured.Status == ContourScanStatus.Cancelled
+                ? ContourScanResult.Cancelled()
+                : ContourScanResult.Failed(captured.FailureReason));
+            return;
+        }
+
+        Texture2D photo = captured.Photo;
         try
         {
-            contour = RecognizedContour.FromJson(contourJson);
+            recognizer.Recognize(photo, recognized =>
+            {
+                if (recognized.Status == ContourScanStatus.Succeeded)
+                {
+                    // 照片用我們這張，不用辨識模組附的（約定裡它不用附）
+                    Finish(onFinished, ContourScanResult.Succeeded(recognized.ContourJson, photo));
+                    return;
+                }
+
+                UnityEngine.Object.Destroy(photo);
+                Finish(onFinished, recognized.Status == ContourScanStatus.Failed
+                    ? recognized
+                    : ContourScanResult.Failed("辨識模組回了「取消」，那不在它的約定裡。"));
+            });
         }
-        catch (ArgumentException)
+        catch (Exception exception)
         {
-            return null;
+            // 協作者的程式第一次接上來時最可能出事的地方。接住，才不會讓掃描永遠停在「還在跑」
+            UnityEngine.Object.Destroy(photo);
+            Finish(onFinished, ContourScanResult.Failed($"辨識模組丟了例外：{exception}"));
         }
+    }
+
+    private void Finish(Action<ContourScanResult> onFinished, ContourScanResult result)
+    {
+        // ⚠️ 先放掉旗標再轉交：收到結果的人可能馬上又開始下一次掃描
+        IsScanning = false;
+        onFinished(result);
+    }
+}
+
+/// <summary>
+/// ⭐ <b>照片的替身</b>：用輪廓畫一張跟原圖同尺寸的剪影（背景深灰、輪廓裡白色、不畫描邊）。
+///
+/// <b>什麼時候用</b>（<c>LevelController.HandPhotoToView</c>）：照片的尺寸跟 JSON 講的不一樣時——
+/// 那代表點不在這張照片的座標上，硬疊會整張歪掉，改畫剪影至少跟題目對得上。
+/// ⚠️ <b>假的辨識模組期間每一次都會走到這裡</b>（它不管照片、永遠回 320 × 320 的貓），所以那時候看到的永遠是剪影。
+///
+/// ⭐ 剪影跟 JSON 同一個來源，所以<b>一定要剛好疊在輪廓上——對不準就是換算鏈的 bug</b>（2026-10-14 驗換算鏈就是靠它）。
+/// </summary>
+public static class ContourStandInPhoto
+{
+    /// <summary>背景（輪廓外）的顏色。</summary>
+    private static readonly Color32 Background = new Color32(64, 64, 64, 255);
+
+    /// <summary>剪影（輪廓裡）的顏色。</summary>
+    private static readonly Color32 Silhouette = new Color32(255, 255, 255, 255);
+
+    /// <summary>畫剪影。</summary>
+    /// <param name="contour">讀好的輪廓。</param>
+    /// <returns>剪影貼圖，呼叫端負責釋放。</returns>
+    public static Texture2D Draw(RecognizedContour contour)
+    {
+        if (contour == null) throw new ArgumentNullException(nameof(contour));
 
         int width = contour.ImageWidth, height = contour.ImageHeight;
         bool[] mask = contour.SilhouetteMask();
@@ -221,8 +269,7 @@ public sealed class NoCameraContourScanner : IContourScanner
         // ⚠️ 剪影的第 0 列是照片最上面，Unity 貼圖的第 0 列是最下面——上下對調，照片才是正的
         for (int row = 0; row < height; row++)
             for (int column = 0; column < width; column++)
-                pixels[(height - 1 - row) * width + column] =
-                    mask[row * width + column] ? StandInSilhouette : StandInBackground;
+                pixels[(height - 1 - row) * width + column] = mask[row * width + column] ? Silhouette : Background;
 
         var texture = new Texture2D(width, height, TextureFormat.RGBA32, false)
         {

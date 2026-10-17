@@ -20,9 +20,9 @@ public enum GameMode
     Figurative,
 
     /// <summary>
-    /// 拍照 → 辨識模組取輪廓 → 照輪廓出題（2026-10-14，名稱暫定）。
-    /// ⚠️ <b>不結算實力</b>，「下一題」是再掃一次。
-    /// ⚠️ <b>相機與辨識還是假的</b>（見 <c>ContourScanning.cs</c>），出題是真的 beam search 逼近（2026-10-14 起）。
+    /// 拍照或選檔 → 辨識模組取輪廓 → 照輪廓出題（2026-10-14，名稱暫定）。
+    /// ⚠️ <b>不結算實力</b>，「下一題」是再跳一次選擇視窗（2026-10-17）。
+    /// ⚠️ <b>辨識還是假的</b>（見 <c>ContourScanning.cs</c>）；取得照片（2026-10-17）與 beam search 逼近（2026-10-14）是真的。
     /// </summary>
     Scan
 }
@@ -56,6 +56,9 @@ public class LevelController : MonoBehaviour
 
     [Tooltip("掃描題的照片對照（2026-10-14）。沒有也能跑，只是看不到照片。")]
     [SerializeField] private ScanPhotoView scanPhotoView;
+
+    [Tooltip("掃描的拍照畫面（2026-10-17）。沒有的話「新拍一張」會失敗回主畫面，「從檔案選擇」照常能用。")]
+    [SerializeField] private CameraCaptureView cameraCaptureView;
 
     [Tooltip("勾起來的話 Start 會自動載入第一關。⚠️ 2026-09-12 從 loadClassicSquareOnStart 改名——場景裡的舊值會失效並退回預設的 true，而那就是原本的值。")]
     [SerializeField] private bool loadFirstLevelOnStart = true;
@@ -123,11 +126,26 @@ public class LevelController : MonoBehaviour
     /// </summary>
     private const string ScanSampleResourceName = "ScanSamples/u2net_unity_contour";
 
-    /// <summary>掃描（相機＋辨識模組）。<b>第一次要掃描時才建</b>，見 <see cref="EnsureScanPipeline"/>。</summary>
-    private IContourScanner contourScanner;
+    /// <summary>
+    /// 新拍一張（拍照畫面＋辨識模組）。<b>第一次要掃描時才建</b>，見 <see cref="EnsureScanPipeline"/>。
+    /// 沒接拍照畫面時是 null。
+    /// </summary>
+    private IContourScanner cameraScanner;
 
-    /// <summary>輪廓 → 題目。跟 <see cref="contourScanner"/> 一起建。</summary>
+    /// <summary>從檔案選擇（相簿＋辨識模組）。跟 <see cref="cameraScanner"/> 一起建、共用同一個辨識模組。</summary>
+    private IContourScanner galleryScanner;
+
+    /// <summary>輪廓 → 題目。跟兩個掃描一起建。</summary>
     private IContourPuzzleBuilder contourPuzzleBuilder;
+
+    /// <summary>
+    /// ⭐ <b>掃描模式要選照片來源了</b>（2026-10-17）。選擇視窗訂閱它，把自己顯示出來；
+    /// 玩家選完叫回 <see cref="BeginScan"/> 或 <see cref="CancelScanSourceChoice"/>。
+    ///
+    /// 用事件的理由跟 <see cref="ScanAborted"/> 一樣：選擇視窗指向這支，這支再指回去就是環。
+    /// ⚠️ <b>沒有人訂閱</b>（場景沒接選擇視窗）時會報錯並回主畫面，不會停在一個什麼都沒有的畫面上。
+    /// </summary>
+    public event System.Action ScanSourceRequested;
 
     /// <summary>
     /// ⭐ <b>掃描沒有進關就結束了</b>（取消或失敗）。主畫面訂閱它，把自己顯示回來。
@@ -142,6 +160,15 @@ public class LevelController : MonoBehaviour
     /// 這一場在玩哪一種題目。<b>預設是原本的遊玩迴圈</b>，所以沒有主畫面的場景（回饋收集、工具）行為不變。
     /// </summary>
     public GameMode CurrentMode { get; private set; } = GameMode.GeneratedByRating;
+
+    /// <summary>
+    /// ⭐ <b>掃描等待中</b>（2026-10-17）：從跳選擇視窗那一刻起，到進關或中止為止。等待遮罩（<see cref="ScanWaitingCover"/>）看它決定要不要蓋住盤面——
+    /// 不蓋的話，選擇視窗與拍照畫面之間、拍完到進關之間都會露出空的（或上一關的）盤面。
+    ///
+    /// <b>只有三個地方會改它</b>：<see cref="RequestScanSource"/> 設成 true；<see cref="EnterLevel"/>（任何模式）與
+    /// <see cref="AbortScan"/> 設成 false。進關與中止是掃描<b>所有出口的匯集點</b>，清在這兩處就不會漏掉哪一條路。
+    /// </summary>
+    public bool IsScanPending { get; private set; }
 
     // ⚠️ 2026-09-13（P2-14）拿掉了 startingTargetDifficulty 與 lastTargetDifficulty。
     // 「下一題要多難」的真相換成玩家的實力（LevelSession.Rating），起始值在 SkillRatingSettings.json。
@@ -322,10 +349,11 @@ public class LevelController : MonoBehaviour
             return;
         }
 
-        // 掃描模式的「下一題」＝再掃一次（2026-10-14 定）。進關要等掃描回來，所以這裡只是開始
+        // 掃描模式的「下一題」＝再掃一次（2026-10-14 定），先跳選擇視窗問照片從哪來（2026-10-17 定）。
+        // 進關要等掃描回來，所以這裡只是開始
         if (CurrentMode == GameMode.Scan)
         {
-            BeginScan();
+            RequestScanSource();
             return;
         }
 
@@ -433,22 +461,62 @@ public class LevelController : MonoBehaviour
     // ───────── 掃描模式（2026-10-14）─────────
 
     /// <summary>
-    /// 開始一次掃描。<b>進關要等 <see cref="OnScanFinished"/></b>，這裡只負責開頭。
-    ///
-    /// 上一次還沒回來就什麼都不做——玩家連按兩下不該開兩次相機。
+    /// 請選擇視窗出來問「照片從哪來」（2026-10-17）。<b>沒有人接</b>就報錯回主畫面。
     /// </summary>
-    private void BeginScan()
+    private void RequestScanSource()
     {
-        if (difficultyWeights == null) return;      // Awake 已經報過錯
-
-        if (!EnsureScanPipeline())
+        if (ScanSourceRequested == null)
         {
+            Debug.LogError("掃描模式要跳選擇視窗，但場景裡沒有 ScanSourcePanel 在聽（ScanSourceRequested 沒人訂閱），回主畫面。", this);
             AbortScan();
             return;
         }
 
-        if (contourScanner.IsScanning) return;
-        contourScanner.BeginScan(OnScanFinished);
+        // 有人接才算開始等：沒人接的話上面已經中止了，遮罩不該亮
+        IsScanPending = true;
+        ScanSourceRequested();
+    }
+
+    /// <summary>
+    /// 用指定的照片來源開始一次掃描（2026-10-17 起由選擇視窗叫）。<b>進關要等 <see cref="OnScanFinished"/></b>，這裡只負責開頭。
+    ///
+    /// 任何一個掃描還沒回來就什麼都不做——玩家連按兩下不該開兩次相機。
+    /// </summary>
+    /// <param name="source">選擇視窗上按的是哪一顆。</param>
+    public void BeginScan(ScanPhotoSource source)
+    {
+        // 選擇視窗開著的時候不可能換模式，這條是保險：真的不是掃描模式，進關會蓋掉玩家正在玩的那一題
+        if (CurrentMode != GameMode.Scan)
+        {
+            Debug.LogWarning($"不在掃描模式（現在是 {CurrentMode}），不開始掃描。", this);
+            return;
+        }
+
+        // ⚠️ 失敗一律回主畫面：叫這支的時候主畫面與選擇視窗都已經藏起來了，默默 return 的話玩家會停在空畫面上
+        if (difficultyWeights == null || !EnsureScanPipeline())
+        {
+            AbortScan();        // 權重讀不到的話 Awake 已經報過錯
+            return;
+        }
+
+        if (cameraScanner?.IsScanning == true || galleryScanner.IsScanning) return;
+
+        IContourScanner scanner = source == ScanPhotoSource.Camera ? cameraScanner : galleryScanner;
+        if (scanner == null)
+        {
+            Debug.LogError("LevelController 的「拍照畫面」欄位沒填：「新拍一張」用不了，回主畫面。", this);
+            AbortScan();
+            return;
+        }
+
+        scanner.BeginScan(OnScanFinished);
+    }
+
+    /// <summary>選擇視窗按了「取消」（2026-10-17）：回主畫面。</summary>
+    public void CancelScanSourceChoice()
+    {
+        Debug.Log("選擇視窗取消，回主畫面。", this);
+        AbortScan();
     }
 
     /// <summary>
@@ -546,14 +614,27 @@ public class LevelController : MonoBehaviour
     /// 換算鏈：圖的四個角（像素）→ 輪廓座標（<c>RecognizedContour.ImageBoundsInModel</c>）
     /// → 題目座標（加 <c>ContourPuzzle.OutlineOffset</c>）→ 盤面座標（加盒子原點）。
     /// ⚠️ 盒子原點現在恆為 0，但照參考解的做法照樣加——不加的話哪天改了原點規則，照片會整張偏掉而且不報錯。
+    ///
+    /// ⭐ <b>先對尺寸</b>（2026-10-17）：照片的寬高必須等於 JSON 的 <c>width</c>／<c>height</c>（辨識模組的約定）。
+    /// 對不上代表點不在這張照片的座標上，硬疊會整張歪掉而且不報錯——所以改畫 JSON 的剪影並寫警告。
+    /// ⚠️ 假的辨識模組期間<b>每一次都對不上</b>（樣本是 320 × 320），看到的永遠是剪影，那是預期的。
     /// </summary>
     private void HandPhotoToView(Texture2D photo, RecognizedContour contour, ContourPuzzle built)
     {
-        if (photo == null) return;
         if (scanPhotoView == null)
         {
             DiscardPhoto(photo);        // 沒有人畫，也沒有人會釋放它
             return;
+        }
+
+        if (photo == null || photo.width != contour.ImageWidth || photo.height != contour.ImageHeight)
+        {
+            if (photo != null)
+                Debug.LogWarning($"照片是 {photo.width}×{photo.height}，辨識模組的 JSON 講的是 " +
+                                 $"{contour.ImageWidth}×{contour.ImageHeight}，對不上：照片對照改畫剪影。" +
+                                 "（假的辨識模組期間每次都會這樣。）", this);
+            DiscardPhoto(photo);
+            photo = ContourStandInPhoto.Draw(contour);
         }
 
         LevelData level = session.Data;
@@ -571,28 +652,40 @@ public class LevelController : MonoBehaviour
     }
 
     /// <summary>掃描沒有進關就結束了：讓主畫面顯示回來。</summary>
-    private void AbortScan() => ScanAborted?.Invoke();
+    private void AbortScan()
+    {
+        // 先收遮罩再叫主畫面回來：兩件事同一幀發生，順序其實看不出來，但「等待結束」在邏輯上先於「回主畫面」
+        IsScanPending = false;
+        ScanAborted?.Invoke();
+    }
 
     /// <summary>
-    /// 需要的話把掃描的三段建起來。<b>第一次要掃描時才建</b>，只玩別的模式的人不付這個成本。
+    /// 需要的話把掃描的各段建起來。<b>第一次要掃描時才建</b>，只玩別的模式的人不付這個成本。
     ///
-    /// ⚠️ <b>前兩段還是假的</b>：不開相機、辨識模組回固定的樣本 JSON。
-    /// <b>出題那段是真的</b>（2026-10-14 起）：beam search 逼近，見 <see cref="BeamSearchContourPuzzleBuilder"/>。
-    /// 換成真的時只改這一支裡的 <c>new</c>，其他地方一行都不用動。
+    /// ⚠️ <b>辨識模組還是假的</b>：不看照片、回固定的樣本 JSON。<b>協作者交真的那天只改這一支裡的那一個 <c>new</c></b>，
+    /// 兩個掃描會一起換到。
+    /// <b>取得照片是真的</b>（2026-10-17 起）：拍照畫面與相簿各一個掃描，共用同一個辨識模組。
+    /// <b>出題是真的</b>（2026-10-14 起）：beam search 逼近，見 <see cref="BeamSearchContourPuzzleBuilder"/>。
     ///
-    /// 💡 回傳 bool 是給真的相機留的（例如裝置沒有相機、權限被拒）；現在永遠是 true。
+    /// 💡 回傳 bool 是留給「辨識模組載不起來」（例如模型檔不見）用的；現在永遠是 true。
+    /// 相機打不開、權限被拒這類事是拍照當下才知道的，走掃描的「失敗」回來，不在這裡擋。
     /// </summary>
     /// <returns>掃描可以用了沒。</returns>
     private bool EnsureScanPipeline()
     {
-        if (contourScanner != null) return true;
+        if (galleryScanner != null) return true;
 
         // 樣本讀不到不在這裡擋：假的辨識模組拿到 null 會回「失敗」，走的就是真的模組失敗時那條路
         TextAsset sample = Resources.Load<TextAsset>(ScanSampleResourceName);
         if (sample == null)
             Debug.LogError($"Resources 裡沒有 {ScanSampleResourceName}.json：假的辨識模組每次都會回失敗。", this);
 
-        contourScanner = new NoCameraContourScanner(new SampleFileContourRecognizer(sample != null ? sample.text : null, this));
+        IContourRecognizer recognizer = new SampleFileContourRecognizer(sample != null ? sample.text : null, this);
+
+        galleryScanner = new PhotoContourScanner(new GalleryPhotoSource(this), recognizer);
+
+        // 拍照畫面沒接不在這裡報：只玩「從檔案選擇」的人不該看到錯誤，按了「新拍一張」才報（BeginScan）
+        if (cameraCaptureView != null) cameraScanner = new PhotoContourScanner(cameraCaptureView, recognizer);
 
         // 預設參數（N = 100、從第 5 片開始微調……）是驗收工具量過的，見 ContourApproximationSettings
         contourPuzzleBuilder = new BeamSearchContourPuzzleBuilder();
@@ -682,6 +775,9 @@ public class LevelController : MonoBehaviour
     public void EnterLevel(Puzzle puzzle, IReadOnlyList<Placement> referenceSolution, int difficulty, bool allowRoll,
                            GenerationRecord? generation = null, bool countsTowardRating = true)
     {
+        // 0. 掃描的等待到此為止（2026-10-17）。不判模式：掃描等到一半換成別的模式進關，遮罩也該收掉
+        IsScanPending = false;
+
         // 1. 載入：算原點、建 Region、換掉整包資料
         session.Load(puzzle, referenceSolution, difficulty, allowRoll, generation, countsTowardRating);
         LevelData level = session.Data;

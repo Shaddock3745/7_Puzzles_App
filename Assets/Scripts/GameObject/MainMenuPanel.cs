@@ -6,8 +6,9 @@ using UnityEngine;
 /// <list type="bullet">
 /// <item><b>挑戰模式</b>——照實力當場生題，就是原本的遊玩迴圈（P2-7 ＋ P2-14）</item>
 /// <item><b>圖形模式</b>——從題庫隨機抽具象題（貓、船之類），一輪之內不重複</item>
-/// <item><b>掃描模式</b>（2026-10-14，名稱暫定）——拍照、取輪廓、照輪廓出題。⚠️ 相機與辨識還是假的（出題是真的），
-/// 見 <see cref="GameMode.Scan"/>。掃描取消或失敗時這裡會自己顯示回來（<see cref="LevelController.ScanAborted"/>）</item>
+/// <item><b>掃描模式</b>（2026-10-14，名稱暫定）——先跳選擇視窗（新拍一張／從檔案選擇，<see cref="ScanSourcePanel"/>，2026-10-17），
+/// 再取輪廓、照輪廓出題。⚠️ 辨識還是假的，見 <see cref="GameMode.Scan"/>。
+/// 選擇視窗取消、掃描取消或失敗時這裡會自己顯示回來（<see cref="LevelController.ScanAborted"/>）</item>
 /// </list>
 ///
 /// <b>跟 <see cref="LevelResultPanels"/> 同一個形狀</b>：不做事，只負責「什麼時候顯示」與
@@ -135,8 +136,8 @@ public class MainMenuPanel : MonoBehaviour
 
     /// <summary>「掃描模式」被按下。接在 Unity <c>Button.onClick</c> 上（2026-10-14）。</summary>
     /// <remarks>
-    /// 進關要等掃描回來（假的掃描是下一幀），這中間主畫面已經藏起來了。
-    /// 掃描取消或失敗會經由 <see cref="LevelController.ScanAborted"/> 叫回 <see cref="Show"/>。
+    /// 按下去主畫面先藏起來，換選擇視窗出來（<see cref="ScanSourcePanel"/>）；進關要等拍照或選檔、辨識都回來。
+    /// 選擇視窗取消、掃描取消或失敗會經由 <see cref="LevelController.ScanAborted"/> 叫回 <see cref="Show"/>。
     /// </remarks>
     public void OnScanModePressed() => StartMode(GameMode.Scan);
 
