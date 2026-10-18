@@ -101,6 +101,33 @@ public class LevelController : MonoBehaviour
     /// <summary>ELO 設定檔在 <c>Resources</c> 裡的名字（不含副檔名）。</summary>
     private const string SkillRatingSettingsResourceName = "SkillRatingSettings";
 
+    /// <summary>ELO 設定，Awake 讀一次。讀不到是 null，那時不建實力追蹤、不進任何一關。</summary>
+    private SkillRatingSettings ratingSettings;
+
+    // ───────── 進度存檔（P2-8b，2026-10-17）─────────
+
+    /// <summary>
+    /// 這一場要不要讀寫進度存檔。<b>預設要</b>；回饋收集場景在 <c>Awake</c> 叫 <see cref="SuppressProgressPersistence"/> 關掉。
+    /// 不是 Inspector 欄位，理由見那支。
+    /// </summary>
+    private bool persistProgress = true;
+
+    /// <summary>
+    /// 進度存檔。<b>第一次讀檔時才建</b>（<see cref="LoadSavedRating"/>），不存進度的場景永遠是 null。
+    /// 路徑是 <c>Application.persistentDataPath</c>——⚠️ <b>在 Windows 上 Editor 跟 exe 是同一個檔</b>，
+    /// 在 Editor 裡玩會改到這台電腦上 exe 的進度。
+    /// </summary>
+    private PlayerProgressFile progressFile;
+
+    /// <summary>
+    /// 這次開啟之前已經結算過幾局（存檔裡的 <c>settledCount</c>）。寫檔時加上這一場的局數，
+    /// 就是累計的局數。沒有存檔時是 0。
+    /// </summary>
+    private int settledCountBeforeThisRun;
+
+    /// <summary>現在這份權重的指紋，第一次存檔時算一次（SHA-256，每局算也不貴，只是沒必要）。</summary>
+    private string weightsFingerprint;
+
     /// <summary>
     /// 題庫在 <c>Resources</c> 裡的名字（不含副檔名）。
     ///
@@ -209,14 +236,10 @@ public class LevelController : MonoBehaviour
                                              "沒有權重就算不出難度");
 
         // 實力（P2-14）。設定讀不到就不建 tracker，EnterNextLevel() 看到 null 就不進關——
-        // 跟權重同一套規則：沒有預設值，讀不到就吵
-        SkillRatingSettings ratingSettings = LoadJsonResource(
+        // 跟權重同一套規則：沒有預設值，讀不到就吵。
+        // ⚠️ tracker 本身在 Start 才建（P2-8b），理由見 CreateRatingTracker
+        ratingSettings = LoadJsonResource(
             SkillRatingSettingsResourceName, SkillRatingSettings.FromJson, "沒有 ELO 設定就不知道下一題要多難");
-        if (ratingSettings != null)
-        {
-            int? savedRating = LoadSavedRating();
-            session.Rating = new SkillRatingTracker(ratingSettings, savedRating ?? ratingSettings.initialRating);
-        }
     }
 
     /// <summary>
@@ -253,8 +276,31 @@ public class LevelController : MonoBehaviour
 
     private void Start()
     {
+        // ⚠️ 一定要在自動進關之前：進關要問實力出題
+        CreateRatingTracker();
+
         if (!loadFirstLevelOnStart) return;
         EnterNextLevel();
+    }
+
+    /// <summary>
+    /// 讀存檔、建實力追蹤（P2-8b）。設定讀不到時不建，<see cref="EnterNextLevel()"/> 看到 null 就不進關。
+    ///
+    /// ⚠️ <b>為什麼在 <c>Start</c> 不在 <c>Awake</c></b>：回饋收集場景要在它自己的 <c>Awake</c> 裡叫
+    /// <see cref="SuppressProgressPersistence"/>，而兩支 <c>Awake</c> 誰先跑是未定義的。
+    /// 留在 <c>Awake</c> 的話，運氣不好時存檔已經讀進來了才被告知「這一場不存」——
+    /// 讀進來的實力雖然沒人用，但這是賭順序，跟 <see cref="SuppressAutoStart"/> 同一個理由。
+    /// Unity 保證所有 <c>Awake</c> 都跑完才開始跑 <c>Start</c>。
+    ///
+    /// 💡 在那之前 <c>LevelSession.Rating</c> 是 null，而這支的 <c>Update</c> 不會比自己的 <c>Start</c> 早跑，
+    /// 所以結算那條路不受影響。別人要在 <c>Start</c> 裡讀實力的話會讀到 null——目前沒有這樣的讀者。
+    /// </summary>
+    private void CreateRatingTracker()
+    {
+        if (ratingSettings == null) return;
+
+        int? savedRating = LoadSavedRating();
+        session.Rating = new SkillRatingTracker(ratingSettings, savedRating ?? ratingSettings.initialRating);
     }
 
     /// <summary>
@@ -293,26 +339,118 @@ public class LevelController : MonoBehaviour
                   $"下一題：{update.Trend}", this);
     }
 
-    // ───────── 進度的讀寫（P2-14 只寫邏輯，P3 才真的落檔）─────────
+    // ───────── 進度的讀寫（P2-14 留的接縫，P2-8b 2026-10-17 落檔）─────────
     //
     // ⚠️ 刻意不為這兩支開介面：實作只有一個，接縫是方法名（同 EnterNextLevel 那段的標準）。
-    // P3 做 PlayerProgress.json 時只換這兩支的內容，外面一行都不用動。
+    // 檔案怎麼讀寫、壞檔怎麼辦在 Core 的 PlayerProgressFile（有離線測試），這裡只決定「讀到什麼就怎麼做」。
 
     /// <summary>
-    /// 讀存檔裡的實力。<b>現在永遠回 null</b>（P3 才做 <c>PlayerProgress.json</c>），
-    /// 所以每次開 App 都從 <see cref="SkillRatingSettings.initialRating"/> 開始。
+    /// 這一場不讀也不寫進度存檔（P2-8b）。<b>回饋收集場景在 <c>Awake</c> 叫這支。</b>
+    ///
+    /// ⚠️ <b>為什麼需要</b>：回饋收集場景也有這支，而且每一題照樣結算。不擋的話受試者玩的題會寫進玩家存檔——
+    /// 而回饋收集的 exe 跟遊戲是同一個專案、<c>persistentDataPath</c> 是同一個，
+    /// <b>在筆電上收一輪回饋就把那台的遊戲進度洗掉了</b>，不報錯。
+    ///
+    /// <b>為什麼不做成 Inspector 勾選</b>：忘了勾的症狀看起來一切正常（同 <see cref="SuppressAutoStart"/>）。
+    /// 一定要在 <c>Awake</c> 裡叫——讀檔在 <see cref="Start"/>，理由見 <see cref="CreateRatingTracker"/>。
     /// </summary>
-    /// <returns>存檔裡的實力；沒有存檔時是 null。</returns>
-    private int? LoadSavedRating() => null;
+    public void SuppressProgressPersistence() => persistProgress = false;
 
     /// <summary>
-    /// 把實力寫進存檔當備份。<b>現在什麼都不做</b>（P3 才落檔）。
+    /// 讀存檔裡的實力（P2-8b）。
+    ///
+    /// <list type="bullet">
+    /// <item><b>沒有存檔</b>：第一次玩，回 null（從起始實力開始），印一行 log</item>
+    /// <item><b>合法</b>：回存檔裡的實力，印一行 log 說從哪裡來</item>
+    /// <item><b>壞檔</b>：<b>報錯</b>，回 null。壞檔已經被改名留著，錯誤訊息寫出備份在哪</item>
+    /// <item><b>權重指紋不一樣</b>：<b>照用、只寫警告</b>（2026-10-17 定，理由見 <see cref="PlayerProgress.weightsFingerprint"/>）</item>
+    /// </list>
+    ///
+    /// ⭐ <b>開場那行 log 一定要說實力從哪裡來</b>：錄影是改 <see cref="SkillRatingSettings.initialRating"/> 分段錄的，
+    /// 有存檔的話改了不會生效——不看 log 的話完全看不出來。清除請用選單〈Window → Tangram → 清除進度存檔〉。
+    /// </summary>
+    /// <returns>存檔裡的實力；沒有存檔、壞檔、或這一場不存進度時是 null。</returns>
+    private int? LoadSavedRating()
+    {
+        if (!persistProgress) return null;
+
+        progressFile = new PlayerProgressFile(Application.persistentDataPath);
+        PlayerProgressLoadResult result = progressFile.Load(System.DateTime.UtcNow);
+
+        switch (result.Status)
+        {
+            case PlayerProgressLoadStatus.Loaded:
+                PlayerProgress progress = result.Progress;
+                settledCountBeforeThisRun = progress.settledCount;
+                Debug.Log($"實力從存檔讀到 {progress.skillRating}（累計 {progress.settledCount} 局，" +
+                          $"上次存於 {progress.savedAtUtc} UTC）：{progressFile.FilePath}", this);
+                WarnIfWeightsChanged(progress.weightsFingerprint);
+                return progress.skillRating;
+
+            case PlayerProgressLoadStatus.Corrupt:
+                string backup = result.CorruptBackupPath != null
+                    ? $"壞檔已經改名留在 {result.CorruptBackupPath}。"
+                    : $"⚠️ 壞檔改名失敗，還在 {progressFile.FilePath}，下一次存檔會蓋掉它——要留的話現在先手動複製一份。";
+                Debug.LogError($"進度存檔讀不懂，實力從起始的 {ratingSettings.initialRating} 開始。{result.Problem}。{backup}", this);
+                return null;
+
+            default:
+                Debug.Log($"沒有進度存檔，實力從起始的 {ratingSettings.initialRating} 開始。存檔會寫在 {progressFile.FilePath}", this);
+                return null;
+        }
+    }
+
+    /// <summary>存檔裡的權重指紋跟現在的不一樣時寫一條警告。照用的理由見 <see cref="PlayerProgress.weightsFingerprint"/>。</summary>
+    /// <param name="savedFingerprint">存檔裡的指紋，可能是空的。</param>
+    private void WarnIfWeightsChanged(string savedFingerprint)
+    {
+        // 權重讀不到時 Awake 已經報過錯，也不會進任何一關，不用再講
+        if (difficultyWeights == null) return;
+
+        string currentFingerprint = CurrentWeightsFingerprint();
+        if (savedFingerprint == currentFingerprint) return;
+
+        string saved = string.IsNullOrEmpty(savedFingerprint) ? "（沒有記錄）" : savedFingerprint;
+        Debug.LogWarning($"進度存檔是用另一份權重存的（存檔 {saved}，現在 {currentFingerprint}）。" +
+                         "實力照用，但同一個數字的意思可能跟著權重移動了一點。", this);
+    }
+
+    /// <returns>現在這份權重的指紋；權重讀不到時是 null。</returns>
+    private string CurrentWeightsFingerprint()
+    {
+        if (difficultyWeights == null) return null;
+        if (weightsFingerprint == null) weightsFingerprint = difficultyWeights.Fingerprint();
+        return weightsFingerprint;
+    }
+
+    /// <summary>
+    /// 把實力寫進存檔（P2-8b）。<b>每結算一局叫一次</b>——實力只在結算時變，所以切背景、關 App 時不另外寫。
     ///
     /// 傳進來的是<b>四捨五入後的整數</b>，記憶體裡的實力照樣留小數繼續算——
     /// 所以重開 App 最多少掉 0.5 分，但玩同一場的時候不會累積誤差（2026-09-13 定）。
+    ///
+    /// ⚠️ <b>寫不進去時報錯、遊戲照常玩</b>，下一局結算時自然會再試一次。不擋玩家：
+    /// 存檔失敗的代價是「重開 App 實力回到上一次存成功的值」，不值得讓這一局玩不下去。
     /// </summary>
     /// <param name="rating">四捨五入後的實力。</param>
-    private void SaveRating(int rating) { }
+    private void SaveRating(int rating)
+    {
+        // progressFile 是 null 有兩種：這一場不存進度，或設定讀不到（那根本不會結算）
+        if (!persistProgress || progressFile == null) return;
+
+        // 這一場的局數＝走勢的筆數（結算一局加一筆，見 SkillRatingTracker.History），跟這一行在同一格更新
+        int settledCount = settledCountBeforeThisRun + session.Rating.History.Count;
+
+        try
+        {
+            progressFile.Save(PlayerProgress.Create(rating, settledCount, CurrentWeightsFingerprint(), System.DateTime.UtcNow));
+        }
+        catch (System.Exception error) when (error is System.IO.IOException || error is System.UnauthorizedAccessException)
+        {
+            Debug.LogError($"進度存檔寫不進去（實力 {rating}），這一局的結果重開 App 之後會不見。下一局結算時會再試。" +
+                           $"{error.Message}：{progressFile.FilePath}", this);
+        }
+    }
 
     /// <summary>
     /// 進下一關。<b>開局與完成彈窗的「下一關」共用這一支。</b>

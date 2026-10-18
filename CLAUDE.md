@@ -1,7 +1,8 @@
 # CLAUDE.md
 
 > 給 Claude 看的專案交接文件。新 session／換裝置時先讀這份。
-> 最後更新：2026-09-21（⭐ **求解器核心寫完**（`TangramSolver`，`Data` 層：找一組＋列出全部，結果分「找到／確定無解／被切斷」），**還沒接進遊戲**，中途回饋排 10/5 之後。⚠️ **完整性沒有證明**，使用者定「評審不會看到這麼深」→ **對外文件不寫確切解數**。系統概述文件的**大綱**已定、還沒動筆（`待辦清單.md`），卡在**作品名稱**。細節在 `開發進度.md`〈求解器核心〉與 `程式說明書.md` §13.10）
+> 最後更新：2026-10-17（⭐ **P2-8b 進度存檔寫好、待 Unity 實測**（#39）：實力存在 `persistentDataPath/PlayerProgress.json`，壞檔改名留著、回饋收集場景不存。⚠️ **有存檔之後改 `initialRating` 不會生效**，見〈容易踩的坑〉。細節在 `程式說明書.md` §16.22）
+> 前一版：2026-09-21（⭐ **求解器核心寫完**（`TangramSolver`，`Data` 層：找一組＋列出全部，結果分「找到／確定無解／被切斷」），**還沒接進遊戲**，中途回饋排 10/5 之後。⚠️ **完整性沒有證明**，使用者定「評審不會看到這麼深」→ **對外文件不寫確切解數**。系統概述文件的**大綱**已定、還沒動筆（`待辦清單.md`），卡在**作品名稱**。細節在 `開發進度.md`〈求解器核心〉與 `程式說明書.md` §13.10）
 > 前一版：2026-09-20（⭐ **回饋收集已經收到 11 人、56 道正式題**，加上使用者手拼的 **38 題**（13 個凸多邊形 ＋ 25 個具象題）——兩件事一起分析完了，**數字唯一的家是 `開發進度.md`〈13 個凸多邊形校準 ＋ 回饋資料第一次分析〉**。三個要先知道的結論：① **難度階梯有效**（提示次數隨難度完全單調）② ⭐ **決定不改權重**（最好的候選只把 r 從 0.456 提到 0.475，在雜訊裡）→ 「改權重 → 重算工具 → 重跑生成時間表 → 才錄影」那條鏈子這一輪**不用跑** ③ **具象題難度落在生成池範圍內**，精選題不用另一把尺）
 > 前一版：2026-09-17（⭐ **影片與「拍照取輪廓」交給協作者**，交接文件 `協作交接_影片與輪廓.md`（他有 repo 讀取權限，口頭約定不改檔）。逼近走 beam search、**不用等求解器**；可能加報**教育 AI 組**，看協作者回覆天數。⏸️ 等他交出輪廓再往下。細節在 `待辦清單.md` C 區與 E 區〈2026-09-17 重啟〉）
 > 前一版：2026-09-15（**提示**已寫好、待 Unity 接場景：參考解位置蓋一片會閃的半透明片、擺對就不畫；提示間隔是唯一的門檻，放棄＝間隔 × 3；提示片在 `Piece` 層、拖著的片蓋在它上面。⚠️ 回饋收集**還沒正式開始收**（使用者 2026-09-15 說），改程式不用改 `appVersion`。細節在 `待辦清單.md`〈提示〉與 `互動設計.md` §9）
@@ -95,7 +96,7 @@ Unity 6000.3.7f1 的**七巧板拼圖遊戲**，參加 2026 大專校院資訊�
 | # | 什麼 | 改了會怎樣 |
 |---|---|---|
 | 1 | **`PiecePrototype` 的節點產生順序**（＝鐵則二） | `Arrangement.Links` 存的就是這個索引 → 所有的解全部失效 |
-| 2 | **`Serialization` 的 DTO 欄位名與片種字串** | `FromDto` 要嘛丟「未知的片種」，要嘛**把欄位讀成預設值**（`JsonUtility` 對不認得的欄位不吭聲）——後者是靜默的 |
+| 2 | **`Serialization` 的 DTO 欄位名與片種字串**，⭐ 以及 **`PlayerProgress` 的欄位名**（2026-10-17，玩家手機上的進度存檔） | `FromDto` 要嘛丟「未知的片種」，要嘛**把欄位讀成預設值**（`JsonUtility` 對不認得的欄位不吭聲）——後者是靜默的。進度存檔的 `formatVersion`／`skillRating` 讀成 0 會被當壞檔（玩家的實力回到起點），其他三個安靜地變成預設值 |
 | 3 | ⭐ **`BoundaryTracer` 的追邊行為** | `PuzzleKey` 是從它的輸出算的 → **所有題目的 key 全部變號**，`puzzleKey` 的指向整批斷掉。<br>⚠️ **這條以前完全沒寫**，只存在於一句「P2-8 之前是改追邊的最後便宜時機」的備註裡，而那句話很容易被讀成「還可以改」。**除錯記錄 008 就是最後一次改它**，之後凍結 |
 
 💡 **字串長什麼樣**：`LARGE_TRIANGLE` / `MEDIUM_TRIANGLE` / `SMALL_TRIANGLE` / `SQUARE` / `PARALLELOGRAM`，
@@ -249,6 +250,7 @@ dotnet test Tools/DotnetTests -- "NUnit.Where=name == RescaleDifficultyWeights"
 | **`EventSystem.IsPointerOverGameObject()` 會晚一幀** | 它的答案由 UI 輸入模組在**它自己的 `Update`** 裡算，而 `MonoBehaviour` 之間的順序是未定義的——按下那一幀很可能拿到上一幀的答案，症狀是「按按鈕的同時也抓到了片」，時好時壞且不報錯。`TouchInputController` 改成自己比矩形（`RegisterPressBlockingArea`），沒有這個問題 |
 | **「事件有觸發但沒效果」先 grep 誰還會寫那個欄位** | 除錯記錄 003 的教訓：先給機制解釋、再找證據，方向錯了整段都是白工。`grep` 全專案的寫入者是機械性的、不會猜錯 |
 | ⚠️ **Windows 版圖形 API 固定 D3D11，不要改回 Auto** | 2026-09-14：Unity 6 新專案在 Windows 預設 **D3D12**。回饋收集的 exe 在開發機（AMD RX 7900 XTX、驅動 32.0.31041.1004）上**一開就 TDR**：開場題單生完、送出第一張畫面時 `swapchain present failed (887a0005)`、`Device removed reason (887a0006)`＝`DEVICE_HUNG`，事件記錄是 `LKD_0x141_Tdr … amdkmdag.sys … HWS:1`，連三次一模一樣。**改成 D3D11 就不當了**。<br>設定在 Player Settings → Windows → Other Settings：取消 Auto Graphics API，**Direct3D11 放第一**（D3D12 留在第二位當備援）。專案全是 2D sprite 與 UI，用不到 D3D12 的任何功能，而且要去的舊筆電對 D3D11 支援更穩。<br>⭐ **根因（D3D12 除錯層查到的）：Unity 6000.3.7f1 的 D3D12 後端在開場上傳貼圖時，把還在排隊的資源提前刪掉**（驗證錯誤 921 ×15、DRED 顯示 78 次 `COPYTEXTUREREGION` 後 page fault），不是驅動無故逾時。⚠️ 我一開始判斷「比較像驅動不穩」，**是錯的**——完整過程、排除掉的四個嫌疑（開場卡住、中文字圖、片貼圖 mipmap、圖示）與開除錯層要踩的兩個坑，在**除錯記錄 011**。<br>⚠️ **不為這個升級 Unity**（比賽期間風險太大）。另外 6000.3.16f1 才修掉 UUM-137629：某些硬體上**就算沒選 D3D12 也會跑 D3D12 初始化**而當——**新 build 帶出去前一定要在舊筆電上完整跑一輪**。症狀：「Editor 正常、exe 一開就驅動逾時」 |
+| ⚠️ **有進度存檔之後，改 `initialRating` 不會生效**（2026-10-17，P2-8b） | 實力從 `PlayerProgress.json` 讀，存檔在就不看起始值——**錄影改 `initialRating` 分段錄的話，錄出來的起點是上次玩到的實力**，不報錯。開場 log 會說實力從哪裡來；要從頭開始用 **Window → Tangram → 清除進度存檔**（Play 中清沒用，下一局結算會寫回去）。⚠️ **Windows 上 Editor 跟 exe 是同一個檔**（`persistentDataPath`），在 Editor 玩或清除都會動到這台電腦上 exe 的進度。回饋收集場景**不讀不寫**（`FeedbackSessionController.Awake` 關掉的） |
 | **專案只開了新 Input System** | `ProjectSettings` 的 `activeInputHandler: 1`。`Input.mousePosition`、`Input.GetMouseButton` 這些舊 API 在 runtime 會直接丟例外。P1-6 要用 `UnityEngine.InputSystem` 的 `Pointer.current` / `Touchscreen.current` |
 | **`transform` 不能存旋轉** | 正方形 `rotation = 0` 與 `= 2` 的 transform **完全相同**，反推不回來。旋轉一定要有自己的 int 欄位，transform 只是輸出。位置反過來可以放 transform（浮點 round-trip 無損），前提是不掛在有旋轉或縮放的父物件下 |
 | **模型的翻面是垂直翻，不是水平** | `Symmetry.MirrorAcrossXAxis` 是 (x, y) → (x, −y)。所以 Sprite 要用 `flipY` 不是 `flipX` |

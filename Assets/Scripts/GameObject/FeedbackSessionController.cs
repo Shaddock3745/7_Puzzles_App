@@ -35,6 +35,7 @@ using UnityEngine.UI;
 /// <item><c>LevelResultPanels</c> <b>拿掉</b>，由這裡的面板取代</item>
 /// <item>⚠️ <b><c>DebugOverlay</c> 與 <c>DebugTools</c> 拿掉</b>——overlay 會顯示這一題的難度值，受試者看到數字，主觀判斷就被帶走了</item>
 /// </list>
+/// 💡 <b>進度存檔不用在場景上設</b>：這支在 <c>Awake</c> 直接叫 <c>LevelController.SuppressProgressPersistence</c>（P2-8b，2026-10-17）。
 ///
 /// ⚠️ <b>這一批資料是在固定一台筆電（1920×1080）上用滑鼠收的</b>（使用者定，打包成 exe）：主觀難度能用，
 /// 但時間跟觸控不一樣，<b>不能拿來校正 T</b>。dp 換算在桌機版固定用基準密度（見 <c>ScreenMetrics</c>），手感跟 Editor 一樣。
@@ -191,6 +192,10 @@ public class FeedbackSessionController : MonoBehaviour
 
         if (levelController == null)
             Debug.LogError("FeedbackSessionController 找不到 LevelController：沒辦法進關，也拿不到權重。", this);
+        else
+            // ⚠️ 受試者玩的題照樣會結算，不關掉的話會寫進這台電腦的玩家進度存檔（P2-8b）。
+            // 一定要在 Awake：LevelController 在 Start 讀存檔
+            levelController.SuppressProgressPersistence();
         if (inputController == null)
             Debug.LogError("FeedbackSessionController 找不到 TouchInputController：面板蓋著的時候盤面還抓得到片。", this);
 
