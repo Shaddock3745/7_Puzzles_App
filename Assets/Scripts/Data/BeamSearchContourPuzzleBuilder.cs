@@ -50,6 +50,30 @@ namespace Tangram.Data
         /// </summary>
         public readonly int RefinementStartPieceCount;
 
+        /// <summary>
+        /// ⭐ <b>找特徵的半徑</b>（2026-10-20），模型單位：比 2 倍細的突出部位、比 2 倍窄的缺口才算特徵，
+        /// 見 <see cref="OutlineFeatureMap"/>。<b>0 ＝ 不找特徵，等於第三版</b>（拿來對照）。
+        /// 預設 0.75（小三角的腰長是 2）。2026-10-20 試過 0.5／0.75／1.0：0.5 會把魚身與魚尾之間的缺口填掉、1.0 缺口被填回到跟不找特徵差不多，照片類的形狀上 0.75 最好。
+        /// </summary>
+        public readonly double FeatureRadius;
+
+        /// <summary>
+        /// ⭐ 蓋到<b>突出部位</b>的一格<b>多</b>給幾分（一般的一格是 +1）。預設 2，所以耳朵、尾巴一格 +3。
+        /// 試過 4：會為了碰耳朵尖把身體拼歪（IoU 0.845 → 0.822）。
+        /// </summary>
+        public readonly double ProtrusionWeight;
+
+        /// <summary>
+        /// ⭐ 填進<b>缺口</b>的一格<b>多</b>扣幾倍（一般伸出去的一格是 −<see cref="OutsidePenalty"/>）。預設 2，所以兩耳之間一格 −3。
+        /// </summary>
+        public readonly double NotchWeight;
+
+        /// <summary>
+        /// 有沒有開特徵：半徑 &gt; 0，而且兩個權重至少一個 &gt; 0。
+        /// <b>沒開的話只跑一次搜尋、照 IoU 挑</b>，結果跟第三版一模一樣。
+        /// </summary>
+        public bool UsesFeatures => FeatureRadius > 0.0 && (ProtrusionWeight > 0.0 || NotchWeight > 0.0);
+
         /// <param name="beamWidth">每一步留幾條路，至少 1。</param>
         /// <param name="cellSize">格子邊長，必須是正數。</param>
         /// <param name="outsidePenalty">伸到外面一格扣幾分，不能是負數。</param>
@@ -57,11 +81,18 @@ namespace Tangram.Data
         /// <param name="resultCount">回幾個形狀，至少 1。</param>
         /// <param name="refinementRounds">平移微調做幾輪，不能是負數；0 ＝ 不微調。</param>
         /// <param name="refinementStartPieceCount">從第幾片開始微調，1 ～ 7。</param>
+        /// <param name="featureRadius">找特徵的半徑，不能是負數；0 ＝ 不找特徵。</param>
+        /// <param name="protrusionWeight">突出部位多給的分，不能是負數。</param>
+        /// <param name="notchWeight">缺口多扣的倍數，不能是負數。</param>
         /// <exception cref="ArgumentOutOfRangeException">任何一個參數超出範圍。</exception>
         public ContourApproximationSettings(int beamWidth = 100, double cellSize = 0.125, double outsidePenalty = 1.0,
                                             double offsetSpacing = 0.25, int resultCount = 5, int refinementRounds = 2,
-                                            int refinementStartPieceCount = 5)
+                                            int refinementStartPieceCount = 5, double featureRadius = 0.75,
+                                            double protrusionWeight = 2.0, double notchWeight = 2.0)
         {
+            if (!(featureRadius >= 0.0)) throw new ArgumentOutOfRangeException(nameof(featureRadius), featureRadius, "找特徵的半徑不能是負數。");
+            if (!(protrusionWeight >= 0.0)) throw new ArgumentOutOfRangeException(nameof(protrusionWeight), protrusionWeight, "突出的權重不能是負數。");
+            if (!(notchWeight >= 0.0)) throw new ArgumentOutOfRangeException(nameof(notchWeight), notchWeight, "缺口的權重不能是負數。");
             if (refinementStartPieceCount < 1 || refinementStartPieceCount > 7)
                 throw new ArgumentOutOfRangeException(nameof(refinementStartPieceCount), refinementStartPieceCount, "從第幾片開始微調要在 1 ～ 7。");
             if (beamWidth < 1) throw new ArgumentOutOfRangeException(nameof(beamWidth), beamWidth, "至少要留 1 條路。");
@@ -78,15 +109,32 @@ namespace Tangram.Data
             ResultCount = resultCount;
             RefinementRounds = refinementRounds;
             RefinementStartPieceCount = refinementStartPieceCount;
+            FeatureRadius = featureRadius;
+            ProtrusionWeight = protrusionWeight;
+            NotchWeight = notchWeight;
         }
 
-        /// <summary>起始值：N = 100、格子 1/8、懲罰 1、平移間隔 0.25、回 5 個、微調 2 輪、從第 5 片開始。</summary>
+        /// <summary>
+        /// 起始值：N = 100、格子 1/8、懲罰 1、平移間隔 0.25、回 5 個、微調 2 輪、從第 5 片開始、
+        /// ⭐ 特徵半徑 0.75、突出與缺口各 ×2（2026-10-20）。
+        /// </summary>
         public static ContourApproximationSettings Default => new ContourApproximationSettings();
+
+        /// <summary>
+        /// 同一組參數、但<b>不用特徵搜尋</b>（＝第三版）。驗收工具拿它當對照組。
+        /// ⚠️ <b>只把兩個權重歸零，半徑照留</b>：搜尋與排名跟第三版一模一樣，但結果的「突出蓋到／缺口被填」照樣量得出來，
+        /// 對照組跟實驗組才比得了。
+        /// </summary>
+        /// <returns>兩個權重是 0、其他照抄的一組參數。</returns>
+        public ContourApproximationSettings WithoutFeatures() =>
+            new ContourApproximationSettings(BeamWidth, CellSize, OutsidePenalty, OffsetSpacing, ResultCount,
+                                             RefinementRounds, RefinementStartPieceCount, FeatureRadius, 0.0, 0.0);
 
         /// <returns>給報告看的一行。</returns>
         public override string ToString() =>
             $"N={BeamWidth} 格子={CellSize} 懲罰={OutsidePenalty} 平移間隔={OffsetSpacing} " +
-            (RefinementRounds == 0 ? "不微調" : $"微調={RefinementRounds}輪（從第{RefinementStartPieceCount}片）");
+            (RefinementRounds == 0 ? "不微調" : $"微調={RefinementRounds}輪（從第{RefinementStartPieceCount}片）") +
+            (UsesFeatures ? $" 特徵 r={FeatureRadius} 突出×{ProtrusionWeight} 缺口×{NotchWeight}" : " 不找特徵");
     }
 
     /// <summary>逼近出來的一個形狀。</summary>
@@ -107,12 +155,33 @@ namespace Tangram.Data
         /// </summary>
         public readonly Vector2 OutlineOffset;
 
-        internal ContourApproximation(Placement[] piecesBySlot, Puzzle puzzle, double intersectionOverUnion, Vector2 outlineOffset)
+        /// <summary>
+        /// ⭐ <b>特徵分</b>（2026-10-20）：裡面一格 +1、突出一格 +1 + 突出權重、外面一格 −懲罰、缺口一格再乘 1 + 缺口權重，
+        /// 換算成面積單位（格數 × 格子面積）。<b>開特徵時結果照它由高到低排</b>；沒開特徵時就是 裡面 − 外面 × 懲罰。
+        /// </summary>
+        public readonly double FeatureScore;
+
+        /// <summary>
+        /// 突出部位被蓋到幾成，0 ～ 1（2026-10-20）。輪廓沒有突出部位、或特徵半徑是 0 時是 1。給 log 與驗收看。
+        /// 權重是 0（沒開特徵）時照樣量，只是不拿來排名。
+        /// </summary>
+        public readonly double ProtrusionCoverage;
+
+        /// <summary>
+        /// 缺口被填掉幾成，0 ～ 1，<b>越低越好</b>（2026-10-20）。輪廓沒有缺口、或特徵半徑是 0 時是 0。
+        /// </summary>
+        public readonly double NotchFill;
+
+        internal ContourApproximation(Placement[] piecesBySlot, Puzzle puzzle, double intersectionOverUnion, Vector2 outlineOffset,
+                                      double featureScore, double protrusionCoverage, double notchFill)
         {
             PiecesBySlot = piecesBySlot;
             Puzzle = puzzle;
             IntersectionOverUnion = intersectionOverUnion;
             OutlineOffset = outlineOffset;
+            FeatureScore = featureScore;
+            ProtrusionCoverage = protrusionCoverage;
+            NotchFill = notchFill;
         }
     }
 
@@ -126,23 +195,36 @@ namespace Tangram.Data
     ///
     /// <b>一步一步</b>：
     /// <list type="number">
-    /// <item><b>鋪格子</b>：輪廓（已經縮到面積 32）的範圍鋪格子，每格中心在不在輪廓裡算一次存起來</item>
+    /// <item><b>鋪格子</b>：輪廓（已經縮到面積 32）的範圍鋪格子，每格中心在不在輪廓裡算一次存起來；
+    ///   ⭐ 開特徵時順便標出突出與缺口（<see cref="OutlineFeatureMap"/>）</item>
     /// <item><b>第一片</b>：大三角固定在原點、各種轉向都試；<b>改成移動輪廓</b>——輪廓是浮點可以隨便平移，
     ///   片的座標維持精確（鐵則一）。輪廓裡每隔一段取一個點，讓大三角的重心對上它</item>
     /// <item><b>之後每一片</b>：照固定順序（大到小）列出所有貼得上、不重疊的擺法（貼邊與碰點都收），
     ///   打分、去重、留前 N 個</item>
     /// <item><b>平移微調</b>（第二版）：每一步留下 N 條路之後，各自把輪廓往 8 個方向小移一點，
     ///   整組重算分數，有比較好就移過去。<b>只動輪廓、不動任何一片</b>，所以合法性不受影響</item>
-    /// <item><b>收尾</b>：算 IoU、同一個形狀只留一個、回前幾名</item>
+    /// <item><b>收尾</b>：同一個形狀只留一個、回前幾名</item>
     /// </list>
     ///
     /// <b>打分</b>：一片 ＝ 蓋到輪廓裡的格數 − 伸到外面的格數 × 懲罰。片跟片保證不重疊，所以整組就是各片相加，
     /// IoU 也直接從兩個計數算得出來（交集 ＝ 裡面的格數，聯集 ＝ 輪廓的格數 ＋ 外面的格數）。
     ///
+    /// ⭐ <b>特徵（2026-10-20，使用者定「重點是要有特徵」）</b>：
+    /// <list type="bullet">
+    /// <item><b>特徵分</b>：突出的格子（耳朵、尾巴、角）一格 +1 + 突出權重，缺口的格子（兩耳之間）一格 −懲罰 ×（1 + 缺口權重），其他照舊</item>
+    /// <item><b>跑兩次搜尋</b>：一次每一步照原本的分數排（＝第三版）、一次每一步照特徵分排；
+    ///   兩次的收尾一樣，都是<b>照 IoU 留前 <see cref="ContourApproximationSettings.ResultCount"/> 個</b>相異的形狀</item>
+    /// <item><b>最後兩邊的前幾名合起來照特徵分挑</b>。只跑特徵分那次的話，原本逼得回來的數字4、數字6、衣服會掉——
+    ///   特徵分讓前幾步走偏了。合起來之後第一次找到的已知答案還在候選裡，而它全部蓋滿、零伸出、突出全部蓋到，<b>特徵分一定最高</b>，
+    ///   所以撿得回來（2026-10-20 驗收，25 個具象題：逼回 13 → 15、平均 IoU 0.955 → 0.963、突出蓋到 0.93 → 0.96、缺口被填 0.10 → 0.06；數字修正過，見除錯記錄 016）。
+    ///   ⚠️ 試過「兩次留下的全部 N 條路裡直接挑特徵分最高」：特徵更多但 IoU 掉一點，所以照確認過的邏輯先用 IoU 篩一輪</item>
+    /// <item>代價：<b>時間大約兩倍</b>。兩邊各用一半的 N 試過，逼回數與特徵都變差，所以不省</item>
+    /// </list>
+    /// 沒開特徵（<see cref="ContourApproximationSettings.UsesFeatures"/> 是 false）時只跑第一次、照 IoU 挑，跟第三版一模一樣。
+    ///
     /// ⚠️ <b>浮點只用來打分與排名</b>，挑出來的永遠是精確的 <see cref="Placement"/>。
     ///
-    /// ⚠️ <b>刻意沒做的</b>（先看失敗長怎樣再決定加哪一樣）：重要部位加權、洞、審美門檻、非同步。
-    /// 細節在 <c>待辦清單.md</c>〈掃描模式：還沒做的〉第 6 條。
+    /// ⚠️ <b>刻意沒做的</b>：洞、審美門檻、非同步。細節在 <c>待辦清單.md</c>〈掃描模式：還沒做的〉第 6 條。
     /// </summary>
     public sealed class BeamSearchContourPuzzleBuilder : IContourPuzzleBuilder
     {
@@ -161,19 +243,22 @@ namespace Tangram.Data
         }
 
         /// <inheritdoc/>
-        /// <remarks>只拿第 1 名。⚠️ 同步執行，在手機上可能要好幾秒。</remarks>
+        /// <remarks>只拿第 1 名。⚠️ 同步執行，在手機上可能要好幾秒（開特徵之後大約兩倍）。</remarks>
         public ContourPuzzle Build(RecognizedContour contour)
         {
             IReadOnlyList<ContourApproximation> results = Approximate(contour);
             if (results.Count == 0) return null;
 
             ContourApproximation best = results[0];
-            return new ContourPuzzle($"掃描題（IoU {best.IntersectionOverUnion:0.00}）", best.Puzzle, best.PiecesBySlot,
-                                     best.OutlineOffset);
+            string name = settings.UsesFeatures
+                ? $"掃描題（IoU {best.IntersectionOverUnion:0.00}，突出蓋到 {best.ProtrusionCoverage:0.00}，缺口被填 {best.NotchFill:0.00}）"
+                : $"掃描題（IoU {best.IntersectionOverUnion:0.00}）";
+            return new ContourPuzzle(name, best.Puzzle, best.PiecesBySlot, best.OutlineOffset);
         }
 
         /// <summary>
-        /// 跑一次逼近，回前幾名（照 IoU 由高到低，形狀互不相同）。
+        /// 跑一次逼近，回前幾名，形狀互不相同。
+        /// <b>開特徵時照特徵分由高到低</b>，沒開時照 IoU 由高到低（見類別說明）。
         /// </summary>
         /// <param name="contour">辨識出來的輪廓。</param>
         /// <returns>前幾名，最多 <see cref="ContourApproximationSettings.ResultCount"/> 個；一個都逼不出來時是空的。</returns>
@@ -182,13 +267,50 @@ namespace Tangram.Data
         {
             if (contour == null) throw new ArgumentNullException(nameof(contour));
 
-            var raster = new OutlineRaster(contour.ModelOutline, settings.CellSize);
-            List<SearchState> beam = Refine(FirstPieceStates(raster), raster);
+            var raster = new OutlineRaster(contour.ModelOutline, settings);
+
+            // 第一次：照原本的分數排（＝第三版）。開特徵時它負責把「已知答案」那類結果留在候選裡
+            List<ContourApproximation> results = Finish(Search(raster, rankByFeatures: false), raster);
+            if (!settings.UsesFeatures) return results;
+
+            // 第二次照特徵分搜，兩邊各自的前幾名（照 IoU）合起來，再照特徵分挑
+            results.AddRange(Finish(Search(raster, rankByFeatures: true), raster));
+            return MergeByFeatureScore(results);
+        }
+
+        /// <summary>
+        /// 兩次搜尋的前幾名照特徵分由高到低重排，同一個形狀只留第一次出現的，回前 <see cref="ContourApproximationSettings.ResultCount"/> 個。
+        /// <b>平手時保留原本的順序</b>（第一次搜尋的排在前面），結果才可重現。
+        /// </summary>
+        private IReadOnlyList<ContourApproximation> MergeByFeatureScore(List<ContourApproximation> candidates)
+        {
+            var order = new int[candidates.Count];
+            for (int i = 0; i < order.Length; i++) order[i] = i;
+            Array.Sort(order, (left, right) =>
+            {
+                int byScore = candidates[right].FeatureScore.CompareTo(candidates[left].FeatureScore);
+                return byScore != 0 ? byScore : left.CompareTo(right);
+            });
+
+            var merged = new List<ContourApproximation>();
+            var seenPuzzleKeys = new HashSet<string>();
+            foreach (int index in order)
+            {
+                if (merged.Count >= settings.ResultCount) break;
+                if (seenPuzzleKeys.Add(candidates[index].Puzzle.Key)) merged.Add(candidates[index]);
+            }
+            return merged;
+        }
+
+        /// <summary>一次完整的搜尋：第一片 → 之後每一片，每一步都留前 N 個再微調。回最後留下的那些路。</summary>
+        private List<SearchState> Search(OutlineRaster raster, bool rankByFeatures)
+        {
+            List<SearchState> beam = Refine(FirstPieceStates(raster, rankByFeatures), raster, rankByFeatures);
 
             for (int depth = 1; depth < SlotOrder.Length && beam.Count > 0; depth++)
-                beam = Refine(Expand(beam, depth, raster), raster);
+                beam = Refine(Expand(beam, depth, raster, rankByFeatures), raster, rankByFeatures);
 
-            return Finish(beam, raster);
+            return beam;
         }
 
         // ───────── 平移微調（第二版）─────────
@@ -204,7 +326,7 @@ namespace Tangram.Data
         /// <summary>
         /// 對<b>留下來的那 N 條路</b>各做一次平移微調。不對全部子狀態做：子狀態有幾萬個，成本差幾百倍。
         /// </summary>
-        private List<SearchState> Refine(List<SearchState> beam, OutlineRaster raster)
+        private List<SearchState> Refine(List<SearchState> beam, OutlineRaster raster, bool rankByFeatures)
         {
             if (settings.RefinementRounds == 0 || beam.Count == 0) return beam;
 
@@ -212,59 +334,46 @@ namespace Tangram.Data
             if (beam[0].Placements.Length < settings.RefinementStartPieceCount) return beam;
 
             var refined = new List<SearchState>(beam.Count);
-            foreach (SearchState state in beam) refined.Add(Refine(state, raster));
+            foreach (SearchState state in beam) refined.Add(Refine(state, raster, rankByFeatures));
             return refined;
         }
 
         /// <summary>
         /// 一條路的微調：在目前的平移周圍試 8 個方向，<b>已經放好的每一片都用新的平移重算</b>，
-        /// 有比現在高的就移到最高的那個；步長每輪減半。
+        /// 有比現在高的就移到最高的那個；步長每輪減半。比的是這次搜尋排名用的那個分數。
         ///
         /// ⚠️ <b>只動輪廓，不動任何一片</b>——片的擺法是精確的，結果照樣保證拼得出來。
         /// 分數一樣時留在原地（嚴格大於才移），8 個方向平手時取 <see cref="RefinementDirections"/> 裡先出現的。
         /// </summary>
-        private SearchState Refine(SearchState state, OutlineRaster raster)
+        private SearchState Refine(SearchState state, OutlineRaster raster, bool rankByFeatures)
         {
             var polygons = new PiecePolygon[state.Placements.Length];
             for (int i = 0; i < polygons.Length; i++) polygons[i] = PiecePolygon.From(state.Placements[i]);
 
-            double currentX = state.OffsetX, currentY = state.OffsetY;
-            int currentInside = state.InsideCells, currentOutside = state.OutsideCells;
-            double currentScore = state.Score;
+            SearchState current = state;
             double step = settings.OffsetSpacing / 2.0;
 
             for (int round = 0; round < settings.RefinementRounds; round++, step /= 2.0)
             {
-                double bestX = currentX, bestY = currentY, bestScore = currentScore;
-                int bestInside = currentInside, bestOutside = currentOutside;
+                SearchState best = current;
 
                 foreach ((int x, int y) direction in RefinementDirections)
                 {
-                    double candidateX = currentX + direction.x * step;
-                    double candidateY = currentY + direction.y * step;
+                    double candidateX = current.OffsetX + direction.x * step;
+                    double candidateY = current.OffsetY + direction.y * step;
 
-                    int inside = 0, outside = 0;
-                    foreach (PiecePolygon polygon in polygons)
-                    {
-                        (int pieceInside, int pieceOutside) = raster.Count(polygon, candidateX, candidateY);
-                        inside += pieceInside;
-                        outside += pieceOutside;
-                    }
+                    CellCount total = default;
+                    foreach (PiecePolygon polygon in polygons) total += raster.Count(polygon, candidateX, candidateY);
 
-                    double score = inside - outside * settings.OutsidePenalty;
-                    if (score > bestScore)
-                    {
-                        bestX = candidateX; bestY = candidateY; bestScore = score;
-                        bestInside = inside; bestOutside = outside;
-                    }
+                    var candidate = new SearchState(state.Placements, state.OffsetIndex, candidateX, candidateY, total,
+                                                    settings.OutsidePenalty, rankByFeatures);
+                    if (candidate.Score > best.Score) best = candidate;
                 }
 
-                currentX = bestX; currentY = bestY; currentScore = bestScore;
-                currentInside = bestInside; currentOutside = bestOutside;
+                current = best;
             }
 
-            return new SearchState(state.Placements, state.OffsetIndex, currentX, currentY,
-                                   currentInside, currentOutside, settings.OutsidePenalty);
+            return current;
         }
 
         // ───────── 第一片 ─────────
@@ -273,7 +382,7 @@ namespace Tangram.Data
         /// 第一片的所有起始狀態，打完分只留前 N 個。
         /// 大三角放原點、每種轉向一次，再讓它的重心對上輪廓裡每一個取樣點。
         /// </summary>
-        private List<SearchState> FirstPieceStates(OutlineRaster raster)
+        private List<SearchState> FirstPieceStates(OutlineRaster raster, bool rankByFeatures)
         {
             int firstSlot = SlotOrder[0];
             PieceKind kind = PiecePrototype.TangramSet[firstSlot];
@@ -295,9 +404,8 @@ namespace Tangram.Data
                         double offsetX = polygon.CentroidX - samplePoints[sampleIndex].x;
                         double offsetY = polygon.CentroidY - samplePoints[sampleIndex].y;
 
-                        (int inside, int outside) = raster.Count(polygon, offsetX, offsetY);
                         states.Add(new SearchState(new[] { placement }, sampleIndex, offsetX, offsetY,
-                                                   inside, outside, settings.OutsidePenalty));
+                                                   raster.Count(polygon, offsetX, offsetY), settings.OutsidePenalty, rankByFeatures));
                     }
                 }
 
@@ -307,7 +415,7 @@ namespace Tangram.Data
         // ───────── 之後每一片 ─────────
 
         /// <summary>每條留著的路都放下一片，所有子狀態打分，去重之後留前 N 個。</summary>
-        private List<SearchState> Expand(List<SearchState> beam, int depth, OutlineRaster raster)
+        private List<SearchState> Expand(List<SearchState> beam, int depth, OutlineRaster raster, bool rankByFeatures)
         {
             PieceKind kind = PiecePrototype.TangramSet[SlotOrder[depth]];
             var children = new List<SearchState>();
@@ -317,26 +425,26 @@ namespace Tangram.Data
                 var (edgeContact, pointContact) = PuzzleGenerator.CollectLegalPlacements(kind, parent.Placements);
 
                 // 貼邊與碰點都收：貓耳朵這種地方本來就要靠點接觸。偏不偏好貼邊交給分數決定
-                AddChildren(parent, edgeContact, raster, children);
-                AddChildren(parent, pointContact, raster, children);
+                AddChildren(parent, edgeContact, raster, rankByFeatures, children);
+                AddChildren(parent, pointContact, raster, rankByFeatures, children);
             }
 
             return KeepBest(children);
         }
 
-        private void AddChildren(SearchState parent, List<Placement> candidates, OutlineRaster raster, List<SearchState> children)
+        private void AddChildren(SearchState parent, List<Placement> candidates, OutlineRaster raster, bool rankByFeatures,
+                                 List<SearchState> children)
         {
             foreach (Placement candidate in candidates)
             {
-                (int inside, int outside) = raster.Count(PiecePolygon.From(candidate), parent.OffsetX, parent.OffsetY);
+                CellCount count = raster.Count(PiecePolygon.From(candidate), parent.OffsetX, parent.OffsetY);
 
                 var placements = new Placement[parent.Placements.Length + 1];
                 Array.Copy(parent.Placements, placements, parent.Placements.Length);
                 placements[parent.Placements.Length] = candidate;
 
                 children.Add(new SearchState(placements, parent.OffsetIndex, parent.OffsetX, parent.OffsetY,
-                                             parent.InsideCells + inside, parent.OutsideCells + outside,
-                                             settings.OutsidePenalty));
+                                             parent.Cells + count, settings.OutsidePenalty, rankByFeatures));
             }
         }
 
@@ -368,18 +476,21 @@ namespace Tangram.Data
         // ───────── 收尾 ─────────
 
         /// <summary>
-        /// 七片都放完的狀態照 IoU 排，同一個形狀（<see cref="Puzzle.Key"/>）只留一個。
+        /// 一次搜尋的收尾：七片都放完的狀態<b>照 IoU 排</b>（第三版的規則，兩次搜尋都一樣），同一個形狀（<see cref="Puzzle.Key"/>）只留一個，
+        /// 回前 <see cref="ContourApproximationSettings.ResultCount"/> 個。開特徵時再由 <see cref="MergeByFeatureScore"/> 照特徵分重排。
         /// ⚠️ 描外框要跑 16 次輪廓追蹤，所以照 IoU 順序一個一個描，湊滿就停，不全部描。
         /// </summary>
-        private IReadOnlyList<ContourApproximation> Finish(List<SearchState> beam, OutlineRaster raster)
+        private List<ContourApproximation> Finish(List<SearchState> beam, OutlineRaster raster)
         {
             var finished = new List<(SearchState state, double intersectionOverUnion)>();
             foreach (SearchState state in beam)
                 if (state.Placements.Length == SlotOrder.Length)
-                    finished.Add((state, (double)state.InsideCells / (raster.InsideCellCount + state.OutsideCells)));
+                    finished.Add((state, (double)state.Cells.Inside / (raster.InsideCellCount + state.Cells.Outside)));
 
+            // ⚠️ 一定要用跟第三版同一支排序（List.Sort 不穩定，換成別的排序法平手的順序可能會變）
             finished.Sort((left, right) => right.intersectionOverUnion.CompareTo(left.intersectionOverUnion));
 
+            double cellArea = settings.CellSize * settings.CellSize;
             var results = new List<ContourApproximation>();
             var seenPuzzleKeys = new HashSet<string>();
             foreach ((SearchState state, double intersectionOverUnion) in finished)
@@ -394,15 +505,43 @@ namespace Tangram.Data
                 Puzzle puzzle = Puzzle.FromPlacements(piecesBySlot, PuzzleSource.UserDrawn);
                 if (!seenPuzzleKeys.Add(puzzle.Key)) continue;
 
+                (double protrusionCoverage, double notchFill) = raster.FeatureCoverage(state.Cells);
                 results.Add(new ContourApproximation(piecesBySlot, puzzle, intersectionOverUnion,
-                                                     new Vector2((float)state.OffsetX, (float)state.OffsetY)));
+                                                     new Vector2((float)state.OffsetX, (float)state.OffsetY),
+                                                     state.Cells.Feature * cellArea, protrusionCoverage, notchFill));
             }
             return results;
         }
 
         // ───────── 內部型別 ─────────
 
-        /// <summary>搜尋中的一條路：已經放了哪幾片、輪廓平移多少、目前蓋到裡外各幾格。</summary>
+        /// <summary>
+        /// 一片（或一整組）蓋到的格子：裡面幾格、外面幾格、其中突出與缺口各幾格，以及特徵分（格數單位）。
+        /// 片跟片保證不重疊，所以整組就是各片直接相加。
+        /// </summary>
+        private readonly struct CellCount
+        {
+            public readonly int Inside;
+            public readonly int Outside;
+            public readonly int Protrusion;
+            public readonly int Notch;
+            public readonly double Feature;
+
+            public CellCount(int inside, int outside, int protrusion, int notch, double feature)
+            {
+                Inside = inside;
+                Outside = outside;
+                Protrusion = protrusion;
+                Notch = notch;
+                Feature = feature;
+            }
+
+            public static CellCount operator +(CellCount left, CellCount right) =>
+                new CellCount(left.Inside + right.Inside, left.Outside + right.Outside,
+                              left.Protrusion + right.Protrusion, left.Notch + right.Notch, left.Feature + right.Feature);
+        }
+
+        /// <summary>搜尋中的一條路：已經放了哪幾片、輪廓平移多少、目前蓋到的格子。</summary>
         private sealed class SearchState
         {
             /// <summary>照 <see cref="SlotOrder"/> 的順序放下去的片。</summary>
@@ -413,20 +552,24 @@ namespace Tangram.Data
 
             public readonly double OffsetX;
             public readonly double OffsetY;
-            public readonly int InsideCells;
-            public readonly int OutsideCells;
+            public readonly CellCount Cells;
+
+            /// <summary>
+            /// 這次搜尋排名用的分數：照原本的排是 裡面 − 外面 × 懲罰，照特徵排是特徵分。
+            /// ⚠️ 原本那個<b>一定要照第三版的算式重算</b>，不能拿特徵分代替——浮點相加的順序不同，
+            /// 平手的狀態可能會分出高下，第三版的結果就重現不了。
+            /// </summary>
             public readonly double Score;
 
             public SearchState(Placement[] placements, int offsetIndex, double offsetX, double offsetY,
-                               int insideCells, int outsideCells, double outsidePenalty)
+                               CellCount cells, double outsidePenalty, bool rankByFeatures)
             {
                 Placements = placements;
                 OffsetIndex = offsetIndex;
                 OffsetX = offsetX;
                 OffsetY = offsetY;
-                InsideCells = insideCells;
-                OutsideCells = outsideCells;
-                Score = insideCells - outsideCells * outsidePenalty;
+                Cells = cells;
+                Score = rankByFeatures ? cells.Feature : cells.Inside - cells.Outside * outsidePenalty;
             }
 
             /// <summary>
@@ -483,54 +626,37 @@ namespace Tangram.Data
         }
 
         /// <summary>
-        /// 輪廓的格子：每格中心在不在輪廓裡。<b>格子外面一律當作輪廓外</b>，所以片伸出範圍也照樣扣分。
+        /// 輪廓的格子：每格是裡面、外面、突出還是缺口（<see cref="OutlineFeatureMap"/>），加上每一種格子值幾分。
+        /// <b>格子外面一律當作輪廓外</b>（不是缺口），所以片伸出範圍也照樣扣分。
         /// </summary>
         private sealed class OutlineRaster
         {
-            private readonly double cellSize;
-            private readonly double originX;
-            private readonly double originY;
-            private readonly int columnCount;
-            private readonly int rowCount;
-            private readonly bool[] inside;
+            private readonly OutlineFeatureMap map;
+
+            /// <summary>四種格子在特徵分裡各值幾分，索引是 <see cref="OutlineCellKind"/>。</summary>
+            private readonly double[] featureValue;
 
             /// <summary>輪廓裡有幾格。IoU 的聯集要用。</summary>
-            public readonly int InsideCellCount;
+            public int InsideCellCount => map.InsideCellCount;
 
-            public OutlineRaster(IReadOnlyList<Vector2> outline, double cellSize)
+            public OutlineRaster(IReadOnlyList<Vector2> outline, ContourApproximationSettings settings)
             {
-                this.cellSize = cellSize;
+                // 半徑 > 0 就找特徵，權重是 0 也找：那時特徵不進排名，只拿來量結果的突出蓋到幾成、缺口被填幾成。
+                // 留白不會移動格子中心、取樣點從不留白的原點起算，所以找不找特徵都不影響第三版那條路
+                map = new OutlineFeatureMap(outline, settings.CellSize, settings.FeatureRadius);
 
-                double minimumX = double.MaxValue, minimumY = double.MaxValue;
-                double maximumX = double.MinValue, maximumY = double.MinValue;
-                foreach (Vector2 point in outline)
-                {
-                    minimumX = Math.Min(minimumX, point.x); maximumX = Math.Max(maximumX, point.x);
-                    minimumY = Math.Min(minimumY, point.y); maximumY = Math.Max(maximumY, point.y);
-                }
-
-                // 格線對齊 cellSize 的整數倍，片那邊才能用同一套索引
-                originX = Math.Floor(minimumX / cellSize) * cellSize;
-                originY = Math.Floor(minimumY / cellSize) * cellSize;
-                columnCount = (int)Math.Ceiling((maximumX - originX) / cellSize) + 1;
-                rowCount = (int)Math.Ceiling((maximumY - originY) / cellSize) + 1;
-                inside = new bool[columnCount * rowCount];
-
-                for (int row = 0; row < rowCount; row++)
-                    for (int column = 0; column < columnCount; column++)
-                    {
-                        bool isInside = ContainsPoint(outline, originX + (column + 0.5) * cellSize,
-                                                               originY + (row + 0.5) * cellSize);
-                        inside[row * columnCount + column] = isInside;
-                        if (isInside) InsideCellCount++;
-                    }
+                featureValue = new double[4];
+                featureValue[(int)OutlineCellKind.Inside] = 1.0;
+                featureValue[(int)OutlineCellKind.Protrusion] = 1.0 + settings.ProtrusionWeight;
+                featureValue[(int)OutlineCellKind.Outside] = -settings.OutsidePenalty;
+                featureValue[(int)OutlineCellKind.Notch] = -settings.OutsidePenalty * (1.0 + settings.NotchWeight);
             }
 
             /// <summary>
-            /// 數一片蓋到輪廓裡、外各幾格。片在題目座標，先減掉平移換到輪廓座標。
+            /// 數一片蓋到的格子。片在題目座標，先減掉平移換到輪廓座標。
             /// 一格算不算被片蓋到，看<b>格子中心</b>在不在片裡（含邊上）。
             /// </summary>
-            public (int inside, int outside) Count(PiecePolygon polygon, double offsetX, double offsetY)
+            public CellCount Count(PiecePolygon polygon, double offsetX, double offsetY)
             {
                 int vertexCount = polygon.X.Length;
                 var x = new double[vertexCount];
@@ -545,12 +671,14 @@ namespace Tangram.Data
                     minimumY = Math.Min(minimumY, y[i]); maximumY = Math.Max(maximumY, y[i]);
                 }
 
+                double cellSize = map.CellSize, originX = map.OriginX, originY = map.OriginY;
                 int firstColumn = (int)Math.Floor((minimumX - originX) / cellSize);
                 int lastColumn = (int)Math.Floor((maximumX - originX) / cellSize);
                 int firstRow = (int)Math.Floor((minimumY - originY) / cellSize);
                 int lastRow = (int)Math.Floor((maximumY - originY) / cellSize);
 
-                int insideCount = 0, outsideCount = 0;
+                int insideCount = 0, outsideCount = 0, protrusionCount = 0, notchCount = 0;
+                double feature = 0.0;
                 for (int row = firstRow; row <= lastRow; row++)
                 {
                     double centerY = originY + (row + 0.5) * cellSize;
@@ -559,29 +687,43 @@ namespace Tangram.Data
                         double centerX = originX + (column + 0.5) * cellSize;
                         if (!ConvexContains(x, y, centerX, centerY)) continue;
 
-                        bool inGrid = row >= 0 && row < rowCount && column >= 0 && column < columnCount;
-                        if (inGrid && inside[row * columnCount + column]) insideCount++;
-                        else outsideCount++;
+                        OutlineCellKind kind = map.KindOfCell(column, row);
+                        feature += featureValue[(int)kind];
+                        switch (kind)
+                        {
+                            case OutlineCellKind.Inside: insideCount++; break;
+                            case OutlineCellKind.Protrusion: insideCount++; protrusionCount++; break;
+                            case OutlineCellKind.Notch: outsideCount++; notchCount++; break;
+                            default: outsideCount++; break;
+                        }
                     }
                 }
-                return (insideCount, outsideCount);
+                return new CellCount(insideCount, outsideCount, protrusionCount, notchCount, feature);
             }
+
+            /// <returns>突出被蓋到幾成（沒有突出時是 1）、缺口被填掉幾成（沒有缺口時是 0）。</returns>
+            public (double protrusionCoverage, double notchFill) FeatureCoverage(CellCount cells) =>
+                (map.ProtrusionCellCount == 0 ? 1.0 : (double)cells.Protrusion / map.ProtrusionCellCount,
+                 map.NotchCellCount == 0 ? 0.0 : (double)cells.Notch / map.NotchCellCount);
 
             /// <summary>
             /// 輪廓裡每隔 <paramref name="spacing"/> 取一個點（第一片的重心要對上它們）。
             /// 取樣點對齊間隔的整數倍，取「落在輪廓裡的格子」那些。
+            /// ⚠️ 取樣從<b>不留空白的原點</b>起算（2026-10-20）：開特徵時格子四周多一圈空白，
+            /// 從留白之後的原點起算的話取樣點會整組平移，第一片的起點就跟第三版不一樣了。
             /// </summary>
             public List<(double x, double y)> SamplePointsInside(double spacing)
             {
                 var points = new List<(double x, double y)>();
-                double width = columnCount * cellSize, height = rowCount * cellSize;
-                for (double y = originY + spacing / 2.0; y < originY + height; y += spacing)
-                    for (double x = originX + spacing / 2.0; x < originX + width; x += spacing)
+                double cellSize = map.CellSize;
+                double limitX = map.OriginX + map.ColumnCount * cellSize, limitY = map.OriginY + map.RowCount * cellSize;
+                for (double y = map.UnpaddedOriginY + spacing / 2.0; y < limitY; y += spacing)
+                    for (double x = map.UnpaddedOriginX + spacing / 2.0; x < limitX; x += spacing)
                     {
-                        int column = (int)Math.Floor((x - originX) / cellSize);
-                        int row = (int)Math.Floor((y - originY) / cellSize);
-                        if (row < rowCount && column < columnCount && inside[row * columnCount + column])
-                            points.Add((x, y));
+                        int column = (int)Math.Floor((x - map.OriginX) / cellSize);
+                        int row = (int)Math.Floor((y - map.OriginY) / cellSize);
+                        OutlineCellKind kind = map.KindOfCell(column, row);
+                        if (kind == OutlineCellKind.Inside || kind == OutlineCellKind.Protrusion) points.Add((x, y));
                     }
                 return points;
             }
@@ -618,21 +760,6 @@ namespace Tangram.Data
             /// </summary>
             private static bool OwnsBoundary(double edgeX, double edgeY, double tolerance) =>
                 edgeY > tolerance || (Math.Abs(edgeY) <= tolerance && edgeX < 0.0);
-
-            /// <summary>點在不在任意多邊形裡（射線法，奇偶規則）。輪廓不是凸的，所以不能用上面那支。</summary>
-            private static bool ContainsPoint(IReadOnlyList<Vector2> polygon, double pointX, double pointY)
-            {
-                bool result = false;
-                for (int i = 0, previous = polygon.Count - 1; i < polygon.Count; previous = i++)
-                {
-                    double xi = polygon[i].x, yi = polygon[i].y;
-                    double xj = polygon[previous].x, yj = polygon[previous].y;
-                    if ((yi > pointY) != (yj > pointY) &&
-                        pointX < (xj - xi) * (pointY - yi) / (yj - yi) + xi)
-                        result = !result;
-                }
-                return result;
-            }
         }
     }
 }

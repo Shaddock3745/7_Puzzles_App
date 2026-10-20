@@ -693,7 +693,7 @@ public class LevelController : MonoBehaviour
             return;
         }
 
-        // ⚠️ 逼近是同步的，畫面會凍住（PC Release 約 0.7 秒，Editor 的 Debug 模式可能好幾秒，手機還沒量）。
+        // ⚠️ 逼近是同步的，畫面會凍住（PC Release 約 1.3 秒——2026-10-20 第四版開特徵之後變兩倍；Xperia 第三版約 2 秒，第四版預期約 4 秒）。
         // 刻意先接受：挑戰模式換關也會凍住，兩件一起排在 P5-2（#37）用背景執行緒處理，這裡另開一條會變成兩套。
         // 所以這一版只做一件事：把花了幾秒印出來，讓 P5-2 有實際數字
         var clock = System.Diagnostics.Stopwatch.StartNew();
