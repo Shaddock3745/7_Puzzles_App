@@ -148,12 +148,6 @@ public class LevelController : MonoBehaviour
     // ───────── 掃描模式（2026-10-14）─────────
 
     /// <summary>
-    /// 假的辨識模組要回的樣本 JSON，在 <c>Resources</c> 裡的名字（不含副檔名）。
-    /// 💡 <c>.json</c> 本來就是 Unity 的文字資產，不用像題庫那樣改成 <c>.txt</c>。
-    /// </summary>
-    private const string ScanSampleResourceName = "ScanSamples/u2net_unity_contour";
-
-    /// <summary>
     /// 新拍一張（拍照畫面＋辨識模組）。<b>第一次要掃描時才建</b>，見 <see cref="EnsureScanPipeline"/>。
     /// 沒接拍照畫面時是 null。
     /// </summary>
@@ -800,8 +794,7 @@ public class LevelController : MonoBehaviour
     /// <summary>
     /// 需要的話把掃描的各段建起來。<b>第一次要掃描時才建</b>，只玩別的模式的人不付這個成本。
     ///
-    /// ⚠️ <b>辨識模組還是假的</b>：不看照片、回固定的樣本 JSON。<b>協作者交真的那天只改這一支裡的那一個 <c>new</c></b>，
-    /// 兩個掃描會一起換到。
+    /// <b>辨識使用 U2Net</b>：拍照與選檔共用照片 → JSON 的模組，失敗走既有掃描失敗流程。
     /// <b>取得照片是真的</b>（2026-10-17 起）：拍照畫面與相簿各一個掃描，共用同一個辨識模組。
     /// <b>出題是真的</b>（2026-10-14 起）：beam search 逼近，見 <see cref="BeamSearchContourPuzzleBuilder"/>。
     ///
@@ -813,12 +806,7 @@ public class LevelController : MonoBehaviour
     {
         if (galleryScanner != null) return true;
 
-        // 樣本讀不到不在這裡擋：假的辨識模組拿到 null 會回「失敗」，走的就是真的模組失敗時那條路
-        TextAsset sample = Resources.Load<TextAsset>(ScanSampleResourceName);
-        if (sample == null)
-            Debug.LogError($"Resources 裡沒有 {ScanSampleResourceName}.json：假的辨識模組每次都會回失敗。", this);
-
-        IContourRecognizer recognizer = new SampleFileContourRecognizer(sample != null ? sample.text : null, this);
+        IContourRecognizer recognizer = new U2NetContourRecognizer(this);
 
         galleryScanner = new PhotoContourScanner(new GalleryPhotoSource(this), recognizer);
 
