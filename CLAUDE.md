@@ -1,7 +1,8 @@
 # CLAUDE.md
 
 > 給 Claude 看的專案交接文件。新 session／換裝置時先讀這份。
-> 最後更新：2026-10-17（⭐ **P2-8b 進度存檔寫好、待 Unity 實測**（#39）：實力存在 `persistentDataPath/PlayerProgress.json`，壞檔改名留著、回饋收集場景不存。⚠️ **有存檔之後改 `initialRating` 不會生效**，見〈容易踩的坑〉。細節在 `程式說明書.md` §16.22）
+> 最後更新：2026-10-20（⭐ **協作者的 U2Net 辨識模組接上了**（#43 交件、fast-forward 進 main），假辨識模組退場。⭐ **P5-6（#46）辨識不凍畫面**：排程分幀＋非同步讀回，Xperia 正常情況每幀約 14 ms；**等 T20 調 `LayersPerFrame`**。新套件 `com.unity.ai.inference` 與手機實測的坑見〈環境限制〉，數字在 `開發進度.md`〈P5-6 的實測〉）
+> 前一版：2026-10-17（⭐ **P2-8b 進度存檔寫好、待 Unity 實測**（#39）：實力存在 `persistentDataPath/PlayerProgress.json`，壞檔改名留著、回饋收集場景不存。⚠️ **有存檔之後改 `initialRating` 不會生效**，見〈容易踩的坑〉。細節在 `程式說明書.md` §16.22）
 > 前一版：2026-09-21（⭐ **求解器核心寫完**（`TangramSolver`，`Data` 層：找一組＋列出全部，結果分「找到／確定無解／被切斷」），**還沒接進遊戲**，中途回饋排 10/5 之後。⚠️ **完整性沒有證明**，使用者定「評審不會看到這麼深」→ **對外文件不寫確切解數**。系統概述文件的**大綱**已定、還沒動筆（`待辦清單.md`），卡在**作品名稱**。細節在 `開發進度.md`〈求解器核心〉與 `程式說明書.md` §13.10）
 > 前一版：2026-09-20（⭐ **回饋收集已經收到 11 人、56 道正式題**，加上使用者手拼的 **38 題**（13 個凸多邊形 ＋ 25 個具象題）——兩件事一起分析完了，**數字唯一的家是 `開發進度.md`〈13 個凸多邊形校準 ＋ 回饋資料第一次分析〉**。三個要先知道的結論：① **難度階梯有效**（提示次數隨難度完全單調）② ⭐ **決定不改權重**（最好的候選只把 r 從 0.456 提到 0.475，在雜訊裡）→ 「改權重 → 重算工具 → 重跑生成時間表 → 才錄影」那條鏈子這一輪**不用跑** ③ **具象題難度落在生成池範圍內**，精選題不用另一把尺）
 > 前一版：2026-09-17（⭐ **影片與「拍照取輪廓」交給協作者**，交接文件 `協作交接_影片與輪廓.md`（他有 repo 讀取權限，口頭約定不改檔）。逼近走 beam search、**不用等求解器**；可能加報**教育 AI 組**，看協作者回覆天數。⏸️ 等他交出輪廓再往下。細節在 `待辦清單.md` C 區與 E 區〈2026-09-17 重啟〉）
@@ -262,6 +263,11 @@ dotnet test Tools/DotnetTests -- "NUnit.Where=name == RescaleDifficultyWeights"
 
 - ⚠️ **唯一的第三方套件：NativeGallery**（2026-10-17，掃描模式「從檔案選擇」用；yasirkula，MIT）。`Packages/manifest.json` 用 git 網址裝、**釘在 `#v1.9.5`**——不釘的話每台機器抓到的版本不一樣。要升級先問使用者。
   在 Unity 外編 `GameObject/` 時要把它的 `NativeGallery.cs` 與 `Android/*.cs` 一起加進暫時的 csproj（scratchpad clone 一份），**再用 `UNITY_ANDROID`（不加 `UNITY_EDITOR`）另外編一次**，Android 才有的分支（相機權限）才編得到。細節在 `程式說明書.md` §16.21
+- ⚠️ **Unity 官方的推論套件 `com.unity.ai.inference` 2.6.1**（2026-10-20，協作者的 U2Net 辨識模組帶進來的，模型在 `Resources/u2netp.onnx`）。版本釘在 manifest，要升級先問使用者。
+  連帶裝進 `com.unity.dt.app-ui`、`com.unity.nuget.newtonsoft-json`，`burst` 變成直接相依；**Standalone 與 Android 的編譯符號自動多了 `SENTIS_ANALYTICS_ENABLED;APP_UI_EDITOR_ONLY`**（套件加的，切到哪個平台就加到哪個——第一次切 iOS 之類的新平台時 `ProjectSettings.asset` 會再被改一次，那是正常的）；`EditorBuildSettings.asset` 也多一條指向套件內 `App UI Settings.asset` 的設定。
+  在 Unity 外編 `U2NetContourRecognizer` 時要多 Reference `Library/ScriptAssemblies/` 的 `Unity.InferenceEngine.dll` 與 `Tangram.Recognition.dll`。`Recognition/` 的測試（`Tangram.Recognition.Tests`）**`dotnet test` 跑不到**，要在 Unity 的 Test Runner 跑
+- 💡 **手機實測**：adb 用 Unity 附的（`…/6000.3.7f1/Editor/Data/PlaybackEngines/AndroidPlayer/SDK/platform-tools/adb.exe`，不在 PATH），**一律用 PowerShell 下**（Git Bash 會把 `/sdcard/...` 改寫成 Windows 路徑）。
+  Android 建置報「**this and base files have different roots: D:\\… and F:\\…**」＝ Gradle 暫存還記著專案搬家前的路徑，刪 `Library/Bee/Android/Prj/IL2CPP/Gradle/` 底下的 `unityLibrary/build`、`launcher/build`、`.gradle`、`build` 再建一次
 - **`gh` CLI 已安裝**（v2.100.0，`C:\Program Files\GitHub CLI\`）。已登入 `Shaddock3745`。⚠️ 四件事：
   - **登入類指令（`gh auth login` / `refresh`）一律交給使用者跑**，不要代勞
   - **動 GitHub 之前先問**——關 issue、開 issue、移看板欄位別人看得到，跟改本地檔案不同

@@ -36,7 +36,10 @@ namespace Tangram.Data
         [Serializable]
         public class ContourDto
         {
-            /// <summary>辨識時的圖片寬度（像素）。⚠️ 這是模型的輸入尺寸（U²-Net 是 320），不一定是原照片的寬度。</summary>
+            /// <summary>
+            /// 圖片寬度（像素）。<b>等於交給辨識模組的那張照片的寬度</b>（<c>IContourRecognizer</c> 的約定）。
+            /// 💡 協作者最早交的樣本是 320（模型的輸入尺寸），2026-10-20 接上真的模組之後已經換算回照片尺寸。
+            /// </summary>
             public int width;
 
             /// <summary>辨識時的圖片高度（像素）。</summary>
