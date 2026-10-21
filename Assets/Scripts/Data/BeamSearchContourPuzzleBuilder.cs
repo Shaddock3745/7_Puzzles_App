@@ -69,10 +69,26 @@ namespace Tangram.Data
         public readonly double NotchWeight;
 
         /// <summary>
+        /// ⭐ <b>貼邊獎勵</b>（2026-10-21 第五版）：新放的片跟已放的片<b>貼合的邊長</b>，每 1 模型單位加幾格分數
+        /// （格子是 1/8，所以 16 ＝ 貼 1 單位的邊值 1/4 單位面積）。<b>0 ＝ 不獎勵，等於第四版</b>（拿來對照）。
+        ///
+        /// <b>為什麼要有它</b>：生活物品的細長部位（柄、桿、腳）用 IoU 挑出來的拼法一律是小片的鋸齒鏈——面積上最好，人看起來不像。
+        /// 鋸齒鏈的共同點是外露周長長（片跟片只碰一點、只貼一小段），獎勵貼合的邊就是在壓外露周長，也就是在壓鋸齒。
+        ///
+        /// <b>預設 16</b>（2026-10-21，掃 4／8／16／32，使用者看圖定 16）：40 張生成的生活物品 IoU 不變、外露周長 36.3 → 34.2、轉角 14.6 → 13.4；
+        /// MPEG-7 的 116 張真實剪影 IoU −0.002、周長 35.3 → 33.8；Caltech-101 的 300 張真照片經 U2Net，IoU −0.001、周長 33.0 → 31.6、轉角 14.4 → 13.2。
+        /// 32 會為了貼邊放棄輪廓（湯匙 0.797 → 0.712），8 幾乎沒動。時間不變。
+        /// </summary>
+        public readonly double EdgeContactBonus;
+
+        /// <summary>
         /// 有沒有開特徵：半徑 &gt; 0，而且兩個權重至少一個 &gt; 0。
         /// <b>沒開的話只跑一次搜尋、照 IoU 挑</b>，結果跟第三版一模一樣。
         /// </summary>
         public bool UsesFeatures => FeatureRadius > 0.0 && (ProtrusionWeight > 0.0 || NotchWeight > 0.0);
+
+        /// <summary>有沒有開貼邊獎勵：<see cref="EdgeContactBonus"/> &gt; 0。沒開的話收尾照 IoU 排，跟第四版一模一樣。</summary>
+        public bool UsesEdgeContactBonus => EdgeContactBonus > 0.0;
 
         /// <param name="beamWidth">每一步留幾條路，至少 1。</param>
         /// <param name="cellSize">格子邊長，必須是正數。</param>
@@ -84,12 +100,15 @@ namespace Tangram.Data
         /// <param name="featureRadius">找特徵的半徑，不能是負數；0 ＝ 不找特徵。</param>
         /// <param name="protrusionWeight">突出部位多給的分，不能是負數。</param>
         /// <param name="notchWeight">缺口多扣的倍數，不能是負數。</param>
+        /// <param name="edgeContactBonus">貼合的邊每 1 模型單位加幾格分數，不能是負數；0 ＝ 不獎勵。</param>
         /// <exception cref="ArgumentOutOfRangeException">任何一個參數超出範圍。</exception>
         public ContourApproximationSettings(int beamWidth = 100, double cellSize = 0.125, double outsidePenalty = 1.0,
                                             double offsetSpacing = 0.25, int resultCount = 5, int refinementRounds = 2,
                                             int refinementStartPieceCount = 5, double featureRadius = 0.75,
-                                            double protrusionWeight = 2.0, double notchWeight = 2.0)
+                                            double protrusionWeight = 2.0, double notchWeight = 2.0,
+                                            double edgeContactBonus = 16.0)
         {
+            if (!(edgeContactBonus >= 0.0)) throw new ArgumentOutOfRangeException(nameof(edgeContactBonus), edgeContactBonus, "貼邊獎勵不能是負數。");
             if (!(featureRadius >= 0.0)) throw new ArgumentOutOfRangeException(nameof(featureRadius), featureRadius, "找特徵的半徑不能是負數。");
             if (!(protrusionWeight >= 0.0)) throw new ArgumentOutOfRangeException(nameof(protrusionWeight), protrusionWeight, "突出的權重不能是負數。");
             if (!(notchWeight >= 0.0)) throw new ArgumentOutOfRangeException(nameof(notchWeight), notchWeight, "缺口的權重不能是負數。");
@@ -112,29 +131,39 @@ namespace Tangram.Data
             FeatureRadius = featureRadius;
             ProtrusionWeight = protrusionWeight;
             NotchWeight = notchWeight;
+            EdgeContactBonus = edgeContactBonus;
         }
 
         /// <summary>
         /// 起始值：N = 100、格子 1/8、懲罰 1、平移間隔 0.25、回 5 個、微調 2 輪、從第 5 片開始、
-        /// ⭐ 特徵半徑 0.75、突出與缺口各 ×2（2026-10-20）。
+        /// ⭐ 特徵半徑 0.75、突出與缺口各 ×2（2026-10-20）、⭐ 貼邊獎勵 16（2026-10-21）。
         /// </summary>
         public static ContourApproximationSettings Default => new ContourApproximationSettings();
 
         /// <summary>
-        /// 同一組參數、但<b>不用特徵搜尋</b>（＝第三版）。驗收工具拿它當對照組。
+        /// 同一組參數、但<b>不用特徵搜尋</b>（＝第三版加貼邊獎勵；再 <see cref="WithoutEdgeContactBonus"/> 才是純第三版）。
         /// ⚠️ <b>只把兩個權重歸零，半徑照留</b>：搜尋與排名跟第三版一模一樣，但結果的「突出蓋到／缺口被填」照樣量得出來，
         /// 對照組跟實驗組才比得了。
         /// </summary>
         /// <returns>兩個權重是 0、其他照抄的一組參數。</returns>
         public ContourApproximationSettings WithoutFeatures() =>
             new ContourApproximationSettings(BeamWidth, CellSize, OutsidePenalty, OffsetSpacing, ResultCount,
-                                             RefinementRounds, RefinementStartPieceCount, FeatureRadius, 0.0, 0.0);
+                                             RefinementRounds, RefinementStartPieceCount, FeatureRadius, 0.0, 0.0, EdgeContactBonus);
+
+        /// <summary>
+        /// 同一組參數、但<b>不獎勵貼邊</b>（＝第四版）。⭐ 2026-10-21 起驗收工具拿它當對照組。
+        /// </summary>
+        /// <returns>貼邊獎勵是 0、其他照抄的一組參數。</returns>
+        public ContourApproximationSettings WithoutEdgeContactBonus() =>
+            new ContourApproximationSettings(BeamWidth, CellSize, OutsidePenalty, OffsetSpacing, ResultCount,
+                                             RefinementRounds, RefinementStartPieceCount, FeatureRadius, ProtrusionWeight, NotchWeight, 0.0);
 
         /// <returns>給報告看的一行。</returns>
         public override string ToString() =>
             $"N={BeamWidth} 格子={CellSize} 懲罰={OutsidePenalty} 平移間隔={OffsetSpacing} " +
             (RefinementRounds == 0 ? "不微調" : $"微調={RefinementRounds}輪（從第{RefinementStartPieceCount}片）") +
-            (UsesFeatures ? $" 特徵 r={FeatureRadius} 突出×{ProtrusionWeight} 缺口×{NotchWeight}" : " 不找特徵");
+            (UsesFeatures ? $" 特徵 r={FeatureRadius} 突出×{ProtrusionWeight} 缺口×{NotchWeight}" : " 不找特徵") +
+            (UsesEdgeContactBonus ? $" 貼邊×{EdgeContactBonus}" : " 不獎勵貼邊");
     }
 
     /// <summary>逼近出來的一個形狀。</summary>
@@ -172,8 +201,14 @@ namespace Tangram.Data
         /// </summary>
         public readonly double NotchFill;
 
+        /// <summary>
+        /// ⭐ 七片彼此<b>貼合的邊長總和</b>（模型單位，2026-10-21）：片跟片共線又重疊的邊，每一段算一次。
+        /// 越長外露周長越短、越不鋸齒（外露周長 ＝ 七片周長總和 40 + 20√2 − 2 × 這個數）。給 log 與驗收看。
+        /// </summary>
+        public readonly double SharedEdgeLength;
+
         internal ContourApproximation(Placement[] piecesBySlot, Puzzle puzzle, double intersectionOverUnion, Vector2 outlineOffset,
-                                      double featureScore, double protrusionCoverage, double notchFill)
+                                      double featureScore, double protrusionCoverage, double notchFill, double sharedEdgeLength)
         {
             PiecesBySlot = piecesBySlot;
             Puzzle = puzzle;
@@ -182,6 +217,7 @@ namespace Tangram.Data
             FeatureScore = featureScore;
             ProtrusionCoverage = protrusionCoverage;
             NotchFill = notchFill;
+            SharedEdgeLength = sharedEdgeLength;
         }
     }
 
@@ -222,6 +258,18 @@ namespace Tangram.Data
     /// </list>
     /// 沒開特徵（<see cref="ContourApproximationSettings.UsesFeatures"/> 是 false）時只跑第一次、照 IoU 挑，跟第三版一模一樣。
     ///
+    /// ⭐ <b>貼邊獎勵（2026-10-21 第五版，使用者定「試審美那條」）</b>：
+    /// <list type="bullet">
+    /// <item>起因：生活物品的細長部位（柄、桿、腳）用面積挑出來的拼法一律是小片的鋸齒鏈，人看起來不像。六個搜尋方法
+    ///   （拿一片／兩片重放、換放片順序合併、軟邊界、對齊 45°、轉 5 角）與輪廓預處理在真實剪影上都動不了 IoU（±0.005），
+    ///   搜尋已在七片的天花板附近；要變「像」得換目標，數字在 <c>開發進度.md</c>〈第五版候選〉與〈審美那條〉</item>
+    /// <item><b>做法</b>：每放一片，算它跟已放的每一片<b>貼合的邊長</b>（共線、重疊的部分，見 <see cref="SharedEdgeLength(Placement, Placement)"/>），
+    ///   乘 <see cref="ContourApproximationSettings.EdgeContactBonus"/> 累計進這條路；<b>兩種排名分數都加上累計</b>；平移微調只動輪廓、累計照帶；
+    ///   收尾改照「排名分數（含獎勵）」排，兩次搜尋合起來挑時特徵分也含獎勵</item>
+    /// <item>獎勵是 0 時收尾退回照 IoU 排，跟第四版一模一樣（日常測試釘住）</item>
+    /// <item>成本：每個子狀態最多 6 片 × 4 邊 × 4 邊的比對，時間不變</item>
+    /// </list>
+    ///
     /// ⚠️ <b>浮點只用來打分與排名</b>，挑出來的永遠是精確的 <see cref="Placement"/>。
     ///
     /// ⚠️ <b>刻意沒做的</b>：洞、審美門檻、非同步。細節在 <c>待辦清單.md</c>〈掃描模式：還沒做的〉第 6 條。
@@ -251,8 +299,8 @@ namespace Tangram.Data
 
             ContourApproximation best = results[0];
             string name = settings.UsesFeatures
-                ? $"掃描題（IoU {best.IntersectionOverUnion:0.00}，突出蓋到 {best.ProtrusionCoverage:0.00}，缺口被填 {best.NotchFill:0.00}）"
-                : $"掃描題（IoU {best.IntersectionOverUnion:0.00}）";
+                ? $"掃描題（IoU {best.IntersectionOverUnion:0.00}，突出蓋到 {best.ProtrusionCoverage:0.00}，缺口被填 {best.NotchFill:0.00}，貼合邊長 {best.SharedEdgeLength:0.0}）"
+                : $"掃描題（IoU {best.IntersectionOverUnion:0.00}，貼合邊長 {best.SharedEdgeLength:0.0}）";
             return new ContourPuzzle(name, best.Puzzle, best.PiecesBySlot, best.OutlineOffset);
         }
 
@@ -365,8 +413,9 @@ namespace Tangram.Data
                     CellCount total = default;
                     foreach (PiecePolygon polygon in polygons) total += raster.Count(polygon, candidateX, candidateY);
 
+                    // 只動輪廓不動片，貼合的邊長不變，累計的獎勵照帶
                     var candidate = new SearchState(state.Placements, state.OffsetIndex, candidateX, candidateY, total,
-                                                    settings.OutsidePenalty, rankByFeatures);
+                                                    settings.OutsidePenalty, rankByFeatures, state.EdgeBonus, state.SharedEdgeLength);
                     if (candidate.Score > best.Score) best = candidate;
                 }
 
@@ -424,28 +473,82 @@ namespace Tangram.Data
             {
                 var (edgeContact, pointContact) = PuzzleGenerator.CollectLegalPlacements(kind, parent.Placements);
 
+                // 已放的片的浮點頂點只算一次，每個候選都要跟它們算貼合的邊長
+                var parentPolygons = new PiecePolygon[parent.Placements.Length];
+                for (int i = 0; i < parentPolygons.Length; i++) parentPolygons[i] = PiecePolygon.From(parent.Placements[i]);
+
                 // 貼邊與碰點都收：貓耳朵這種地方本來就要靠點接觸。偏不偏好貼邊交給分數決定
-                AddChildren(parent, edgeContact, raster, rankByFeatures, children);
-                AddChildren(parent, pointContact, raster, rankByFeatures, children);
+                AddChildren(parent, parentPolygons, edgeContact, raster, rankByFeatures, children);
+                AddChildren(parent, parentPolygons, pointContact, raster, rankByFeatures, children);
             }
 
             return KeepBest(children);
         }
 
-        private void AddChildren(SearchState parent, List<Placement> candidates, OutlineRaster raster, bool rankByFeatures,
-                                 List<SearchState> children)
+        private void AddChildren(SearchState parent, PiecePolygon[] parentPolygons, List<Placement> candidates, OutlineRaster raster,
+                                 bool rankByFeatures, List<SearchState> children)
         {
             foreach (Placement candidate in candidates)
             {
-                CellCount count = raster.Count(PiecePolygon.From(candidate), parent.OffsetX, parent.OffsetY);
+                PiecePolygon candidatePolygon = PiecePolygon.From(candidate);
+                CellCount count = raster.Count(candidatePolygon, parent.OffsetX, parent.OffsetY);
+
+                // ⭐ 貼邊獎勵（第五版）：跟已放的每一片貼合的邊長 × 獎勵，累計進這條路。獎勵是 0 時連算都不算，第四版那條路一步都不多
+                double sharedEdgeLength = parent.SharedEdgeLength;
+                if (settings.UsesEdgeContactBonus)
+                    foreach (PiecePolygon placed in parentPolygons) sharedEdgeLength += SharedEdgeLength(candidatePolygon, placed);
+                double edgeBonus = settings.UsesEdgeContactBonus ? sharedEdgeLength * settings.EdgeContactBonus : 0.0;
 
                 var placements = new Placement[parent.Placements.Length + 1];
                 Array.Copy(parent.Placements, placements, parent.Placements.Length);
                 placements[parent.Placements.Length] = candidate;
 
                 children.Add(new SearchState(placements, parent.OffsetIndex, parent.OffsetX, parent.OffsetY,
-                                             parent.Cells + count, settings.OutsidePenalty, rankByFeatures));
+                                             parent.Cells + count, settings.OutsidePenalty, rankByFeatures, edgeBonus, sharedEdgeLength));
             }
+        }
+
+        /// <summary>
+        /// ⭐ 兩片<b>貼合的邊長</b>（模型單位，2026-10-21）：一片的每條邊對另一片的每條邊，兩個端點都落在這條邊所在的直線上（容差 1e-9）
+        /// 就是共線，再取另一片那條邊投影到這條邊上跟這條邊範圍重疊的長度。片保證不重疊，所以共線又重疊的一定是貼合（方向相反）。
+        /// 只碰一點是 0。給搜尋打分、測試與驗收用；浮點，跟打分同一層（鐵則一：片本身仍然是精確的）。
+        /// </summary>
+        /// <param name="first">一片。</param>
+        /// <param name="second">另一片。</param>
+        /// <returns>貼合的邊長總和。</returns>
+        public static double SharedEdgeLength(Placement first, Placement second) =>
+            SharedEdgeLength(PiecePolygon.From(first), PiecePolygon.From(second));
+
+        private static double SharedEdgeLength(PiecePolygon first, PiecePolygon second)
+        {
+            const double tolerance = 1e-9;
+            double shared = 0.0;
+            int firstCount = first.X.Length, secondCount = second.X.Length;
+            for (int i = 0; i < firstCount; i++)
+            {
+                double startX = first.X[i], startY = first.Y[i];
+                double directionX = first.X[(i + 1) % firstCount] - startX, directionY = first.Y[(i + 1) % firstCount] - startY;
+                double length = Math.Sqrt(directionX * directionX + directionY * directionY);
+                directionX /= length;
+                directionY /= length;
+
+                for (int j = 0; j < secondCount; j++)
+                {
+                    double endpointX1 = second.X[j] - startX, endpointY1 = second.Y[j] - startY;
+                    double endpointX2 = second.X[(j + 1) % secondCount] - startX, endpointY2 = second.Y[(j + 1) % secondCount] - startY;
+
+                    // 兩個端點到這條邊所在直線的距離（外積除以單位方向 ＝ 距離）都要在容差內才算共線
+                    if (Math.Abs(directionX * endpointY1 - directionY * endpointX1) > tolerance) continue;
+                    if (Math.Abs(directionX * endpointY2 - directionY * endpointX2) > tolerance) continue;
+
+                    double projection1 = directionX * endpointX1 + directionY * endpointY1;
+                    double projection2 = directionX * endpointX2 + directionY * endpointY2;
+                    double low = Math.Max(0.0, Math.Min(projection1, projection2));
+                    double high = Math.Min(length, Math.Max(projection1, projection2));
+                    if (high > low) shared += high - low;
+                }
+            }
+            return shared;
         }
 
         /// <summary>
@@ -478,7 +581,8 @@ namespace Tangram.Data
         /// <summary>
         /// 一次搜尋的收尾：七片都放完的狀態<b>照 IoU 排</b>（第三版的規則，兩次搜尋都一樣），同一個形狀（<see cref="Puzzle.Key"/>）只留一個，
         /// 回前 <see cref="ContourApproximationSettings.ResultCount"/> 個。開特徵時再由 <see cref="MergeByFeatureScore"/> 照特徵分重排。
-        /// ⚠️ 描外框要跑 16 次輪廓追蹤，所以照 IoU 順序一個一個描，湊滿就停，不全部描。
+        /// ⭐ 開貼邊獎勵時改<b>照排名分數（含獎勵）排</b>——照 IoU 排的話獎勵只影響途中留誰、不影響最後挑誰，鋸齒照樣選回來。
+        /// ⚠️ 描外框要跑 16 次輪廓追蹤，所以照順序一個一個描，湊滿就停，不全部描。
         /// </summary>
         private List<ContourApproximation> Finish(List<SearchState> beam, OutlineRaster raster)
         {
@@ -487,8 +591,25 @@ namespace Tangram.Data
                 if (state.Placements.Length == SlotOrder.Length)
                     finished.Add((state, (double)state.Cells.Inside / (raster.InsideCellCount + state.Cells.Outside)));
 
-            // ⚠️ 一定要用跟第三版同一支排序（List.Sort 不穩定，換成別的排序法平手的順序可能會變）
-            finished.Sort((left, right) => right.intersectionOverUnion.CompareTo(left.intersectionOverUnion));
+            if (settings.UsesEdgeContactBonus)
+            {
+                // 分數一樣時照產生的順序（跟 KeepBest 同一招），結果才可重現
+                var order = new int[finished.Count];
+                for (int i = 0; i < order.Length; i++) order[i] = i;
+                Array.Sort(order, (left, right) =>
+                {
+                    int byScore = finished[right].state.Score.CompareTo(finished[left].state.Score);
+                    return byScore != 0 ? byScore : left.CompareTo(right);
+                });
+                var byScoreOrder = new List<(SearchState state, double intersectionOverUnion)>(finished.Count);
+                foreach (int index in order) byScoreOrder.Add(finished[index]);
+                finished = byScoreOrder;
+            }
+            else
+            {
+                // ⚠️ 一定要用跟第三版同一支排序（List.Sort 不穩定，換成別的排序法平手的順序可能會變）
+                finished.Sort((left, right) => right.intersectionOverUnion.CompareTo(left.intersectionOverUnion));
+            }
 
             double cellArea = settings.CellSize * settings.CellSize;
             var results = new List<ContourApproximation>();
@@ -506,9 +627,11 @@ namespace Tangram.Data
                 if (!seenPuzzleKeys.Add(puzzle.Key)) continue;
 
                 (double protrusionCoverage, double notchFill) = raster.FeatureCoverage(state.Cells);
+                // 特徵分含貼邊獎勵：兩次搜尋合起來挑時用的就是它（獎勵是 0 時加的是 0，第四版的數字不變）
                 results.Add(new ContourApproximation(piecesBySlot, puzzle, intersectionOverUnion,
                                                      new Vector2((float)state.OffsetX, (float)state.OffsetY),
-                                                     state.Cells.Feature * cellArea, protrusionCoverage, notchFill));
+                                                     (state.Cells.Feature + state.EdgeBonus) * cellArea, protrusionCoverage, notchFill,
+                                                     state.SharedEdgeLength));
             }
             return results;
         }
@@ -555,21 +678,32 @@ namespace Tangram.Data
             public readonly CellCount Cells;
 
             /// <summary>
-            /// 這次搜尋排名用的分數：照原本的排是 裡面 − 外面 × 懲罰，照特徵排是特徵分。
+            /// 這次搜尋排名用的分數：照原本的排是 裡面 − 外面 × 懲罰，照特徵排是特徵分；⭐ 兩種都再加上 <see cref="EdgeBonus"/>。
             /// ⚠️ 原本那個<b>一定要照第三版的算式重算</b>，不能拿特徵分代替——浮點相加的順序不同，
             /// 平手的狀態可能會分出高下，第三版的結果就重現不了。
+            /// ⚠️ 獎勵是 0 時<b>不能多做一次「+ 0.0」以外的運算</b>，不然同樣的理由會讓第四版重現不了。
             /// </summary>
             public readonly double Score;
 
+            /// <summary>⭐ 累計的貼邊獎勵（格數單位）：到目前為止貼合的邊長 × 獎勵。獎勵是 0 時恆為 0。</summary>
+            public readonly double EdgeBonus;
+
+            /// <summary>⭐ 累計貼合的邊長（模型單位）。獎勵是 0 時不算，恆為 0。</summary>
+            public readonly double SharedEdgeLength;
+
             public SearchState(Placement[] placements, int offsetIndex, double offsetX, double offsetY,
-                               CellCount cells, double outsidePenalty, bool rankByFeatures)
+                               CellCount cells, double outsidePenalty, bool rankByFeatures,
+                               double edgeBonus = 0.0, double sharedEdgeLength = 0.0)
             {
                 Placements = placements;
                 OffsetIndex = offsetIndex;
                 OffsetX = offsetX;
                 OffsetY = offsetY;
                 Cells = cells;
-                Score = rankByFeatures ? cells.Feature : cells.Inside - cells.Outside * outsidePenalty;
+                EdgeBonus = edgeBonus;
+                SharedEdgeLength = sharedEdgeLength;
+                double baseScore = rankByFeatures ? cells.Feature : cells.Inside - cells.Outside * outsidePenalty;
+                Score = edgeBonus == 0.0 ? baseScore : baseScore + edgeBonus;
             }
 
             /// <summary>

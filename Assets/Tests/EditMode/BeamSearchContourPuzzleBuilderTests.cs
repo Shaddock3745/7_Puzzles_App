@@ -188,7 +188,7 @@ namespace Tangram.Data.Tests
         [Test]
         public void 微調設成0輪時結果跟第一版一模一樣()
         {
-            var settings = new ContourApproximationSettings(beamWidth: 10, resultCount: 3, refinementRounds: 0).WithoutFeatures();
+            var settings = new ContourApproximationSettings(beamWidth: 10, resultCount: 3, refinementRounds: 0).WithoutFeatures().WithoutEdgeContactBonus();
             IReadOnlyList<ContourApproximation> results =
                 new BeamSearchContourPuzzleBuilder(settings).Approximate(ClassicSquareOutline());
 
@@ -215,7 +215,7 @@ namespace Tangram.Data.Tests
         public void 從第1片開始微調時結果跟第二版一模一樣()
         {
             var settings = new ContourApproximationSettings(beamWidth: 10, resultCount: 3, refinementRounds: 2,
-                                                            refinementStartPieceCount: 1).WithoutFeatures();
+                                                            refinementStartPieceCount: 1).WithoutFeatures().WithoutEdgeContactBonus();
             IReadOnlyList<ContourApproximation> results =
                 new BeamSearchContourPuzzleBuilder(settings).Approximate(ClassicSquareOutline());
 
@@ -242,7 +242,7 @@ namespace Tangram.Data.Tests
         public void 不找特徵時結果跟第三版一模一樣()
         {
             IReadOnlyList<ContourApproximation> results =
-                new BeamSearchContourPuzzleBuilder(NarrowSettings().WithoutFeatures()).Approximate(ClassicSquareOutline());
+                new BeamSearchContourPuzzleBuilder(NarrowSettings().WithoutFeatures().WithoutEdgeContactBonus()).Approximate(ClassicSquareOutline());
 
             (double intersectionOverUnion, string key)[] thirdVersion =
             {
@@ -349,31 +349,132 @@ namespace Tangram.Data.Tests
             Assert.AreEqual(original.FeatureRadius, without.FeatureRadius, "半徑照留：結果的特徵覆蓋率照樣量得出來");
         }
 
+        // ───────── 第五版：貼邊獎勵（2026-10-21）─────────
+
+        /// <summary>
+        /// ⭐ <b>不獎勵貼邊 ＝ 第四版，一模一樣</b>（2026-10-21 第五版）。跟上面三條同一個用意：加貼邊獎勵的時候不能改壞第四版那條路
+        /// （累計獎勵、收尾的排序都會影響）。數字是加獎勵之前，用第四版的預設參數（N = 10、回 3 個）記下來的。
+        /// </summary>
+        [Test]
+        public void 不獎勵貼邊時結果跟第四版一模一樣()
+        {
+            IReadOnlyList<ContourApproximation> results =
+                new BeamSearchContourPuzzleBuilder(NarrowSettings().WithoutEdgeContactBonus()).Approximate(ClassicSquareOutline());
+
+            (double intersectionOverUnion, string key)[] fourthVersion =
+            {
+                (0.9597408607126331, "5848c61887a47ee6301072e6754fd965"),
+                (0.9065462753950339, "a9c1c04cab6b1689a46508e7f56a20ab"),
+                (0.9065462753950339, "f751f992bb50134c6d871f261157847b"),
+            };
+
+            Assert.AreEqual(fourthVersion.Length, results.Count);
+            for (int i = 0; i < fourthVersion.Length; i++)
+            {
+                Assert.AreEqual(fourthVersion[i].intersectionOverUnion, results[i].IntersectionOverUnion, 1e-12, $"第 {i + 1} 名的 IoU");
+                Assert.AreEqual(fourthVersion[i].key, results[i].Puzzle.Key, $"第 {i + 1} 名的形狀");
+                Assert.AreEqual(0.0, results[i].SharedEdgeLength, "沒開獎勵時貼合邊長不算，恆為 0");
+            }
+        }
+
+        /// <summary>
+        /// ⭐ <b>貼合邊長</b>：經典大正方形七片彼此貼合的邊長總和，可以從周長反推——
+        /// 七片周長總和 40 + 20√2、正方形的外露周長 4 × 4√2，藏起來的邊兩片各算一次，所以貼合總和 ＝ (40 + 20√2 − 16√2) ÷ 2 ＝ 20 + 2√2。
+        /// 另外兩個極端：離很遠是 0；同一片跟自己每條邊都整條重疊，等於它的周長（不是合法擺放，只驗重疊的算法）。
+        /// </summary>
+        [Test]
+        public void 貼合邊長_經典大正方形從周長反推得出來()
+        {
+            Placement[] pieces = Fixtures.ClassicSquare();
+            double total = 0.0;
+            for (int i = 0; i < pieces.Length; i++)
+                for (int j = i + 1; j < pieces.Length; j++)
+                    total += BeamSearchContourPuzzleBuilder.SharedEdgeLength(pieces[i], pieces[j]);
+            Assert.AreEqual(20.0 + 2.0 * Math.Sqrt(2.0), total, 1e-9, "七片彼此貼合的邊長總和");
+
+            Placement largeTriangle = new Placement(PieceKind.LargeTriangle, 0, false, ExactVector2.Zero);
+            Placement farAway = new Placement(PieceKind.LargeTriangle, 0, false, new ExactVector2(100, 0));
+            Assert.AreEqual(0.0, BeamSearchContourPuzzleBuilder.SharedEdgeLength(largeTriangle, farAway), 1e-12, "離很遠是 0");
+            Assert.AreEqual(8.0 + 4.0 * Math.Sqrt(2.0), BeamSearchContourPuzzleBuilder.SharedEdgeLength(largeTriangle, largeTriangle), 1e-9,
+                            "跟自己整條重疊 ＝ 大三角的周長 8 + 4√2");
+        }
+
+        /// <summary>
+        /// ⭐ 搜尋累計的貼合邊長要跟結果的外露周長對得上：外露周長（所有環的邊長加總）＝ 七片周長總和 − 2 × 貼合邊長。
+        /// 這一條釘住「累計沒有漏算、沒有重複算」——漏一段的話周長會對不上，不報錯。
+        /// </summary>
+        [Test]
+        public void 貼合邊長跟結果的外露周長對得上()
+        {
+            IReadOnlyList<ContourApproximation> results =
+                new BeamSearchContourPuzzleBuilder(NarrowSettings()).Approximate(ClassicSquareOutline());
+            Assert.Greater(results.Count, 0);
+
+            double totalPiecePerimeter = DifficultyFeatures.TotalPiecePerimeter.ToDouble();
+            foreach (ContourApproximation result in results)
+            {
+                double exposed = 0.0;
+                foreach (Walk walk in result.Puzzle.Walks)
+                {
+                    ExactVector2[] vertices = walk.Vertices();
+                    for (int i = 0; i < vertices.Length; i++)
+                    {
+                        ExactVector2 edge = vertices[(i + 1) % vertices.Length] - vertices[i];
+                        double edgeX = edge.X.ToDouble(), edgeY = edge.Y.ToDouble();
+                        exposed += Math.Sqrt(edgeX * edgeX + edgeY * edgeY);
+                    }
+                }
+                Assert.AreEqual(totalPiecePerimeter - 2.0 * result.SharedEdgeLength, exposed, 1e-6, $"{result.Puzzle.Key} 的外露周長");
+            }
+        }
+
+        /// <summary>獎勵不能是負數；<c>WithoutEdgeContactBonus</c> 只關獎勵、其他照抄；預設有開。</summary>
+        [Test]
+        public void 貼邊獎勵的開關()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() => new ContourApproximationSettings(edgeContactBonus: -1.0));
+            Assert.IsTrue(ContourApproximationSettings.Default.UsesEdgeContactBonus);
+            Assert.IsFalse(new ContourApproximationSettings(edgeContactBonus: 0.0).UsesEdgeContactBonus);
+
+            ContourApproximationSettings original = new ContourApproximationSettings(beamWidth: 7, resultCount: 2, refinementRounds: 1, edgeContactBonus: 9.0);
+            ContourApproximationSettings without = original.WithoutEdgeContactBonus();
+            Assert.IsFalse(without.UsesEdgeContactBonus);
+            Assert.AreEqual(original.BeamWidth, without.BeamWidth);
+            Assert.AreEqual(original.ResultCount, without.ResultCount);
+            Assert.AreEqual(original.RefinementRounds, without.RefinementRounds);
+            Assert.AreEqual(original.ProtrusionWeight, without.ProtrusionWeight, "特徵照留");
+            Assert.IsTrue(without.UsesFeatures);
+            Assert.AreEqual(9.0, original.WithoutFeatures().EdgeContactBonus, "關特徵不關獎勵");
+        }
+
         // ───────── [Explicit] 驗收工具 ─────────
 
         /// <summary>
         /// ⭐ <b>驗收：25 個具象題逼不逼得回來，加上協作者那隻貓</b>（2026-10-14）。英文入口 <c>ExplicitTools.ApproximatorTable</c>。
         ///
-        /// <b>兩組參數並排</b>：⭐ 2026-10-20 起對照組＝第三版（不找特徵）、實驗組＝預設參數（找特徵）。
-        /// （第二版到第三版期間是「不微調」對「微調」，數字留在 <c>開發進度.md</c>〈逼近搜尋〉。）
-        /// 每個具象題印兩組的 IoU、⭐ 突出蓋到幾成、缺口被填幾成、第 1 名是不是原本的形狀、前幾名有沒有、花了幾秒。
+        /// <b>兩組參數並排</b>：⭐ 2026-10-21 起對照組＝第四版（不獎勵貼邊）、實驗組＝預設參數（貼邊 ×16）。
+        /// （2026-10-20 是「不找特徵」對「找特徵」、第二版到第三版期間是「不微調」對「微調」，數字留在 <c>開發進度.md</c>〈逼近搜尋〉。）
+        /// 每個具象題印兩組的 IoU、突出蓋到幾成、缺口被填幾成、⭐ 外露周長、捏點數、轉角數（審美的三個數，<see cref="DifficultyFeatures.Measure(Puzzle)"/> 算的）、
+        /// 第 1 名是不是原本的形狀、前幾名有沒有、花了幾秒。
         /// 另外匯出網頁 <c>%TEMP%\tangram_approximation.html</c>：每個形狀一格、左右兩張圖（左對照、右實驗），
-        /// 紅線是目標輪廓、色塊是第 1 名；⭐ 橘色格子是找到的突出部位、藍色是缺口（半徑照預設參數）。
+        /// 紅線是目標輪廓、色塊是第 1 名；橘色格子是找到的突出部位、藍色是缺口（半徑照預設參數）。
         ///
+        /// ⚠️ 具象題是有已知答案的七片形狀，「逼回數」量的是搜尋找不找得回那個解，<b>不是</b>生活物品像不像——
+        /// 像不像的基準是生活物品的真實剪影（MPEG-7、Caltech-101 經 U2Net），那些在 scratchpad 的工具跑，數字在 <c>開發進度.md</c>〈換了尺之後〉。
         /// ⚠️ 時間是 Debug 的（約比 Release 慢 13 倍，見 <c>CLAUDE.md</c>〈怎麼跑測試〉），只能拿來比相對快慢。
         /// </summary>
         [Test, Explicit("逼近搜尋驗收：要跑好幾分鐘")]
         public void 逼近_具象題與掃描樣本的成績表()
         {
-            // 2026-10-20 起：對照＝第三版（不找特徵）、實驗＝預設（找特徵）。第一版對第三版的比較見 開發進度.md〈逼近搜尋〉
+            // 2026-10-21 起：對照＝第四版（不獎勵貼邊）、實驗＝預設（貼邊 ×16）。之前各版的比較見 開發進度.md〈逼近搜尋〉
             ContourApproximationSettings experiment = ContourApproximationSettings.Default;
-            ContourApproximationSettings control = experiment.WithoutFeatures();
+            ContourApproximationSettings control = experiment.WithoutEdgeContactBonus();
             var builders = new[] { new BeamSearchContourPuzzleBuilder(control), new BeamSearchContourPuzzleBuilder(experiment) };
             string[] labels = { "對照", "實驗" };
 
             TestContext.WriteLine($"對照：{control}");
             TestContext.WriteLine($"實驗：{experiment}");
-            TestContext.WriteLine("名稱\t對照IoU\t實驗IoU\t對照突出\t實驗突出\t對照缺口\t實驗缺口\t對照逼回\t實驗逼回\t對照秒\t實驗秒");
+            TestContext.WriteLine("名稱\t對照IoU\t實驗IoU\t對照突出\t實驗突出\t對照缺口\t實驗缺口\t對照周長\t實驗周長\t對照捏點\t實驗捏點\t對照轉角\t實驗轉角\t對照逼回\t實驗逼回\t對照秒\t實驗秒");
 
             var rows = new List<string>();
             var recoveredFirst = new int[2];
@@ -381,6 +482,9 @@ namespace Tangram.Data.Tests
             var sumIntersectionOverUnion = new double[2];
             var sumProtrusionCoverage = new double[2];
             var sumNotchFill = new double[2];
+            var sumExposedPerimeter = new double[2];
+            var sumPinchPoints = new double[2];
+            var sumCorners = new double[2];
             var totalSeconds = new double[2];
             IReadOnlyList<PuzzleLibrary.Entry> figurative = CalibrationEntries.FigurativeShapes();
 
@@ -388,6 +492,7 @@ namespace Tangram.Data.Tests
             {
                 RecognizedContour outline = OutlineOf(entry.Puzzle);
                 var best = new ContourApproximation[2];
+                var aesthetics = new (double exposedPerimeter, int pinchPoints, int corners)[2];
                 var marks = new string[2];
                 var seconds = new double[2];
 
@@ -402,6 +507,7 @@ namespace Tangram.Data.Tests
                         Assert.LessOrEqual(result.IntersectionOverUnion, 1.0, $"{entry.Name}（{labels[arm]}）的 IoU 超過 1：格子被重複計算了");
 
                     best[arm] = results[0];
+                    aesthetics[arm] = Aesthetics(best[arm].Puzzle);
                     bool first = best[arm].Puzzle.Key == entry.Puzzle.Key;
                     bool any = results.Any(result => result.Puzzle.Key == entry.Puzzle.Key);
                     if (first) recoveredFirst[arm]++;
@@ -409,6 +515,9 @@ namespace Tangram.Data.Tests
                     sumIntersectionOverUnion[arm] += best[arm].IntersectionOverUnion;
                     sumProtrusionCoverage[arm] += best[arm].ProtrusionCoverage;
                     sumNotchFill[arm] += best[arm].NotchFill;
+                    sumExposedPerimeter[arm] += aesthetics[arm].exposedPerimeter;
+                    sumPinchPoints[arm] += aesthetics[arm].pinchPoints;
+                    sumCorners[arm] += aesthetics[arm].corners;
                     totalSeconds[arm] += seconds[arm];
                     marks[arm] = first ? "是" : any ? "前幾名" : "";
                 }
@@ -416,40 +525,69 @@ namespace Tangram.Data.Tests
                 TestContext.WriteLine($"{entry.Name}\t{best[0].IntersectionOverUnion:0.000}\t{best[1].IntersectionOverUnion:0.000}\t" +
                                       $"{best[0].ProtrusionCoverage:0.00}\t{best[1].ProtrusionCoverage:0.00}\t" +
                                       $"{best[0].NotchFill:0.00}\t{best[1].NotchFill:0.00}\t" +
+                                      $"{aesthetics[0].exposedPerimeter:0.0}\t{aesthetics[1].exposedPerimeter:0.0}\t" +
+                                      $"{aesthetics[0].pinchPoints}\t{aesthetics[1].pinchPoints}\t{aesthetics[0].corners}\t{aesthetics[1].corners}\t" +
                                       $"{marks[0]}\t{marks[1]}\t{seconds[0]:0.0}\t{seconds[1]:0.0}");
-                rows.Add(Row(entry.Name, outline, best, marks, labels));
+                rows.Add(Row(entry.Name, outline, best, aesthetics, marks, labels));
             }
 
             for (int arm = 0; arm < 2; arm++)
                 TestContext.WriteLine($"{labels[arm]}：具象題 {figurative.Count} 個平均 IoU {sumIntersectionOverUnion[arm] / figurative.Count:0.000}，" +
                                       $"突出蓋到 {sumProtrusionCoverage[arm] / figurative.Count:0.00}、缺口被填 {sumNotchFill[arm] / figurative.Count:0.00}，" +
+                                      $"外露周長 {sumExposedPerimeter[arm] / figurative.Count:0.0}、捏點 {sumPinchPoints[arm] / figurative.Count:0.0}、轉角 {sumCorners[arm] / figurative.Count:0.0}，" +
                                       $"第 1 名就是原形狀 {recoveredFirst[arm]} 個，前幾名有 {recoveredAny[arm]} 個，合計 {totalSeconds[arm]:0.0} 秒");
 
             // 協作者那隻貓：沒有標準答案，只看 IoU 與圖
             RecognizedContour cat = RecognizedContour.FromJson(File.ReadAllText(RepositoryFiles.Find(ScanSampleRelativePath)));
             var catBest = new ContourApproximation[2];
+            var catAesthetics = new (double exposedPerimeter, int pinchPoints, int corners)[2];
             for (int arm = 0; arm < 2; arm++)
             {
                 var clock = Stopwatch.StartNew();
                 catBest[arm] = builders[arm].Approximate(cat)[0];
-                TestContext.WriteLine($"掃描樣本（U²-Net 的貓）{labels[arm]}：IoU {catBest[arm].IntersectionOverUnion:0.000}，突出蓋到 {catBest[arm].ProtrusionCoverage:0.00}、缺口被填 {catBest[arm].NotchFill:0.00}，{clock.Elapsed.TotalSeconds:0.0} 秒");
+                catAesthetics[arm] = Aesthetics(catBest[arm].Puzzle);
+                TestContext.WriteLine($"掃描樣本（U²-Net 的貓）{labels[arm]}：IoU {catBest[arm].IntersectionOverUnion:0.000}，突出蓋到 {catBest[arm].ProtrusionCoverage:0.00}、缺口被填 {catBest[arm].NotchFill:0.00}，" +
+                                      $"外露周長 {catAesthetics[arm].exposedPerimeter:0.0}、捏點 {catAesthetics[arm].pinchPoints}、轉角 {catAesthetics[arm].corners}，{clock.Elapsed.TotalSeconds:0.0} 秒");
             }
-            rows.Insert(0, Row("掃描樣本（U²-Net 的貓）", cat, catBest, new[] { "", "" }, labels));
+            rows.Insert(0, Row("掃描樣本（U²-Net 的貓）", cat, catBest, catAesthetics, new[] { "", "" }, labels));
 
             string path = Path.Combine(Path.GetTempPath(), "tangram_approximation.html");
             File.WriteAllText(path, Page($"對照：{control}<br>實驗：{experiment}", rows), new UTF8Encoding(false));
             TestContext.WriteLine($"圖：{path}");
         }
 
+        /// <summary>
+        /// ⭐ 審美的三個數（2026-10-21）：外露周長（所有環的邊長加總，模型單位；比較的基準是輪廓自己的周長）、捏點數、轉角數。
+        /// 鋸齒鏈的症狀就是周長長、轉角多。
+        /// </summary>
+        private static (double exposedPerimeter, int pinchPoints, int corners) Aesthetics(Puzzle puzzle)
+        {
+            double exposed = 0.0;
+            foreach (Walk walk in puzzle.Walks)
+            {
+                ExactVector2[] vertices = walk.Vertices();
+                for (int i = 0; i < vertices.Length; i++)
+                {
+                    ExactVector2 edge = vertices[(i + 1) % vertices.Length] - vertices[i];
+                    double edgeX = edge.X.ToDouble(), edgeY = edge.Y.ToDouble();
+                    exposed += Math.Sqrt(edgeX * edgeX + edgeY * edgeY);
+                }
+            }
+            DifficultyFeatures features = DifficultyFeatures.Measure(puzzle);
+            return (exposed, features.PinchPointCount, features.CornerCount);
+        }
+
         /// <summary>一列：同一個形狀，左邊對照組、右邊實驗組。</summary>
-        private static string Row(string title, RecognizedContour outline, ContourApproximation[] best, string[] marks, string[] labels) =>
+        private static string Row(string title, RecognizedContour outline, ContourApproximation[] best,
+                                  (double exposedPerimeter, int pinchPoints, int corners)[] aesthetics, string[] marks, string[] labels) =>
             $"<section><h2>{title}</h2><div class=\"pair\">" +
-            Panel(labels[0], outline, best[0], marks[0] == "是" ? "逼回原形狀" : marks[0] == "前幾名" ? "前幾名有原形狀" : "") +
-            Panel(labels[1], outline, best[1], marks[1] == "是" ? "逼回原形狀" : marks[1] == "前幾名" ? "前幾名有原形狀" : "") +
+            Panel(labels[0], outline, best[0], aesthetics[0], marks[0] == "是" ? "逼回原形狀" : marks[0] == "前幾名" ? "前幾名有原形狀" : "") +
+            Panel(labels[1], outline, best[1], aesthetics[1], marks[1] == "是" ? "逼回原形狀" : marks[1] == "前幾名" ? "前幾名有原形狀" : "") +
             "</div></section>";
 
         /// <summary>一格：紅線是目標輪廓（已經平移到題目座標），色塊是七片。</summary>
-        private static string Panel(string title, RecognizedContour outline, ContourApproximation result, string note)
+        private static string Panel(string title, RecognizedContour outline, ContourApproximation result,
+                                    (double exposedPerimeter, int pinchPoints, int corners) aesthetics, string note)
         {
             var outlinePoints = new List<(double x, double y)>();
             foreach (Vector2 point in outline.ModelOutline)
@@ -494,7 +632,8 @@ namespace Tangram.Data.Tests
             svg.Append("</svg>");
 
             return $"<figure>{svg}<figcaption><b>{title}</b>　IoU {result.IntersectionOverUnion:0.000}" +
-                   $"　突出 {result.ProtrusionCoverage:0.00}　缺口 {result.NotchFill:0.00}<br>{note}</figcaption></figure>";
+                   $"　突出 {result.ProtrusionCoverage:0.00}　缺口 {result.NotchFill:0.00}" +
+                   $"　周長 {aesthetics.exposedPerimeter:0.0}　捏點 {aesthetics.pinchPoints}　轉角 {aesthetics.corners}<br>{note}</figcaption></figure>";
         }
 
         private static string Page(string settingsDescription, List<string> rows) =>
