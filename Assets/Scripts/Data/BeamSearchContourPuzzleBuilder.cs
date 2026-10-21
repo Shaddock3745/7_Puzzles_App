@@ -295,13 +295,24 @@ namespace Tangram.Data
         public ContourPuzzle Build(RecognizedContour contour)
         {
             IReadOnlyList<ContourApproximation> results = Approximate(contour);
-            if (results.Count == 0) return null;
+            return results.Count == 0 ? null : ToContourPuzzle(results[0]);
+        }
 
-            ContourApproximation best = results[0];
+        /// <summary>
+        /// 把一個逼近結果包成給遊戲用的題目（名字裡帶 IoU、特徵數字與貼合邊長，log 印得出來）。
+        /// ⭐ 2026-10-21 公開：選題畫面要把前幾名都包起來，不只第 1 名。
+        /// </summary>
+        /// <param name="approximation">一個逼近結果（<see cref="Approximate"/> 回的）。</param>
+        /// <returns>題目＋參考解＋輪廓的平移量。</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="approximation"/> 是 null。</exception>
+        public ContourPuzzle ToContourPuzzle(ContourApproximation approximation)
+        {
+            if (approximation == null) throw new ArgumentNullException(nameof(approximation));
+
             string name = settings.UsesFeatures
-                ? $"掃描題（IoU {best.IntersectionOverUnion:0.00}，突出蓋到 {best.ProtrusionCoverage:0.00}，缺口被填 {best.NotchFill:0.00}，貼合邊長 {best.SharedEdgeLength:0.0}）"
-                : $"掃描題（IoU {best.IntersectionOverUnion:0.00}，貼合邊長 {best.SharedEdgeLength:0.0}）";
-            return new ContourPuzzle(name, best.Puzzle, best.PiecesBySlot, best.OutlineOffset);
+                ? $"掃描題（IoU {approximation.IntersectionOverUnion:0.00}，突出蓋到 {approximation.ProtrusionCoverage:0.00}，缺口被填 {approximation.NotchFill:0.00}，貼合邊長 {approximation.SharedEdgeLength:0.0}）"
+                : $"掃描題（IoU {approximation.IntersectionOverUnion:0.00}，貼合邊長 {approximation.SharedEdgeLength:0.0}）";
+            return new ContourPuzzle(name, approximation.Puzzle, approximation.PiecesBySlot, approximation.OutlineOffset);
         }
 
         /// <summary>

@@ -156,8 +156,32 @@ public class LevelController : MonoBehaviour
     /// <summary>從檔案選擇（相簿＋辨識模組）。跟 <see cref="cameraScanner"/> 一起建、共用同一個辨識模組。</summary>
     private IContourScanner galleryScanner;
 
-    /// <summary>輪廓 → 題目。跟兩個掃描一起建。</summary>
-    private IContourPuzzleBuilder contourPuzzleBuilder;
+    /// <summary>
+    /// ⭐ 輪廓 → 候選題目，<b>一個預設一個 builder</b>（2026-10-21）。跟兩個掃描一起建，順序照 <see cref="scanCandidatePresets"/>。
+    /// </summary>
+    private BeamSearchContourPuzzleBuilder[] candidateBuilders;
+
+    [Header("掃描題的候選（2026-10-21）")]
+    [Tooltip("每個預設各跑一次逼近，合起來給選題畫面。順序就是候選的順序。⚠️ 每一個都是一次完整搜尋，手機上各約 2 ～ 4 秒。")]
+    [SerializeField] private ScanCandidatePreset[] scanCandidatePresets =
+    {
+        ScanCandidatePreset.FifthVersion, ScanCandidatePreset.NoFeatures, ScanCandidatePreset.EdgeContactBonus32,
+    };
+
+    [Tooltip("每個預設取前幾名當候選（同一個形狀只留第一次出現的）。")]
+    [Min(1)]
+    [SerializeField] private int candidatesPerPreset = 2;
+
+    [Tooltip("候選最多幾個（選題畫面的槽數）。")]
+    [Min(1)]
+    [SerializeField] private int maximumCandidates = 6;
+
+    /// <summary>
+    /// ⭐ <b>待選的掃描結果</b>（2026-10-21）：掃描回來、候選算好、玩家還沒選。
+    /// 選題畫面讀它畫照片與縮圖；玩家選了（<see cref="PickScanCandidate"/>）、重拍（<see cref="RetryScan"/>）或回主畫面
+    /// （<see cref="CancelScanPick"/>）就清掉。<b>沒有待選時是 null</b>。
+    /// </summary>
+    public ScanCandidateSet PendingScan { get; private set; }
 
     /// <summary>
     /// ⭐ <b>掃描模式要選照片來源了</b>（2026-10-17）。選擇視窗訂閱它，把自己顯示出來；
@@ -167,6 +191,16 @@ public class LevelController : MonoBehaviour
     /// ⚠️ <b>沒有人訂閱</b>（場景沒接選擇視窗）時會報錯並回主畫面，不會停在一個什麼都沒有的畫面上。
     /// </summary>
     public event System.Action ScanSourceRequested;
+
+    /// <summary>
+    /// ⭐ <b>掃描題的候選算好了、要玩家選</b>（2026-10-21）。選題畫面（<see cref="ScanPickPanel"/>）訂閱它，
+    /// 從 <see cref="PendingScan"/> 拿照片與候選畫出來；玩家選完叫回 <see cref="PickScanCandidate"/>、
+    /// <see cref="RetryScan"/> 或 <see cref="CancelScanPick"/>。
+    ///
+    /// 用事件的理由跟 <see cref="ScanSourceRequested"/> 一樣。⚠️ <b>沒有人訂閱</b>（場景沒接選題畫面）時<b>直接拿第 1 個候選進關</b>，
+    /// 行為跟沒有選題畫面之前一樣，不報錯。
+    /// </summary>
+    public event System.Action ScanPickRequested;
 
     /// <summary>
     /// ⭐ <b>掃描沒有進關就結束了</b>（取消或失敗）。主畫面訂閱它，把自己顯示回來。
@@ -693,50 +727,155 @@ public class LevelController : MonoBehaviour
             return;
         }
 
-        // ⚠️ 逼近是同步的，畫面會凍住（PC Release 約 1.3 秒——2026-10-20 第四版開特徵之後變兩倍；Xperia 第三版約 2 秒，第四版預期約 4 秒）。
-        // 刻意先接受：挑戰模式換關也會凍住，兩件一起排在 P5-2（#37）用背景執行緒處理，這裡另開一條會變成兩套。
+        // ⚠️ 逼近是同步的，畫面會凍住（PC Release 一個預設約 1.3 秒；Xperia 第四版約 4 秒）。⭐ 2026-10-21 起一個預設跑一次，
+        // 三個預設約三倍。刻意先接受：挑戰模式換關也會凍住，兩件一起排在 P5-2（#37）用背景執行緒處理，這裡另開一條會變成兩套。
         // 所以這一版只做一件事：把花了幾秒印出來，讓 P5-2 有實際數字
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        ContourPuzzle built;
-        int difficulty;
-        try
+        List<ContourPuzzle> candidates = BuildScanCandidates(contour);
+        if (candidates.Count == 0)
         {
-            built = contourPuzzleBuilder.Build(contour);
-            if (built == null)
-            {
-                Debug.LogWarning($"這條輪廓（{contour.PixelPoints.Count} 個點）逼近不出題目，回主畫面。", this);
-                DiscardPhoto(result.Photo);
-                AbortScan();
-                return;
-            }
-
-            // 難度當場算，跟具象題同一套（見 ContourPuzzle 為什麼不帶難度）。
-            // 掃描題不結算，算它只是為了監控面板與 log 看得到
-            difficulty = DifficultyEvaluator.Score(built.Puzzle, built.ReferenceSolution, difficultyWeights);
-        }
-        catch (System.Exception exception)
-        {
-            // ⚠️ 一定要接住：這裡是掃描的回呼，主畫面已經藏起來了——例外沒接住的話，玩家會停在一個
-            // 沒有主畫面也沒有題目的畫面上。已知會丟的是難度特徵（面積不是 32、外框有零寬度的刺時），
-            // 理論上碰不到（候選跟出題器同一套），但輸入是使用者的照片，所以不賭
-            Debug.LogError("逼近或算難度時出事了，回主畫面。例外的完整內容在下一行。", this);
-            Debug.LogException(exception, this);
+            Debug.LogWarning($"這條輪廓（{contour.PixelPoints.Count} 個點）一個候選都逼不出來，回主畫面。", this);
             DiscardPhoto(result.Photo);
             AbortScan();
             return;
         }
 
-        levelIndex++;
+        Debug.Log($"掃描題候選 {candidates.Count} 個，逼近合計 {clock.Elapsed.TotalSeconds:0.00} 秒，" +
+                  $"輪廓 {contour.PixelPoints.Count} 個點（{contour.ImageWidth}×{contour.ImageHeight}）", this);
 
-        Debug.Log($"第 {levelIndex} 關：{built.Name}，逼近花了 {clock.Elapsed.TotalSeconds:0.00} 秒，" +
-                  $"輪廓 {contour.PixelPoints.Count} 個點（{contour.ImageWidth}×{contour.ImageHeight}），" +
-                  $"難度 {difficulty}，不結算實力", this);
+        PendingScan = new ScanCandidateSet(result.Photo, contour, candidates);
+
+        // ⭐ 不進關、先選題（2026-10-21 使用者定）。沒有選題畫面的場景直接拿第 1 個，行為跟之前一樣
+        if (ScanPickRequested == null)
+        {
+            Debug.Log("場景裡沒有 ScanPickPanel 在聽（ScanPickRequested 沒人訂閱），直接拿第 1 個候選進關。", this);
+            PickScanCandidate(0);
+            return;
+        }
+        ScanPickRequested();
+    }
+
+    /// <summary>
+    /// ⭐ 用每個預設各逼一次，合成候選（2026-10-21）：照 <see cref="scanCandidatePresets"/> 的順序，
+    /// 每個預設取前 <see cref="candidatesPerPreset"/> 名，同一個形狀（<c>Puzzle.Key</c>）只留第一次出現的，最多 <see cref="maximumCandidates"/> 個。
+    /// 某個預設丟例外就跳過它（log 完整印出來）——輸入是使用者的照片，不賭。
+    /// </summary>
+    /// <param name="contour">辨識出來的輪廓。</param>
+    /// <returns>候選，可能是空的。</returns>
+    private List<ContourPuzzle> BuildScanCandidates(RecognizedContour contour)
+    {
+        var candidates = new List<ContourPuzzle>();
+        var seenKeys = new HashSet<string>();
+        for (int presetIndex = 0; presetIndex < candidateBuilders.Length && candidates.Count < maximumCandidates; presetIndex++)
+        {
+            BeamSearchContourPuzzleBuilder builder = candidateBuilders[presetIndex];
+            IReadOnlyList<ContourApproximation> results;
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                results = builder.Approximate(contour);
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogError($"候選預設 {scanCandidatePresets[presetIndex]} 逼近時出事了，跳過它。例外的完整內容在下一行。", this);
+                Debug.LogException(exception, this);
+                continue;
+            }
+
+            int taken = 0;
+            for (int rank = 0; rank < results.Count && taken < candidatesPerPreset && candidates.Count < maximumCandidates; rank++)
+            {
+                ContourApproximation approximation = results[rank];
+                taken++;
+                if (!seenKeys.Add(approximation.Puzzle.Key)) continue;
+                ContourPuzzle candidate = builder.ToContourPuzzle(approximation);
+                candidates.Add(candidate);
+                Debug.Log($"候選 {candidates.Count}：{scanCandidatePresets[presetIndex]} 第 {rank + 1} 名，{candidate.Name}", this);
+            }
+            Debug.Log($"候選預設 {scanCandidatePresets[presetIndex]}：{clock.Elapsed.TotalSeconds:0.00} 秒", this);
+        }
+        return candidates;
+    }
+
+    /// <summary>
+    /// ⭐ 玩家選了第幾個候選（2026-10-21，選題畫面叫）：算難度、進關、照片交給照片對照、清掉待選。
+    /// 索引超出範圍就當第 1 個（寫警告）。沒有待選時什麼都不做（寫警告）。
+    /// </summary>
+    /// <param name="index">候選的索引，0 起算。</param>
+    public void PickScanCandidate(int index)
+    {
+        ScanCandidateSet pending = PendingScan;
+        if (pending == null)
+        {
+            Debug.LogWarning("選題畫面選了一題，但沒有待選的掃描結果（已經進關或中止了？），不做事。", this);
+            return;
+        }
+        if (index < 0 || index >= pending.Candidates.Count)
+        {
+            Debug.LogWarning($"選題畫面選了第 {index} 個候選，但只有 {pending.Candidates.Count} 個，改拿第 1 個。", this);
+            index = 0;
+        }
+
+        ContourPuzzle chosen = pending.Candidates[index];
+        int difficulty;
+        try
+        {
+            // 難度當場算，跟具象題同一套（見 ContourPuzzle 為什麼不帶難度）。
+            // 掃描題不結算，算它只是為了監控面板與 log 看得到
+            difficulty = DifficultyEvaluator.Score(chosen.Puzzle, chosen.ReferenceSolution, difficultyWeights);
+        }
+        catch (System.Exception exception)
+        {
+            // ⚠️ 一定要接住：主畫面已經藏起來了——例外沒接住的話，玩家會停在一個沒有主畫面也沒有題目的畫面上。
+            // 已知會丟的是難度特徵（面積不是 32、外框有零寬度的刺時），理論上碰不到（候選跟出題器同一套），但輸入是使用者的照片，所以不賭
+            Debug.LogError("算難度時出事了，回主畫面。例外的完整內容在下一行。", this);
+            Debug.LogException(exception, this);
+            DiscardPendingScan();
+            AbortScan();
+            return;
+        }
+
+        levelIndex++;
+        Debug.Log($"第 {levelIndex} 關：候選 {index + 1}／{pending.Candidates.Count}，{chosen.Name}，難度 {difficulty}，不結算實力", this);
+
+        // 先把待選拿下來再進關：進關之後這些東西歸這一關
+        PendingScan = null;
 
         // allowRoll 傳 false：跟具象題同一個理由——照片裡是正的貓，題目也要是正的
-        EnterLevel(built.Puzzle, built.ReferenceSolution, difficulty, allowRoll: false,
+        EnterLevel(chosen.Puzzle, chosen.ReferenceSolution, difficulty, allowRoll: false,
                    countsTowardRating: false);
 
-        HandPhotoToView(result.Photo, contour, built);
+        HandPhotoToView(pending.Photo, pending.Contour, chosen);
+    }
+
+    /// <summary>⭐ 選題畫面按了「重拍／重選」（2026-10-21）：丟掉這一輪，回到選擇視窗（遮罩一直蓋著）。</summary>
+    public void RetryScan()
+    {
+        if (CurrentMode != GameMode.Scan)
+        {
+            Debug.LogWarning($"不在掃描模式（現在是 {CurrentMode}），不重拍。", this);
+            DiscardPendingScan();
+            return;
+        }
+        Debug.Log("選題畫面要重拍，回到選擇視窗。", this);
+        DiscardPendingScan();
+        RequestScanSource();
+    }
+
+    /// <summary>⭐ 選題畫面按了「回主畫面」（2026-10-21）：丟掉這一輪，回主畫面。</summary>
+    public void CancelScanPick()
+    {
+        Debug.Log("選題畫面取消，回主畫面。", this);
+        DiscardPendingScan();
+        AbortScan();
+    }
+
+    /// <summary>待選的掃描結果用不到了：釋放照片、清掉。</summary>
+    private void DiscardPendingScan()
+    {
+        if (PendingScan == null) return;
+        DiscardPhoto(PendingScan.Photo);
+        PendingScan = null;
     }
 
     /// <summary>
@@ -783,9 +922,10 @@ public class LevelController : MonoBehaviour
         if (photo != null) Destroy(photo);
     }
 
-    /// <summary>掃描沒有進關就結束了：讓主畫面顯示回來。</summary>
+    /// <summary>掃描沒有進關就結束了：讓主畫面顯示回來。待選的結果（如果有）一起丟掉。</summary>
     private void AbortScan()
     {
+        DiscardPendingScan();
         // 先收遮罩再叫主畫面回來：兩件事同一幀發生，順序其實看不出來，但「等待結束」在邏輯上先於「回主畫面」
         IsScanPending = false;
         ScanAborted?.Invoke();
@@ -813,8 +953,15 @@ public class LevelController : MonoBehaviour
         // 拍照畫面沒接不在這裡報：只玩「從檔案選擇」的人不該看到錯誤，按了「新拍一張」才報（BeginScan）
         if (cameraCaptureView != null) cameraScanner = new PhotoContourScanner(cameraCaptureView, recognizer);
 
-        // 預設參數（N = 100、從第 5 片開始微調……）是驗收工具量過的，見 ContourApproximationSettings
-        contourPuzzleBuilder = new BeamSearchContourPuzzleBuilder();
+        // ⭐ 一個預設一個 builder（2026-10-21）。沒填預設的話至少有第五版，不然一個候選都生不出來
+        if (scanCandidatePresets == null || scanCandidatePresets.Length == 0)
+        {
+            Debug.LogWarning("候選預設清單是空的，改用第五版一個。", this);
+            scanCandidatePresets = new[] { ScanCandidatePreset.FifthVersion };
+        }
+        candidateBuilders = new BeamSearchContourPuzzleBuilder[scanCandidatePresets.Length];
+        for (int i = 0; i < scanCandidatePresets.Length; i++)
+            candidateBuilders[i] = new BeamSearchContourPuzzleBuilder(ScanCandidatePresets.SettingsOf(scanCandidatePresets[i]));
         return true;
     }
 
