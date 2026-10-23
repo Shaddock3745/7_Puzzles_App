@@ -22,9 +22,29 @@ public enum GameMode
     /// <summary>
     /// 拍照或選檔 → 辨識模組取輪廓 → 照輪廓出題（2026-10-14，名稱暫定）。
     /// ⚠️ <b>不結算實力</b>，「下一題」是再跳一次選擇視窗（2026-10-17）。
-    /// ⚠️ <b>辨識還是假的</b>（見 <c>ContourScanning.cs</c>）；取得照片（2026-10-17）與 beam search 逼近（2026-10-14）是真的。
+    /// 四段都是真的：取得照片（2026-10-17）、協作者的 U2Net 辨識（2026-10-20）、beam search 逼近（2026-10-14）、選題畫面（2026-10-21）。
     /// </summary>
     Scan
+}
+
+/// <summary>
+/// ⭐ 等待遮罩上要寫哪一個階段（P5-2，2026-10-23）。<see cref="LevelController.WaitingStage"/> 回答，<see cref="ScanWaitingCover"/> 照著換字。
+/// </summary>
+public enum LevelWaitingStage
+{
+    /// <summary>沒有在等，遮罩不出現。</summary>
+    None,
+
+    /// <summary>
+    /// 在等，但不是在算東西：掃描的選擇視窗或選題畫面開著（遮罩墊在它們底下）。寫「處理中」。
+    /// </summary>
+    Waiting,
+
+    /// <summary>照片交給辨識模組了（拍照畫面與相簿的系統畫面蓋在遮罩上面，所以實際看到的是選完之後那段）。</summary>
+    Recognizing,
+
+    /// <summary>出題中：挑戰模式在等背景生下一題，或掃描的候選在背景逼近。</summary>
+    Generating,
 }
 
 /// <summary>
@@ -74,6 +94,47 @@ public class LevelController : MonoBehaviour
     /// <c>seenKeys</c> 歸零，同一批題會一直回來。
     /// </summary>
     private TargetedPuzzleGenerator generator;
+
+    /// <summary>
+    /// ⭐ <b>挑戰模式的下一題在背景預生</b>（P5-2，issue #37，2026-10-23）。<b>出題器只有它碰</b>——主執行緒不再直接叫
+    /// <c>generator.Generate</c>，所以「同一時間只有一條執行緒碰出題器」由 <see cref="TargetedPrefetch{T}"/> 一處保證。
+    ///
+    /// 什麼時候開始生（中文邏輯 2026-10-23 確認過）：① 主畫面每次出現時（<see cref="PrepareNextChallengeLevel"/>，第一次進關不用等）
+    /// ② 挑戰模式每結算一局（<see cref="SettleIfNeeded"/>，玩家看結果彈窗的那一兩秒就生好了）。
+    /// 按「下一題」時目標對得上就直接進關，還沒好就蓋遮罩等（<see cref="TryEnterWaitingChallengeLevel"/>）。
+    /// 💡 取代了 10/4 規劃的「甲：預生 ±200 的小池」——目標在結算那一刻就確定了，不用猜。
+    /// </summary>
+    private TargetedPrefetch<TargetedGenerationResult> challengePrefetch;
+
+    /// <summary>
+    /// 按了「下一題」、題目還沒好：在等哪個目標。<b>沒在等是 null</b>。
+    /// 跟 <see cref="IsScanPending"/> 同一套：<see cref="EnterLevel"/> 一律清掉，所以不管從哪條路進關都不會殘留。
+    /// </summary>
+    private int? waitingChallengeTarget;
+
+    /// <summary>從按「下一題」開始量，進關時印出玩家實際等了幾秒（T20 上要看的數字）。</summary>
+    private System.Diagnostics.Stopwatch waitingClock;
+
+    /// <summary>
+    /// 主畫面在實力讀進來之前就要求預生了（主畫面的 <c>Start</c> 可能比這支的 <c>Start</c> 早跑，兩支誰先是未定義的）。
+    /// 記下來，<see cref="Start"/> 建好實力之後補做。
+    /// </summary>
+    private bool prepareChallengeAfterStart;
+
+    /// <summary>
+    /// ⭐ 第一次進關之後還要量幾幀（P5-2，2026-10-23）：出題搬到背景之後，第一次進關剩下的卡頓就是暖機
+    /// （片的圖、shader、字型圖集），先量出來，數字大才處理。0 ＝ 不量了。
+    /// </summary>
+    private int warmupFramesToMeasure;
+
+    /// <summary>第一次進關之後那幾幀裡最長的一幀（秒）。</summary>
+    private float longestWarmupFrame;
+
+    /// <summary>第一次進關時 <see cref="EnterLevel"/> 本身花了幾秒。</summary>
+    private double firstEnterSeconds;
+
+    /// <summary>這一場進過幾關（任何模式、任何來源）。只拿來判斷「第一次」。</summary>
+    private int enteredLevelCount;
 
     /// <summary>這一場玩到第幾關（從 0 開始）。只拿來寫 log。</summary>
     private int levelIndex;
@@ -161,6 +222,28 @@ public class LevelController : MonoBehaviour
     /// </summary>
     private BeamSearchContourPuzzleBuilder[] candidateBuilders;
 
+    /// <summary>
+    /// ⭐ <b>掃描回來、候選正在背景逼近</b>（P5-2，2026-10-23）：一個預設一件工作、同時跑。全部做完時
+    /// <see cref="TryFinishScanComputation"/> 照預設的順序合成候選。<b>沒在算時是 null</b>。
+    /// </summary>
+    private ScanComputation pendingComputation;
+
+    /// <summary>一次掃描的候選計算：照片與輪廓等著跟結果一起交給選題畫面。</summary>
+    private sealed class ScanComputation
+    {
+        /// <summary>掃描帶來的照片。算完沒用到（模式換了、一個候選都沒有）要釋放。</summary>
+        public Texture2D Photo;
+
+        /// <summary>辨識出來的輪廓。⚠️ 幾件工作同時讀它——它建好之後就不會再變（<c>RecognizedContour</c> 全是唯讀欄位），所以安全。</summary>
+        public RecognizedContour Contour;
+
+        /// <summary>一個預設一件，順序跟 <see cref="candidateBuilders"/> 一樣。</summary>
+        public BackgroundJob<IReadOnlyList<ContourApproximation>>[] Jobs;
+
+        /// <summary>從開始逼近量起，印「逼近合計」用（同時跑，所以合計是牆上的時間，不是各件相加）。</summary>
+        public System.Diagnostics.Stopwatch Clock;
+    }
+
     [Header("掃描題的候選（2026-10-21）")]
     [Tooltip("每個預設各跑一次逼近，合起來給選題畫面。順序就是候選的順序。⚠️ 每一個都是一次完整搜尋，手機上各約 2 ～ 4 秒。")]
     [SerializeField] private ScanCandidatePreset[] scanCandidatePresets =
@@ -224,6 +307,24 @@ public class LevelController : MonoBehaviour
     /// <see cref="AbortScan"/> 設成 false。進關與中止是掃描<b>所有出口的匯集點</b>，清在這兩處就不會漏掉哪一條路。
     /// </summary>
     public bool IsScanPending { get; private set; }
+
+    /// <summary>
+    /// ⭐ <b>等待中</b>（P5-2，2026-10-23）：掃描等待中，或挑戰模式按了「下一題」、題目還在背景生。
+    /// 等待遮罩看<b>這個</b>決定要不要蓋住盤面（原本只看 <see cref="IsScanPending"/>）。
+    /// </summary>
+    public bool IsWaitingForLevel => IsScanPending || waitingChallengeTarget.HasValue;
+
+    /// <summary>⭐ 等待遮罩上要寫哪一個階段（P5-2，2026-10-23）。沒在等是 <see cref="LevelWaitingStage.None"/>。</summary>
+    public LevelWaitingStage WaitingStage
+    {
+        get
+        {
+            if (waitingChallengeTarget.HasValue || pendingComputation != null) return LevelWaitingStage.Generating;
+            if (!IsScanPending) return LevelWaitingStage.None;
+            if (cameraScanner?.IsScanning == true || galleryScanner?.IsScanning == true) return LevelWaitingStage.Recognizing;
+            return LevelWaitingStage.Waiting;
+        }
+    }
 
     // ⚠️ 2026-09-13（P2-14）拿掉了 startingTargetDifficulty 與 lastTargetDifficulty。
     // 「下一題要多難」的真相換成玩家的實力（LevelSession.Rating），起始值在 SkillRatingSettings.json。
@@ -307,6 +408,13 @@ public class LevelController : MonoBehaviour
         // ⚠️ 一定要在自動進關之前：進關要問實力出題
         CreateRatingTracker();
 
+        // 主畫面比這支早跑 Start 的話，它要求的預生在這裡補做（見 prepareChallengeAfterStart）
+        if (prepareChallengeAfterStart)
+        {
+            prepareChallengeAfterStart = false;
+            PrepareNextChallengeLevel();
+        }
+
         if (!loadFirstLevelOnStart) return;
         EnterNextLevel();
     }
@@ -340,8 +448,30 @@ public class LevelController : MonoBehaviour
     ///
     /// ⚠️ <b>會晚一幀</b>：<c>Update</c> 之間的先後順序不固定，彈窗可能比結算早一幀出現，
     /// 那一幀方向是空白——彈窗那邊處理「還沒有明細」。
+    ///
+    /// ⭐ 2026-10-23（P5-2）起同一格也照顧背景工作：預生換目標、等的那一題好了就進關、掃描的候選算完就跳選題畫面、量暖機。
     /// </summary>
-    private void Update() => SettleIfNeeded();
+    private void Update()
+    {
+        SettleIfNeeded();
+        UpdateChallengePrefetch();
+        TryEnterWaitingChallengeLevel();
+        TryFinishScanComputation();
+        MeasureWarmup();
+    }
+
+    /// <summary>預生換目標（舊的做完才換，見 <see cref="TargetedPrefetch{T}.Update"/>），被丟掉的那件丟過例外就印出來。</summary>
+    private void UpdateChallengePrefetch()
+    {
+        if (challengePrefetch == null) return;
+        challengePrefetch.Update();
+
+        System.Exception discarded = challengePrefetch.TakeDiscardedError();
+        if (discarded == null) return;
+        Debug.LogError("預生的題目（後來目標換了、被丟掉的那一題）出題時出事了，例外的完整內容在下一行。" +
+                       "沒有影響這一題，但多半代表出題器有 bug。", this);
+        Debug.LogException(discarded, this);
+    }
 
     /// <summary>
     /// 需要的話就結算這一局，結算了就寫進度、印一行 log。
@@ -365,6 +495,12 @@ public class LevelController : MonoBehaviour
                   $"（時間代價 {update.TimeCostSeconds:F1} 秒），K {update.EffectiveKFactor:0.##}，" +
                   $"實力 {update.RatingBefore:F1} → {update.RatingAfter:F1}（{update.RatingChange:+0.0;-0.0;0.0}），" +
                   $"下一題：{update.Trend}", this);
+
+        // ⭐ 目標在這一刻確定了：馬上在背景生下一題，玩家看結果彈窗的時候就生好了（P5-2）。
+        // 只在挑戰模式——具象題也會結算，但它的下一題是抽的；它改了實力的話，主畫面再出現時會照新目標重生。
+        // ⚠️ 用 ?. 不用 EnsureChallengePrefetch：預生只在有人走過挑戰模式的入口（主畫面、自動進關）之後才建。
+        // 回饋收集場景也是這個模式、每題也結算，但它用自己的題單進關——在那裡建的話每題都白白在背景生一題
+        if (CurrentMode == GameMode.GeneratedByRating) challengePrefetch?.Want(rating.NextTargetDifficulty);
     }
 
     // ───────── 進度的讀寫（P2-14 留的接縫，P2-8b 2026-10-17 落檔）─────────
@@ -665,7 +801,8 @@ public class LevelController : MonoBehaviour
             return;
         }
 
-        if (cameraScanner?.IsScanning == true || galleryScanner.IsScanning) return;
+        // 上一次的候選還在背景算（P5-2）也算「還沒回來」：兩批結果會搶同一個待選
+        if (cameraScanner?.IsScanning == true || galleryScanner.IsScanning || pendingComputation != null) return;
 
         IContourScanner scanner = source == ScanPhotoSource.Camera ? cameraScanner : galleryScanner;
         if (scanner == null)
@@ -727,23 +864,56 @@ public class LevelController : MonoBehaviour
             return;
         }
 
-        // ⚠️ 逼近是同步的，畫面會凍住（PC Release 一個預設約 1.3 秒；Xperia 第四版約 4 秒）。⭐ 2026-10-21 起一個預設跑一次，
-        // 三個預設約三倍。刻意先接受：挑戰模式換關也會凍住，兩件一起排在 P5-2（#37）用背景執行緒處理，這裡另開一條會變成兩套。
-        // 所以這一版只做一件事：把花了幾秒印出來，讓 P5-2 有實際數字
-        var clock = System.Diagnostics.Stopwatch.StartNew();
-        List<ContourPuzzle> candidates = BuildScanCandidates(contour);
+        // ⭐ 2026-10-23（P5-2）起逼近在背景、一個預設一件同時跑，畫面不再凍住（以前三個預設輪流跑，Xperia 上約 10 秒）。
+        // 全部做完時 Update 裡的 TryFinishScanComputation 接手，遮罩這段寫「出題中」
+        var jobs = new BackgroundJob<IReadOnlyList<ContourApproximation>>[candidateBuilders.Length];
+        for (int i = 0; i < candidateBuilders.Length; i++)
+        {
+            // ⚠️ 這個 lambda 在背景執行緒上跑：builder 只有設定、沒有狀態，而且一件一個；輪廓是唯讀的，幾件同時讀沒問題
+            BeamSearchContourPuzzleBuilder builder = candidateBuilders[i];
+            jobs[i] = new BackgroundJob<IReadOnlyList<ContourApproximation>>(() => builder.Approximate(contour));
+        }
+        pendingComputation = new ScanComputation
+        {
+            Photo = result.Photo, Contour = contour, Jobs = jobs, Clock = System.Diagnostics.Stopwatch.StartNew(),
+        };
+    }
+
+    /// <summary>
+    /// 掃描的候選全部算完了的話：合成候選、跳選題畫面（P5-2，2026-10-23；原本在 <see cref="OnScanFinished"/> 裡同步做）。
+    /// <b>每幀問一次</b>，還有一件沒做完就什麼都不做。
+    /// </summary>
+    private void TryFinishScanComputation()
+    {
+        ScanComputation computation = pendingComputation;
+        if (computation == null) return;
+        foreach (BackgroundJob<IReadOnlyList<ContourApproximation>> job in computation.Jobs)
+            if (!job.IsDone) return;
+
+        pendingComputation = null;
+        double totalSeconds = computation.Clock.Elapsed.TotalSeconds;
+
+        // 算的期間模式換掉了（理論上遮罩擋住了換不了，這條是保險）：結果沒人要了，進關的話會蓋掉玩家剛選的那一題
+        if (CurrentMode != GameMode.Scan)
+        {
+            DiscardPhoto(computation.Photo);
+            return;
+        }
+
+        RecognizedContour contour = computation.Contour;
+        List<ContourPuzzle> candidates = MergeScanCandidates(computation);
         if (candidates.Count == 0)
         {
             Debug.LogWarning($"這條輪廓（{contour.PixelPoints.Count} 個點）一個候選都逼不出來，回主畫面。", this);
-            DiscardPhoto(result.Photo);
+            DiscardPhoto(computation.Photo);
             AbortScan();
             return;
         }
 
-        Debug.Log($"掃描題候選 {candidates.Count} 個，逼近合計 {clock.Elapsed.TotalSeconds:0.00} 秒，" +
+        Debug.Log($"掃描題候選 {candidates.Count} 個，逼近合計 {totalSeconds:0.00} 秒（{computation.Jobs.Length} 個預設同時跑），" +
                   $"輪廓 {contour.PixelPoints.Count} 個點（{contour.ImageWidth}×{contour.ImageHeight}）", this);
 
-        PendingScan = new ScanCandidateSet(result.Photo, contour, candidates);
+        PendingScan = new ScanCandidateSet(computation.Photo, contour, candidates);
 
         // ⭐ 不進關、先選題（2026-10-21 使用者定）。沒有選題畫面的場景直接拿第 1 個，行為跟之前一樣
         if (ScanPickRequested == null)
@@ -756,29 +926,28 @@ public class LevelController : MonoBehaviour
     }
 
     /// <summary>
-    /// ⭐ 用每個預設各逼一次，合成候選（2026-10-21）：照 <see cref="scanCandidatePresets"/> 的順序，
+    /// ⭐ 把每個預設的逼近結果合成候選（2026-10-21）：照 <see cref="scanCandidatePresets"/> 的順序，
     /// 每個預設取前 <see cref="candidatesPerPreset"/> 名，同一個形狀（<c>Puzzle.Key</c>）只留第一次出現的，最多 <see cref="maximumCandidates"/> 個。
     /// 某個預設丟例外就跳過它（log 完整印出來）——輸入是使用者的照片，不賭。
+    ///
+    /// ⭐ 2026-10-23（P5-2）起逼近改在背景同時跑，這裡只合成。<b>規則與順序跟同步那一版一模一樣，所以候選也一模一樣</b>——
+    /// 唯一的差別是額滿之後的預設以前不跑、現在照樣跑完（同時跑，不多花牆上的時間）。
     /// </summary>
-    /// <param name="contour">辨識出來的輪廓。</param>
+    /// <param name="computation">全部做完的那一次計算。</param>
     /// <returns>候選，可能是空的。</returns>
-    private List<ContourPuzzle> BuildScanCandidates(RecognizedContour contour)
+    private List<ContourPuzzle> MergeScanCandidates(ScanComputation computation)
     {
         var candidates = new List<ContourPuzzle>();
         var seenKeys = new HashSet<string>();
         for (int presetIndex = 0; presetIndex < candidateBuilders.Length && candidates.Count < maximumCandidates; presetIndex++)
         {
             BeamSearchContourPuzzleBuilder builder = candidateBuilders[presetIndex];
-            IReadOnlyList<ContourApproximation> results;
-            var clock = System.Diagnostics.Stopwatch.StartNew();
-            try
-            {
-                results = builder.Approximate(contour);
-            }
-            catch (System.Exception exception)
+            computation.Jobs[presetIndex].TryGetOutcome(out IReadOnlyList<ContourApproximation> results,
+                                                        out System.Exception error, out double seconds);
+            if (error != null)
             {
                 Debug.LogError($"候選預設 {scanCandidatePresets[presetIndex]} 逼近時出事了，跳過它。例外的完整內容在下一行。", this);
-                Debug.LogException(exception, this);
+                Debug.LogException(error, this);
                 continue;
             }
 
@@ -792,7 +961,7 @@ public class LevelController : MonoBehaviour
                 candidates.Add(candidate);
                 Debug.Log($"候選 {candidates.Count}：{scanCandidatePresets[presetIndex]} 第 {rank + 1} 名，{candidate.Name}", this);
             }
-            Debug.Log($"候選預設 {scanCandidatePresets[presetIndex]}：{clock.Elapsed.TotalSeconds:0.00} 秒", this);
+            Debug.Log($"候選預設 {scanCandidatePresets[presetIndex]}：{seconds:0.00} 秒（背景量的，同時跑時會比單獨跑慢一點）", this);
         }
         return candidates;
     }
@@ -926,6 +1095,13 @@ public class LevelController : MonoBehaviour
     private void AbortScan()
     {
         DiscardPendingScan();
+
+        // 還在背景算的候選（P5-2）：工作停不下來，只能不要它的結果——照片現在就釋放，算完時 TryFinishScanComputation 看到 null 就什麼都不做
+        if (pendingComputation != null)
+        {
+            DiscardPhoto(pendingComputation.Photo);
+            pendingComputation = null;
+        }
         // 先收遮罩再叫主畫面回來：兩件事同一幀發生，順序其實看不出來，但「等待結束」在邏輯上先於「回主畫面」
         IsScanPending = false;
         ScanAborted?.Invoke();
@@ -968,8 +1144,10 @@ public class LevelController : MonoBehaviour
     /// <summary>
     /// 進下一關，<b>指定目標難度</b>（P2-7）。
     ///
-    /// ⚠️ <b>遊玩迴圈不走這一支</b>（P2-14 起走無參數那支，目標是玩家的實力）。
-    /// 留著給工具與除錯用：指定一個難度看出題器生什麼。
+    /// 遊玩迴圈從無參數那支進來（目標是玩家的實力）；直接叫這支是給工具與除錯用：指定一個難度看出題器生什麼。
+    ///
+    /// ⭐ <b>2026-10-23（P5-2）起不是當場進關</b>：題目在背景生（多半已經預生好了，見 <see cref="challengePrefetch"/>）。
+    /// 好了的話這一格就進關；還沒好就蓋上等待遮罩（<see cref="IsWaitingForLevel"/>），好了 <see cref="Update"/> 會接著進關。
     ///
     /// <b>三種下場都要處理</b>：
     /// <list type="bullet">
@@ -984,32 +1162,94 @@ public class LevelController : MonoBehaviour
     public void EnterNextLevel(int targetDifficulty)
     {
         // 讀檔失敗時 Awake 已經報過錯了。這裡不再報一次，免得每按一次「下一關」就洗一行
-        if (difficultyWeights == null) return;
+        TargetedPrefetch<TargetedGenerationResult> prefetch = EnsureChallengePrefetch();
+        if (prefetch == null) return;
 
+        // ⭐ 不在這裡生（P5-2）：出題器只有背景碰。好了的話這一格就進關，還沒好就蓋遮罩等，Update 每幀再問。
+        // 已經在等的時候又按一次（遮罩擋住了，理論上按不到）：換成新的目標，計時不重來
+        waitingChallengeTarget = targetDifficulty;
+        if (waitingClock == null || !waitingClock.IsRunning) waitingClock = System.Diagnostics.Stopwatch.StartNew();
+        prefetch.Want(targetDifficulty);
+        TryEnterWaitingChallengeLevel();
+    }
+
+    /// <summary>
+    /// ⭐ 先在背景把挑戰模式的下一題準備好（P5-2，2026-10-23）。<b>主畫面每次出現時叫</b>——第一次進關（主要卡的那一次）
+    /// 就不用等；中間去玩了具象題、實力變了的話，這裡照新目標重生。
+    /// 實力還沒讀進來（主畫面的 <c>Start</c> 比這支早）就記下來，<see cref="Start"/> 補做。
+    /// </summary>
+    public void PrepareNextChallengeLevel()
+    {
+        SkillRatingTracker rating = session?.Rating;
+        if (rating == null)
+        {
+            // 設定讀不到的話 Start 補做時還是 null，什麼都不會發生——Awake 已經報過錯
+            prepareChallengeAfterStart = true;
+            return;
+        }
+
+        EnsureChallengePrefetch()?.Want(rating.NextTargetDifficulty);
+    }
+
+    /// <summary>需要的話把出題器與預生建起來。權重讀不到時回 null（Awake 已經報過錯）。</summary>
+    private TargetedPrefetch<TargetedGenerationResult> EnsureChallengePrefetch()
+    {
+        if (difficultyWeights == null) return null;
+        if (challengePrefetch != null) return challengePrefetch;
+
+        generator = new TargetedPuzzleGenerator(new PuzzleGenerator(generatorSeed, AestheticLimits.Default), difficultyWeights);
+
+        // ⚠️ 這個 lambda 在背景執行緒上跑。它只碰出題器，而 TargetedPrefetch 保證同一時間只有一件——
+        // 主執行緒不能再在任何地方直接叫 generator.Generate，不然那條保證就破了
+        challengePrefetch = new TargetedPrefetch<TargetedGenerationResult>(target => generator.Generate(target));
+        return challengePrefetch;
+    }
+
+    /// <summary>
+    /// 在等的那一題好了就進關（P5-2）。<see cref="EnterNextLevel(int)"/> 當下問一次，之後 <see cref="Update"/> 每幀問。
+    /// </summary>
+    private void TryEnterWaitingChallengeLevel()
+    {
+        if (!waitingChallengeTarget.HasValue || challengePrefetch == null) return;
+        if (!challengePrefetch.TryTake(waitingChallengeTarget.Value, out TargetedGenerationResult result,
+                                       out System.Exception error, out double workSeconds)) return;
+
+        double waitedSeconds = waitingClock.Elapsed.TotalSeconds;
+        waitingClock.Stop();
+        waitingChallengeTarget = null;
         levelIndex++;
 
-        if (generator == null)
-            generator = new TargetedPuzzleGenerator(
-                new PuzzleGenerator(generatorSeed, AestheticLimits.Default), difficultyWeights);
+        if (error != null)
+        {
+            // 以前出題在主執行緒，丟例外就整個往上丟；現在拿得到，就照「失敗」那條退回大正方形——玩家已經按了下一題，不能停在空畫面上
+            Debug.LogError($"第 {levelIndex} 關：出題時出事了，退回經典大正方形。例外的完整內容在下一行。", this);
+            Debug.LogException(error, this);
+            EnterClassicSquare(generation: null);
+            return;
+        }
 
-        TargetedGenerationResult result = generator.Generate(targetDifficulty);
+        EnterGeneratedLevel(result, workSeconds, waitedSeconds);
+    }
+
+    /// <summary>
+    /// 用出題器生好的那一題進關。<b>三種下場都要處理</b>（見 <see cref="EnterNextLevel(int)"/>）。
+    /// </summary>
+    /// <param name="result">出題器的結果。</param>
+    /// <param name="workSeconds">出題本身花了幾秒（背景量的）。</param>
+    /// <param name="waitedSeconds">玩家按了下一題之後實際等了幾秒；預生好了的話接近 0。</param>
+    private void EnterGeneratedLevel(TargetedGenerationResult result, double workSeconds, double waitedSeconds)
+    {
+        string timing = $"出題 {workSeconds:0.00} 秒、玩家等了 {waitedSeconds:0.00} 秒";
 
         if (result.Outcome == TargetedGenerationOutcome.Failed)
         {
             Debug.LogWarning(
                 $"第 {levelIndex} 關：目標 {result.TargetDifficulty} 叫了 {result.AttemptCount} 次" +
-                "都沒生出題目，退回經典大正方形。審美門檻可能收太緊了。", this);
-
-            // 退路那一題沒有經過出題器，難度要自己算。
-            // 💡 大正方形是 2261 分——比生成池最高分還高，那不是算錯，見 DifficultyEvaluator 的說明
-            Placement[] fallback = Fixtures.ClassicSquare();
-            Puzzle fallbackPuzzle = Puzzle.FromPlacements(fallback);
+                $"都沒生出題目，退回經典大正方形。審美門檻可能收太緊了。（{timing}）", this);
 
             // ⚠️ 出題紀錄照樣帶進去（P2-15），下場是失敗——不標出來的話，
             // 走勢上那一跳會看起來像 ELO 壞了
-            EnterLevel(fallbackPuzzle, fallback,
-                       DifficultyEvaluator.Score(fallbackPuzzle, fallback, difficultyWeights),
-                       allowRoll: true, generation: GenerationRecord.From(result));
+            EnterClassicSquare(GenerationRecord.From(result));
             return;
         }
 
@@ -1019,13 +1259,28 @@ public class LevelController : MonoBehaviour
             ? "正中"
             : $"⚠️ 將就（差 {Mathf.Abs(result.Difficulty - result.TargetDifficulty)}）";
         Debug.Log($"第 {levelIndex} 關：目標 {result.TargetDifficulty} → 實際 {result.Difficulty}　" +
-                  $"{hit}，叫了 {result.AttemptCount} 次", this);
+                  $"{hit}，叫了 {result.AttemptCount} 次（{timing}）", this);
 
         // ⚠️ allowRoll 傳 false：生成題要看的是「存進去的那個角度好不好看」，
         // 讓相機轉會看不到真實情況。P2-8 接上題庫時這條要重新決定。
         // ⭐ 難度直接用出題器算好的那個，不重算——同一題只算一次，見 LevelData.Difficulty
         EnterLevel(result.Puzzle, result.ReferenceSolution, result.Difficulty, allowRoll: false,
                    generation: GenerationRecord.From(result));
+    }
+
+    /// <summary>
+    /// 退路：經典大正方形。出題器失敗，或出題時丟了例外（P5-2 起拿得到了）才走這裡。
+    /// </summary>
+    /// <param name="generation">出題紀錄；丟例外的話沒有紀錄，傳 null。</param>
+    private void EnterClassicSquare(GenerationRecord? generation)
+    {
+        // 退路那一題沒有經過出題器，難度要自己算。
+        // 💡 大正方形是 2261 分——比生成池最高分還高，那不是算錯，見 DifficultyEvaluator 的說明
+        Placement[] fallback = Fixtures.ClassicSquare();
+        Puzzle fallbackPuzzle = Puzzle.FromPlacements(fallback);
+        EnterLevel(fallbackPuzzle, fallback,
+                   DifficultyEvaluator.Score(fallbackPuzzle, fallback, difficultyWeights),
+                   allowRoll: true, generation: generation);
     }
 
     /// <summary>
@@ -1048,8 +1303,11 @@ public class LevelController : MonoBehaviour
     public void EnterLevel(Puzzle puzzle, IReadOnlyList<Placement> referenceSolution, int difficulty, bool allowRoll,
                            GenerationRecord? generation = null, bool countsTowardRating = true)
     {
-        // 0. 掃描的等待到此為止（2026-10-17）。不判模式：掃描等到一半換成別的模式進關，遮罩也該收掉
+        // 0. 掃描的等待到此為止（2026-10-17）。不判模式：掃描等到一半換成別的模式進關，遮罩也該收掉。
+        //    挑戰模式的等待同一個道理（P5-2）：等到一半從別的路進關的話，那一題好了也不該再進一次
         IsScanPending = false;
+        waitingChallengeTarget = null;
+        var enterClock = System.Diagnostics.Stopwatch.StartNew();
 
         // 1. 載入：算原點、建 Region、換掉整包資料
         session.Load(puzzle, referenceSolution, difficulty, allowRoll, generation, countsTowardRating);
@@ -1087,6 +1345,36 @@ public class LevelController : MonoBehaviour
         //    CancelInteraction 會叫 StopDragTiming，而那一支對「新的這一關」來說
         //    本來就沒在計時，所以無害；但順序反過來讀起來像是「開始了又停掉」
         level.StartForegroundTiming(GameClock.NowSeconds);
+
+        // 7. 第一次進關：開始量暖機（P5-2）。出題已經不在這段了，剩下的卡頓就是片的圖、shader、字型圖集
+        enteredLevelCount++;
+        if (enteredLevelCount == 1)
+        {
+            firstEnterSeconds = enterClock.Elapsed.TotalSeconds;
+            warmupFramesToMeasure = WarmupFrameCount;
+            longestWarmupFrame = 0f;
+        }
+    }
+
+    /// <summary>第一次進關之後量幾幀。第一幀畫出來時 shader 與字型圖集才真的準備，所以要往後看幾幀。</summary>
+    private const int WarmupFrameCount = 5;
+
+    /// <summary>
+    /// ⭐ 量第一次進關的暖機（P5-2，2026-10-23）：進關之後幾幀裡最長的一幀，加上進關本身花的時間，印一行。
+    /// 在 T20 上看這一行決定暖機要不要另外處理（10/4 規劃的 B②）。
+    /// 💡 用 <c>unscaledDeltaTime</c>：進關那一幀的工作會算進「下一幀拿到的間隔」裡，所以從下一幀開始量剛好涵蓋到。
+    /// </summary>
+    private void MeasureWarmup()
+    {
+        if (warmupFramesToMeasure <= 0) return;
+
+        // 進關如果發生在這一格的 Update 裡，這一格的間隔（進關之前的）也會被算進來——無害，取的是最大值，所以多量幾幀就好
+        longestWarmupFrame = Mathf.Max(longestWarmupFrame, Time.unscaledDeltaTime);
+        warmupFramesToMeasure--;
+        if (warmupFramesToMeasure > 0) return;
+
+        Debug.Log($"第一次進關的暖機：進關本身 {firstEnterSeconds:0.000} 秒，之後 {WarmupFrameCount} 幀裡最長的一幀 " +
+                  $"{longestWarmupFrame:0.000} 秒（出題不在這裡面，在背景）", this);
     }
 
     // ───────── App 進出前景（P2-13）─────────

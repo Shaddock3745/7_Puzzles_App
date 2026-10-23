@@ -111,10 +111,15 @@ public class MainMenuPanel : MonoBehaviour
     /// <summary>開場先顯示主畫面，不進任何一關。</summary>
     private void Start() => Show();
 
-    /// <summary>顯示主畫面。從結果彈窗按「回主畫面」時也走這支。</summary>
+    /// <summary>
+    /// 顯示主畫面。從結果彈窗按「回主畫面」時也走這支。
+    /// ⭐ 順便請 <see cref="LevelController"/> 在背景先把挑戰模式的下一題生好（P5-2，2026-10-23）——
+    /// 玩家看主畫面的時候就生完了，按挑戰模式不用等。目標沒變的話那邊什麼都不多做，所以每次都叫是安全的。
+    /// </summary>
     public void Show()
     {
         if (panel != null) panel.SetActive(true);
+        if (levelController != null) levelController.PrepareNextChallengeLevel();
     }
 
     /// <summary>藏起主畫面。</summary>
