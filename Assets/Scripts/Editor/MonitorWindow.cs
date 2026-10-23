@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Tangram.Core;
 using Tangram.Data;
 using UnityEditor;
@@ -23,7 +24,9 @@ using UnityEngine;
 /// <b>它只讀，絕對不寫。</b>上面沒有任何會改到遊戲狀態的按鈕。
 /// 也因為它不在遊戲畫面上，<b>不需要登記擋片區</b>。
 ///
-/// <b>這一支只負責排版</b>。狀態怎麼判、公式代進去哪幾個數、對帳過了沒，全在 <see cref="LevelMonitorReport"/>（有測試）。
+/// <b>這一支只負責排版</b>。狀態怎麼判、對帳過了沒在 <see cref="LevelMonitorReport"/>；
+/// ⭐ 每一個字（公式代進哪幾個數、特徵名、出題紀錄怎麼講）2026-10-23 起在 <see cref="LevelMonitorText"/>，
+/// 跟 App 裡的監控 overlay（<c>DebugOverlay</c>）共用——兩邊各寫一份的話影片裡跟現場的面板會講不一樣的話。
 /// 顏色、字級、欄寬都是暫定的，美術往後放。
 /// </summary>
 public class MonitorWindow : EditorWindow
@@ -124,28 +127,21 @@ public class MonitorWindow : EditorWindow
         }
 
         // ⭐ 權重跟 LevelController 拿，不自己讀檔——要跟出題用的是同一個實例，理由見 LevelMonitor.Build
-        return monitor.Build(LevelSession.Current, levelController.CurrentDifficultyWeights, GameClock.NowSeconds);
+        return monitor.Build(LevelSession.Current, levelController.CurrentDifficultyWeights, GameClock.NowSeconds,
+                             levelController.IsLevelPaused);
     }
 
     // ───────── 狀態列 ─────────
 
     private static void DrawStatus(LevelMonitorReport report, string sessionProblem)
     {
-        switch (report.State)
-        {
-            case MonitorState.NoSession:
-                EditorGUILayout.HelpBox(sessionProblem ?? "沒有這一場。", MessageType.Info);
-                break;
-            case MonitorState.NoLevel:
-                EditorGUILayout.HelpBox("還沒進關。", MessageType.Info);
-                break;
-            case MonitorState.NoPuzzle:
-                EditorGUILayout.HelpBox("出題工具場景：沒有題目，不算難度也不結算。", MessageType.Info);
-                break;
-        }
+        string status = LevelMonitorText.StatusText(report, sessionProblem);
+        if (status == null) return;
 
-        if (report.State != MonitorState.NoSession && report.Rating == null)
-            EditorGUILayout.HelpBox("沒有實力紀錄（ELO 設定檔讀不到？看 Console）。結算與走勢都不會有。", MessageType.Warning);
+        // 沒有東西可看是說明；有關卡卻沒有實力紀錄是警告
+        bool nothingToShow = report.State == MonitorState.NoSession || report.State == MonitorState.NoLevel ||
+                             report.State == MonitorState.NoPuzzle;
+        EditorGUILayout.HelpBox(status, nothingToShow ? MessageType.Info : MessageType.Warning);
     }
 
     // ───────── 這一題 ─────────
@@ -157,7 +153,7 @@ public class MonitorWindow : EditorWindow
         EditorGUILayout.Space();
         EditorGUILayout.LabelField("這一題", EditorStyles.boldLabel);
         EditorGUILayout.LabelField("難度", level.Difficulty.ToString());
-        EditorGUILayout.LabelField("出題", GenerationText(level.Generation, level.Difficulty));
+        EditorGUILayout.LabelField("出題", LevelMonitorText.GenerationText(level.Generation, level.Difficulty));
 
         DifficultyBreakdown breakdown = report.Breakdown;
         if (breakdown == null)
@@ -168,81 +164,24 @@ public class MonitorWindow : EditorWindow
 
         EditorGUILayout.LabelField("權重指紋", breakdown.WeightsFingerprint);
 
-        if (report.BreakdownMatchesDifficulty == false)
-            EditorGUILayout.HelpBox(
-                $"⚠️ 對帳對不上：拆解算出 {breakdown.Score}，這一關存著 {level.Difficulty}。\n" +
-                "可能是出題器與拆解量特徵的方式不一樣了、原點規則改過，或 Play 中改了權重檔。ELO 用的是存著的那個。",
-                MessageType.Error);
+        string mismatch = LevelMonitorText.BreakdownMismatchText(report);
+        if (mismatch != null) EditorGUILayout.HelpBox(mismatch, MessageType.Error);
 
         showBreakdown = EditorGUILayout.Foldout(showBreakdown, "為什麼是這個分數", true);
         if (!showBreakdown) return;
 
         using (new EditorGUI.IndentLevelScope())
         {
-            DrawRow(true, BreakdownColumns, "特徵", "原始值", "平均 ± 標準差", "離平均", "權重 × 方向", "分數");
+            DrawRow(true, BreakdownColumns, LevelMonitorText.BreakdownHeader.ToArray());
             foreach (DifficultyTermContribution term in breakdown.Terms)
-            {
-                DrawRow(false, BreakdownColumns,
-                        FeatureNameOf(term.Key),
-                        term.RawValue.ToString("0.###"),
-                        $"{term.Mean:0.##} ± {term.Deviation:0.##}",
-                        double.IsNaN(term.StandardScore) ? "—" : $"{term.StandardScore:+0.00;-0.00;0.00} σ",
-                        $"{term.Weight:0.##} × {(term.Direction > 0 ? "+1" : "−1")}",
-                        term.Weight == 0.0 ? "不算分" : SignedPoints(term.Points));
-            }
-
-            // 1200 ＋ 66 − 40 …… ＝ 1347
-            var sum = new System.Text.StringBuilder();
-            sum.Append(breakdown.Center.ToString("0"));
-            if (Math.Abs(breakdown.CenterOffsetPoints) >= 0.05) sum.Append($" {SignedPoints(breakdown.CenterOffsetPoints)}（校正）");
-            foreach (DifficultyTermContribution term in breakdown.Terms)
-                if (term.Weight != 0.0) sum.Append($" {SignedPoints(term.Points)}");
-            sum.Append($" ＝ {breakdown.Score}");
+                DrawRow(false, BreakdownColumns, LevelMonitorText.BreakdownCells(term));
 
             // 合計跟表格之間畫一條細線，跟算式分開
             Rect separator = EditorGUI.IndentedRect(EditorGUILayout.GetControlRect(false, 1f));
             EditorGUI.DrawRect(separator, new Color(0.5f, 0.5f, 0.5f, 0.5f));
 
-            DrawSpanRow(BreakdownColumns, "合計", sum.ToString());
-            DrawSpanRow(BreakdownColumns, string.Empty,
-                        "（分數 ＝ 權重 × 方向 × 離平均 × 間距 ÷ 加權和的標準差；權重與基準批次見 DifficultyWeights.json）",
-                        EditorStyles.miniLabel);
-        }
-    }
-
-    /// <param name="generation">出題紀錄。</param>
-    /// <param name="levelDifficulty">這一關的難度（失敗退路時要用它）。</param>
-    /// <returns>一行文字。</returns>
-    private static string GenerationText(GenerationRecord? generation, int levelDifficulty)
-    {
-        if (!generation.HasValue) return "非生成題（回饋題單、練習題、具象題、掃描題或手動載入）";
-
-        GenerationRecord record = generation.Value;
-        switch (record.Outcome)
-        {
-            case TargetedGenerationOutcome.OnTarget:
-                return $"目標 {record.TargetDifficulty} → 實際 {record.GeneratedDifficulty}，正中，試了 {record.AttemptCount} 次";
-            case TargetedGenerationOutcome.SettledForNearest:
-                return $"目標 {record.TargetDifficulty} → 實際 {record.GeneratedDifficulty}，⚠️ 將就（差 {record.DistanceFromTarget}），" +
-                       $"預算 {record.AttemptCount} 次用完";
-            default:
-                return $"⚠️ 目標 {record.TargetDifficulty} 出題失敗（試了 {record.AttemptCount} 次），退回經典大正方形 {levelDifficulty}";
-        }
-    }
-
-    /// <param name="key">特徵的鍵。</param>
-    /// <returns>給人看的名字。不認得的鍵原樣顯示——這裡只是顯示，打錯字讀檔時就會被攔。</returns>
-    private static string FeatureNameOf(string key)
-    {
-        switch (key)
-        {
-            case DifficultyTermKeys.Perimeter: return "外框周長";
-            case DifficultyTermKeys.CornerCount: return "轉角數";
-            case DifficultyTermKeys.ForcedPieceCount: return "被外框逼出的片數";
-            case DifficultyTermKeys.KeyPiecesExposingOneVertex: return "只露一個頂點的關鍵片";
-            case DifficultyTermKeys.StaggeredEdgeContactCount: return "錯開的邊接觸";
-            case DifficultyTermKeys.LargeTrianglesJoined: return "兩片大三角拼成一塊";
-            default: return key;
+            DrawSpanRow(BreakdownColumns, "合計", LevelMonitorText.BreakdownSumText(breakdown));
+            DrawSpanRow(BreakdownColumns, string.Empty, LevelMonitorText.BreakdownFootnote, EditorStyles.miniLabel);
         }
     }
 
@@ -344,31 +283,26 @@ public class MonitorWindow : EditorWindow
         {
             // 掃描題（2026-10-14）：統計照樣顯示，但沒有預期表現也沒有結算——這一局不會拿來比
             case MonitorState.NotRated:
-                EditorGUILayout.LabelField("狀態",
-                    !level.IsFinished ? "進行中" : level.IsSolved ? "已過關" : "已放棄");
+                EditorGUILayout.LabelField("狀態", LevelMonitorText.RoundStateText(report));
                 DrawRoundStatistics(report);
                 EditorGUILayout.HelpBox("這一關不結算實力（掃描題）。", MessageType.None);
                 break;
 
             case MonitorState.Playing:
-                EditorGUILayout.LabelField("狀態", "進行中");
+                EditorGUILayout.LabelField("狀態", LevelMonitorText.RoundStateText(report));
                 DrawRoundStatistics(report);
 
-                if (report.Rating != null && report.PreviewExpectedPerformance.HasValue)
+                MonitorFormula? preview = LevelMonitorText.PreviewFormula(report);
+                if (preview.HasValue)
                 {
                     EditorGUILayout.LabelField("目前實力 R", report.Rating.CurrentRating.ToString("F1"));
-                    EditorGUILayout.LabelField("預期表現 E",
-                        $"1 ÷ (1 + 10^(({level.Difficulty} − {report.Rating.CurrentRating:F1}) ÷ {settings.ratingScale:0})) ＝ " +
-                        $"{report.PreviewExpectedPerformance.Value:F3}");
+                    DrawFormula(preview.Value);
                     EditorGUILayout.LabelField(" ", "照現在的實力，系統預期這一題的表現。解完之後拿實際表現跟它比。", EditorStyles.miniLabel);
                 }
                 break;
 
             case MonitorState.AwaitingSettlement:
-                EditorGUILayout.HelpBox(
-                    $"{(level.IsSolved ? "已過關" : "已放棄")}，結算中……\n" +
-                    "正常情況下一格就補上。一直停在這裡代表被結算的守衛擋下了（例如計時沒停），看 SkillRatingTracker.TrySettle。",
-                    MessageType.Info);
+                EditorGUILayout.HelpBox(LevelMonitorText.AwaitingSettlementText(level), MessageType.Info);
                 break;
 
             case MonitorState.Settled:
@@ -378,13 +312,8 @@ public class MonitorWindow : EditorWindow
     }
 
     /// <summary>局內統計那一行。進行中與不結算的關卡共用。</summary>
-    private static void DrawRoundStatistics(LevelMonitorReport report)
-    {
-        LevelData level = report.Level;
-        EditorGUILayout.LabelField("時間",
-            $"前景 {report.ForegroundSecondsSoFar:F1} 秒　拖曳 {level.DragSeconds:F1} 秒（{level.DragCount} 次）　" +
-            $"提示 {level.HintsUsed} 次　清空 {level.ClearCount} 次");
-    }
+    private static void DrawRoundStatistics(LevelMonitorReport report) =>
+        EditorGUILayout.LabelField("時間", LevelMonitorText.RoundStatisticsText(report));
 
     /// <summary>
     /// 每一條公式都是「符號 → 代入數字 → 結果」三段，評審照著按計算機就驗得出來。
@@ -394,59 +323,18 @@ public class MonitorWindow : EditorWindow
     /// <param name="targetRange">這一場的目標難度範圍，只拿來顯示「夾進 X～Y」；沒有權重時是 null。</param>
     private static void DrawSettlement(RatingUpdate update, SkillRatingSettings settings, TargetDifficultyRange targetRange)
     {
-        bool solved = update.Outcome == LevelOutcome.Solved;
-        EditorGUILayout.LabelField("結局", solved ? "過關" : "放棄");
+        EditorGUILayout.LabelField("結局", update.Outcome == LevelOutcome.Solved ? "過關" : "放棄");
 
-        DrawFormula("預期表現 E", "1 ÷ (1 + 10^((D − R) ÷ 尺度))",
-                    $"1 ÷ (1 + 10^(({update.Difficulty} − {update.RatingBefore:F1}) ÷ {settings.ratingScale:0}))",
-                    update.ExpectedPerformance.ToString("F3"));
+        IReadOnlyList<MonitorFormula> formulas = LevelMonitorText.SettlementFormulas(update, settings);
+        foreach (MonitorFormula formula in formulas) DrawFormula(formula);
+        EditorGUILayout.LabelField(" ", LevelMonitorText.KFactorNote(settings), EditorStyles.miniLabel);
 
-        DrawFormula("時間代價 C", "前景 − (1 − r) × 拖曳 ＋ 提示 × P",
-                    $"{update.ForegroundSeconds:F1} − (1 − {settings.dragWeightRatio:0.##}) × {update.DragSeconds:F1} ＋ " +
-                    $"{update.HintsUsed} × {settings.hintPenaltySeconds:0.##}",
-                    $"{update.TimeCostSeconds:F1} 秒");
-
-        if (solved)
-            DrawFormula("實際表現 S", "T ÷ (T ＋ C)",
-                        $"{settings.referenceSeconds:0.##} ÷ ({settings.referenceSeconds:0.##} ＋ {update.TimeCostSeconds:F1})",
-                        update.ActualPerformance.ToString("F3"));
-        else
-            DrawFormula("實際表現 S", "放棄 ＝ 0", "—", "0");
-
-        DrawFormula("實力變化 ΔR", "K × (S − E)",
-                    $"{update.EffectiveKFactor:0.##} × ({update.ActualPerformance:F3} − {update.ExpectedPerformance:F3})",
-                    SignedPoints(update.RatingChange));
-        EditorGUILayout.LabelField(" ",
-            $"K ＝ 基準 {settings.baseKFactor:0.##} × 展示倍率 {settings.demonstrationMultiplier:0.##}", EditorStyles.miniLabel);
-
-        EditorGUILayout.LabelField("實力", $"{update.RatingBefore:F1} → {update.RatingAfter:F1}");
-
-        // 目標讀明細裡記下的那個——方向比的就是它，這裡不另外算
-        string rangeText = targetRange != null ? $"夾進 {targetRange.Minimum}～{targetRange.Maximum}" : "夾進出題範圍";
-        int gap = update.NextTargetDifficulty - update.Difficulty;
-        EditorGUILayout.LabelField("下一題",
-            $"目標 {update.NextTargetDifficulty}（實力四捨五入、{rangeText}）− 這一題 {update.Difficulty} ＝ {gap:+0;-0;0}，" +
-            $"門檻 ±{TargetedPuzzleGenerator.DefaultTolerance} → {TrendTextOf(update.Trend)}");
+        foreach (MonitorLine line in LevelMonitorText.SettlementResultLines(update, targetRange))
+            EditorGUILayout.LabelField(line.Label, line.Value);
     }
 
-    /// <param name="label">左邊的名字。</param>
-    /// <param name="symbolic">符號版。</param>
-    /// <param name="substituted">代入數字版。</param>
-    /// <param name="result">結果。</param>
-    private static void DrawFormula(string label, string symbolic, string substituted, string result)
-    {
-        EditorGUILayout.LabelField(label, $"{symbolic}　＝　{substituted}　＝　{result}");
-    }
-
-    private static string TrendTextOf(NextPuzzleTrend trend)
-    {
-        switch (trend)
-        {
-            case NextPuzzleTrend.Harder: return "會難一點";
-            case NextPuzzleTrend.Easier: return "會簡單一點";
-            default: return "差不多";
-        }
-    }
+    /// <param name="formula">一條公式。</param>
+    private static void DrawFormula(MonitorFormula formula) => EditorGUILayout.LabelField(formula.Label, formula.Equation);
 
     // ───────── 走勢 ─────────
 
@@ -457,8 +345,7 @@ public class MonitorWindow : EditorWindow
         IReadOnlyList<SettlementRecord> history = report.History;
 
         EditorGUILayout.Space();
-        showHistory = EditorGUILayout.Foldout(showHistory,
-            $"這一場的走勢（{history.Count} 局，起始 {report.Rating.StartingRating:F1} → 目前 {report.Rating.CurrentRating:F1}）", true);
+        showHistory = EditorGUILayout.Foldout(showHistory, LevelMonitorText.HistoryTitle(report), true);
         if (!showHistory) return;
 
         if (history.Count == 0)
@@ -469,34 +356,8 @@ public class MonitorWindow : EditorWindow
 
         using (new EditorGUI.IndentLevelScope())
         {
-            DrawRow(true, HistoryColumns, "#", "出題", "難度", "結局", "C（秒）", "E → S", "ΔR", "實力");
-            foreach (SettlementRecord record in history)
-            {
-                RatingUpdate update = record.Update;
-                DrawRow(false, HistoryColumns,
-                        record.SequenceNumber.ToString(),
-                        ShortGenerationText(record.Generation),
-                        update.Difficulty.ToString(),
-                        update.Outcome == LevelOutcome.Solved ? "過關" : "放棄",
-                        update.TimeCostSeconds.ToString("F1"),
-                        $"{update.ExpectedPerformance:F2} → {update.ActualPerformance:F2}",
-                        SignedPoints(update.RatingChange),
-                        update.RatingAfter.ToString("F1"));
-            }
-        }
-    }
-
-    /// <param name="generation">出題紀錄。</param>
-    /// <returns>走勢表裡那一格。</returns>
-    private static string ShortGenerationText(GenerationRecord? generation)
-    {
-        if (!generation.HasValue) return "非生成題";
-        GenerationRecord record = generation.Value;
-        switch (record.Outcome)
-        {
-            case TargetedGenerationOutcome.OnTarget: return $"{record.TargetDifficulty} 正中";
-            case TargetedGenerationOutcome.SettledForNearest: return $"{record.TargetDifficulty} ⚠️將就";
-            default: return $"{record.TargetDifficulty} ⚠️失敗→退路";
+            DrawRow(true, HistoryColumns, LevelMonitorText.HistoryHeader.ToArray());
+            foreach (SettlementRecord record in history) DrawRow(false, HistoryColumns, LevelMonitorText.HistoryCells(record));
         }
     }
 
@@ -511,19 +372,13 @@ public class MonitorWindow : EditorWindow
         showSettings = EditorGUILayout.Foldout(showSettings, "ELO 參數（SkillRatingSettings.json）", true);
         if (!showSettings) return;
 
-        if (report.IsDemonstrationMultiplierActive)
-            EditorGUILayout.HelpBox(
-                $"展示版：K 是正式設定的 {settings.demonstrationMultiplier:0.##} 倍。系統概述文件與影片必須寫明。",
-                MessageType.Warning);
+        string warning = LevelMonitorText.DemonstrationWarning(report);
+        if (warning != null) EditorGUILayout.HelpBox(warning, MessageType.Warning);
 
         using (new EditorGUI.IndentLevelScope())
         {
-            EditorGUILayout.LabelField("T（秒數的尺）", $"{settings.referenceSeconds:0.##} 秒");
-            EditorGUILayout.LabelField("r（拖曳一秒算幾秒）", settings.dragWeightRatio.ToString("0.##"));
-            EditorGUILayout.LabelField("P（一次提示算幾秒）", $"{settings.hintPenaltySeconds:0.##} 秒");
-            EditorGUILayout.LabelField("K", $"基準 {settings.baseKFactor:0.##} × 展示倍率 {settings.demonstrationMultiplier:0.##} ＝ {settings.EffectiveKFactor:0.##}");
-            EditorGUILayout.LabelField("尺度", settings.ratingScale.ToString("0.##"));
-            EditorGUILayout.LabelField("起始實力", settings.initialRating.ToString("0.##"));
+            foreach (MonitorLine line in LevelMonitorText.SettingsLines(settings))
+                EditorGUILayout.LabelField(line.Label, line.Value);
         }
     }
 
@@ -643,8 +498,4 @@ public class MonitorWindow : EditorWindow
         cellStyles[(isHeader, alignment)] = style;
         return style;
     }
-
-    /// <param name="points">分數。</param>
-    /// <returns>帶正負號、一位小數。</returns>
-    private static string SignedPoints(double points) => points.ToString("+0.0;-0.0;0.0");
 }

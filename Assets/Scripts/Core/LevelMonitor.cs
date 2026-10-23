@@ -95,11 +95,18 @@ namespace Tangram.Core
         /// <summary>這一場的目標難度範圍（跟出題用的同一份權重）。沒有權重時是 null。</summary>
         public readonly TargetDifficultyRange TargetRange;
 
+        /// <summary>
+        /// ⭐ 這一關暫停中（中途離開，2026-10-23）：主畫面蓋著、不計時。暫停的真相在 <c>LevelController</c>，這裡只是轉述給面板看。
+        /// <b>不另外開一個狀態</b>：暫停的關照樣是「還在玩」，預期表現的預覽照樣成立，只是時間不走。
+        /// </summary>
+        public readonly bool IsPaused;
+
         private LevelMonitorReport(MonitorState state, LevelData level, DifficultyBreakdown breakdown,
                                    SkillRatingTracker rating, double? previewExpectedPerformance,
                                    double foregroundSecondsSoFar, int? nextTargetDifficulty,
-                                   TargetDifficultyRange targetRange)
+                                   TargetDifficultyRange targetRange, bool isPaused)
         {
+            IsPaused = isPaused;
             TargetRange = targetRange;
             State = state;
             Level = level;
@@ -137,25 +144,26 @@ namespace Tangram.Core
         /// <param name="breakdown">這一關的難度拆解；沒有就傳 null。由 <see cref="LevelMonitor"/> 快取，換關才重算。</param>
         /// <param name="targetRange">這一場的目標難度範圍；沒有權重就傳 null。</param>
         /// <param name="nowSeconds">現在的時刻（秒），跟局內統計用同一個時鐘。</param>
+        /// <param name="isPaused">這一關是不是暫停中（2026-10-23，中途離開）；殼跟 <c>LevelController.IsLevelPaused</c> 拿。</param>
         /// <returns>報告。</returns>
         public static LevelMonitorReport Build(LevelSession session, DifficultyBreakdown breakdown,
-                                               TargetDifficultyRange targetRange, double nowSeconds)
+                                               TargetDifficultyRange targetRange, double nowSeconds, bool isPaused = false)
         {
             if (session == null)
-                return new LevelMonitorReport(MonitorState.NoSession, null, null, null, null, 0.0, null, targetRange);
+                return new LevelMonitorReport(MonitorState.NoSession, null, null, null, null, 0.0, null, targetRange, false);
 
             SkillRatingTracker rating = session.Rating;
             LevelData level = session.Data;
             int? nextTarget = NextTargetOf(rating, level, targetRange);
 
             if (level == null)
-                return new LevelMonitorReport(MonitorState.NoLevel, null, null, rating, null, 0.0, nextTarget, targetRange);
+                return new LevelMonitorReport(MonitorState.NoLevel, null, null, rating, null, 0.0, nextTarget, targetRange, false);
 
             double foreground = level.ForegroundSecondsAt(nowSeconds);
 
             // 沒有題目就沒有難度可以拆（出題工具的空方框難度是 0），傳進來的拆解也不收
             if (level.Puzzle == null)
-                return new LevelMonitorReport(MonitorState.NoPuzzle, level, null, rating, null, foreground, nextTarget, targetRange);
+                return new LevelMonitorReport(MonitorState.NoPuzzle, level, null, rating, null, foreground, nextTarget, targetRange, false);
 
             // ⚠️ 不算實力的要排在最前面：它玩完也不會有明細，往下判就會變成「結算中」
             MonitorState state = !level.CountsTowardRating ? MonitorState.NotRated
@@ -167,7 +175,9 @@ namespace Tangram.Core
                 ? SkillRating.ExpectedPerformance(rating.CurrentRating, level.Difficulty, rating.Settings.ratingScale)
                 : (double?)null;
 
-            return new LevelMonitorReport(state, level, breakdown, rating, preview, foreground, nextTarget, targetRange);
+            // 暫停只對還沒結束的關有意義（結束了的關不會被暫停，這一行是保險）
+            return new LevelMonitorReport(state, level, breakdown, rating, preview, foreground, nextTarget, targetRange,
+                                          isPaused && !level.IsFinished);
         }
 
         /// <summary>下一題目標的兩個來源，見 <see cref="NextTargetDifficulty"/>。</summary>
@@ -210,11 +220,12 @@ namespace Tangram.Core
         /// 自己再讀一次檔的話，Play 中改了 JSON 就會變成兩份，對帳會亮，而原因很難想到。沒有就傳 null。
         /// </param>
         /// <param name="nowSeconds">現在的時刻（秒）。</param>
+        /// <param name="isPaused">這一關是不是暫停中（2026-10-23），見 <see cref="LevelMonitorReport.IsPaused"/>。</param>
         /// <returns>報告。</returns>
-        public LevelMonitorReport Build(LevelSession session, DifficultyWeights weights, double nowSeconds)
+        public LevelMonitorReport Build(LevelSession session, DifficultyWeights weights, double nowSeconds, bool isPaused = false)
         {
             LevelData level = session?.Data;
-            return LevelMonitorReport.Build(session, BreakdownFor(level, weights), weights?.TargetRange, nowSeconds);
+            return LevelMonitorReport.Build(session, BreakdownFor(level, weights), weights?.TargetRange, nowSeconds, isPaused);
         }
 
         /// <param name="level">這一關。</param>

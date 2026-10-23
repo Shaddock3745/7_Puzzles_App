@@ -5,83 +5,119 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// 開發期的除錯資訊（P1-12）。畫在畫面左上角。
+/// ⭐ <b>App 裡的監控面板</b>（P5-3，issue #38，2026-10-23）：左上角一個把手，按一下展開、再按收起，展開後上面一排分頁。
+/// 跟 Editor 的監控面板（<c>MonitorWindow</c>）<b>同一份資料、同一份字</b>——報告是 <see cref="LevelMonitor"/> 組的，
+/// 每一個字是 <see cref="LevelMonitorText"/> 組的，這支只負責「畫在哪、按哪裡換頁」。
 ///
-/// <b>存在的理由</b>：模型層的狀態在畫面上完全看不見。
-/// 「放手到底有沒有進 <c>BoardState</c>」這種事，沒有這個 overlay 就只能靠
-/// 「拿另一片去撞撞看」來間接推測——這張卡本來排在 P1-10 之後，
-/// 但沒有它的話，拖曳流程有一半是盲的，所以提前做。
+/// <b>名字沿用 <c>DebugOverlay</c></b>（2026-10-23 取代原本 P1-12 的除錯 overlay）：改名的話場景裡的元件要重接，跟 <c>ScanWaitingCover</c> 同一個理由。
+/// 原本那幾行除錯資訊（盤面、拖曳、選取不變式、相機與吸附的像素、手指位置）<b>留著但預設不顯示</b>（使用者定）——
+/// 勾 <see cref="showDebugPage"/> 就多一個「除錯」分頁，在 T20 上調手感時用得到。
+///
+/// <b>什麼時候出現</b>（使用者 2026-10-23 選乙）：Editor、Development Build，或 <b>Player Settings 的 Scripting Define Symbols 有 <c>TANGRADE_MONITOR</c></b>。
+/// 選乙的理由：Development Build 會連作弊鈕（<c>DebugTools</c> 的「填 6 片」）與浮水印一起帶出來，而決賽的 build 要給評審看面板、不能有作弊鈕。
+/// 其他 build 直接關掉自己（不靠人記得刪，同 P1-12 的原則）。
 ///
 /// <b>它絕對不碰任何狀態，只讀。</b> 除錯工具一旦會改東西，它自己就變成 bug 來源。
 ///
-/// <b>為什麼用 <c>OnGUI</c> 而不是 Canvas 上的 Text</b>：零接線。
-/// 不用建 UI 物件、不用拉參照、不依賴 Canvas 的設定，掛上去就有字。
-/// 它慢、是舊 API，但那對一個 P4 要刪掉的東西完全無所謂。
-/// （<c>OnGUI</c> 畫字不受「專案只開新 Input System」影響——那個限制是輸入，不是繪圖。）
+/// <b>為什麼用 <c>OnGUI</c> 而不是 Canvas</b>：零接線，掛上去就有字。<b>按哪裡</b>用 <c>Pointer.current</c> 自己比矩形，不用 GUI 的按鈕——
+/// 跟原本的把手同一套，手機上不用賭 IMGUI 收不收得到觸控。<b>為什麼分頁不捲動</b>：IMGUI 的捲動在手機上用手指拖不動。
+///
+/// ⚠️ <b>擋片區只登記把手與分頁那一排</b>，字的那一塊不擋——面板開著也要能拼（評審看著算式玩），點在字上就是點在盤面上。
 /// </summary>
 [DisallowMultipleComponent]
 public class DebugOverlay : MonoBehaviour
 {
-    [Tooltip("關掉就不畫。正式版本來就會自動關（見 Awake）。")]
+    /// <summary>分頁。前四頁跟 <see cref="MonitorPage"/> 一一對應，最後一頁是舊的除錯資訊。</summary>
+    private enum OverlayPage
+    {
+        Puzzle,
+        Round,
+        History,
+        Settings,
+        Debug,
+    }
+
+    /// <summary>分頁上的字，順序跟 <see cref="OverlayPage"/> 一樣。</summary>
+    private static readonly string[] PageTitles = { "這一題", "這一局", "走勢", "參數", "除錯" };
+
+    [Tooltip("關掉就不畫。不該出現的 build 本來就會自動關（見 Awake）。")]
     [SerializeField] private bool showOverlay = true;
 
-    [Tooltip("字級。手機上看不清楚就調大。")]
-    [SerializeField] private int fontSize = 14;
+    [Tooltip("⭐ 舊的除錯資訊（盤面、拖曳、選取不變式、相機與吸附的像素、手指位置）要不要多一頁。預設不顯示，調手感時再打開。")]
+    [SerializeField] private bool showDebugPage = false;
 
-    [Tooltip("座標與吸附參數的來源。留空的話 Awake 會自己找。")]
+    [Tooltip("字級，單位 dp。")]
+    [SerializeField] private float fontSizeDp = 11f;
+
+    [Tooltip("走勢最多列幾局（最新的那幾局）。")]
+    [Min(1)]
+    [SerializeField] private int maximumHistoryRows = 8;
+
+    [Tooltip("報告與權重的來源。留空的話 Awake 會自己找。")]
+    [SerializeField] private LevelController levelController;
+
+    [Tooltip("除錯頁的座標與吸附參數來源。留空的話 Awake 會自己找。")]
     [SerializeField] private BoardView boardView;
 
-    [Tooltip("拖曳狀態的來源。留空的話 Awake 會自己找。沒有也能跑，只是少一行。")]
+    [Tooltip("擋片區的登記對象，也是除錯頁的拖曳狀態來源。留空的話 Awake 會自己找。")]
     [SerializeField] private TouchInputController dragController;
 
-    [Tooltip("摺疊把手的邊長，單位 dp。抽屜的箭頭是 48 dp（可觸控的最小建議值），這個刻意小一點。")]
+    [Tooltip("把手與分頁的高度，單位 dp。")]
     [SerializeField] private float handleSizeDp = 32f;
 
-    [Tooltip("一進場是展開還是收折的。調手感時通常收折，看模型狀態時展開。")]
-    [SerializeField] private bool startExpanded = true;
+    [Tooltip("分頁的寬度，單位 dp。螢幕放不下時會自動縮。")]
+    [SerializeField] private float tabWidthDp = 64f;
+
+    [Tooltip("一進場是展開還是收起的。")]
+    [SerializeField] private bool startExpanded = false;
+
+    /// <summary>把手、分頁與畫面邊緣的距離，單位 dp。</summary>
+    private const float MarginDp = 6f;
+
+    /// <summary>字幾秒重組一次。數字是給人看的，一秒 10 次跟 Editor 的面板一樣。</summary>
+    private const float RefreshIntervalSeconds = 0.1f;
 
     /// <summary>
-    /// 現在是展開還是收折。收折時只畫把手，<see cref="BuildText"/> 連組字串都省下來。
-    ///
-    /// ⚠️ <b>刻意不存進 <c>PlayerPrefs</c></b>：抽屜也是每場重來（開場一律關著）。
-    /// 這種一眼看得出狀態、一下就切回來的東西，記住它反而會變成「我上次明明關了」的困惑。
+    /// 現在是展開還是收起。⚠️ <b>刻意不存進 <c>PlayerPrefs</c></b>：一眼看得出狀態、一下就切回來的東西，記住它反而會變成「我上次明明關了」的困惑。
     /// </summary>
     private bool isExpanded;
 
-    /// <summary>
-    /// 註冊給 <see cref="TouchInputController"/> 的擋片區函式，<b>存起來是為了取消註冊時傳同一個</b>——
-    /// 每次寫 <c>() =&gt; HandleScreenRect()</c> 都會產生新的委派，那樣就取消不掉了。
-    /// </summary>
+    private OverlayPage page = OverlayPage.Puzzle;
+
+    /// <summary>報告的資料那半，持有難度拆解的快取（換關才重算）。</summary>
+    private readonly LevelMonitor monitor = new LevelMonitor();
+
+    /// <summary>註冊給擋片區的函式，存起來是為了取消註冊時傳同一個（每次寫 lambda 都是新的委派）。</summary>
     private System.Func<Rect> blockingRectProvider;
 
-    /// <summary>在 <c>Update</c> 組好、<c>OnGUI</c> 只負責畫。</summary>
+    /// <summary>在 <c>Update</c> 組好、<c>OnGUI</c> 只負責畫（<c>OnGUI</c> 一幀會被叫好幾次）。</summary>
     private string overlayText;
 
+    /// <summary>上一次組字的時刻（不受時間縮放影響）。</summary>
+    private float lastRefreshTime = float.NegativeInfinity;
+
     private GUIStyle labelStyle;
+    private GUIStyle tabStyle;
     private readonly StringBuilder builder = new StringBuilder();
 
     private void Awake()
     {
+        if (levelController == null) levelController = FindFirstObjectByType<LevelController>();
         if (boardView == null) boardView = FindFirstObjectByType<BoardView>();
         if (dragController == null) dragController = FindFirstObjectByType<TouchInputController>();
         isExpanded = startExpanded;
 
-#if !UNITY_EDITOR && !DEVELOPMENT_BUILD
-        // 正式版直接關掉自己。**這樣就不必在 P4 記得刪** ——
-        // 「記得拿掉」是靠人的規定，跟這個專案踩過的兩個坑同一類（除錯記錄 001、002）。
-        // Development Build 仍然留著，所以在手機上調手感時看得到
+#if !UNITY_EDITOR && !DEVELOPMENT_BUILD && !TANGRADE_MONITOR
+        // 不該出現的 build 直接關掉自己。**這樣就不必在交出去之前記得刪**——
+        // 「記得拿掉」是靠人的規定，跟這個專案踩過的兩個坑同一類（除錯記錄 001、002）
         enabled = false;
 #endif
     }
 
-    /// <summary>
-    /// 把手要登記成擋片區，不然<b>按下會穿過去抓到底下的片</b>——
-    /// 那正是這個專案踩過的坑（見 <c>TouchInputController.RegisterPressBlockingArea</c> 的說明）。
-    /// </summary>
     private void OnEnable()
     {
         if (dragController == null) return;
-        if (blockingRectProvider == null) blockingRectProvider = () => HandleScreenRect();
+        if (blockingRectProvider == null) blockingRectProvider = () => BlockingScreenRect();
         dragController.RegisterPressBlockingScreenRect(blockingRectProvider);
     }
 
@@ -92,120 +128,185 @@ public class DebugOverlay : MonoBehaviour
 
     private void Update()
     {
-        PollHandleTap();
+        PollTaps();
 
-        // ⚠️ OnGUI 一幀會被呼叫好幾次（layout 一次、repaint 一次）。
-        // 字串在那裡組會每幀配置好幾份，所以組在這裡、那裡只畫
-        overlayText = showOverlay && isExpanded ? BuildText() : null;
+        if (!showOverlay || !isExpanded)
+        {
+            overlayText = null;
+            return;
+        }
+
+        // 換頁、展開的那一格 PollTaps 會把 lastRefreshTime 歸零，所以馬上就換字
+        if (Time.unscaledTime - lastRefreshTime < RefreshIntervalSeconds) return;
+        lastRefreshTime = Time.unscaledTime;
+        overlayText = BuildPageText();
     }
 
-    /// <summary>
-    /// 把手在螢幕座標的矩形（<b>原點左下</b>，跟 <c>Pointer.position</c> 同一套）。
-    ///
-    /// ⚠️ <c>OnGUI</c> 的原點在左上，所以畫的時候要翻一次 Y（見 <see cref="HandleGuiRect"/>）。
-    /// 兩邊算同一塊地方的兩份程式，一份寫錯就會變成「看得到但按不到」，而且不報錯——
-    /// 所以只有這裡定義位置，畫的那邊從這裡換算過去。
-    /// </summary>
+    // ───────── 版面（螢幕座標，原點左下，跟 Pointer.position 同一套）─────────
+    //
+    // ⚠️ OnGUI 的原點在左上，畫的時候翻一次 Y（ToGuiRect）。位置只在這裡定義，畫的那邊從這裡換算——
+    // 兩份各算一次的話，寫錯一份就變成「看得到但按不到」，而且不報錯。
+
     /// <returns>把手的矩形。</returns>
     private Rect HandleScreenRect()
     {
         float size = ScreenMetrics.ToPixels(handleSizeDp);
-        float margin = ScreenMetrics.ToPixels(HandleMarginDp);
+        float margin = ScreenMetrics.ToPixels(MarginDp);
         return new Rect(margin, Screen.height - margin - size, size, size);
+    }
+
+    /// <returns>現在看得到幾個分頁（除錯頁關著就少一個）。</returns>
+    private int VisibleTabCount => showDebugPage ? PageTitles.Length : PageTitles.Length - 1;
+
+    /// <param name="index">第幾個分頁。</param>
+    /// <returns>那個分頁的矩形：接在把手右邊排成一列，螢幕放不下時一起縮。</returns>
+    private Rect TabScreenRect(int index)
+    {
+        Rect handle = HandleScreenRect();
+        float margin = ScreenMetrics.ToPixels(MarginDp);
+        float start = handle.xMax + margin;
+        float available = Screen.width - margin - start;
+        float width = Mathf.Min(ScreenMetrics.ToPixels(tabWidthDp), available / VisibleTabCount);
+        return new Rect(start + index * width, handle.y, width, handle.height);
+    }
+
+    /// <returns>擋片區：收起時只有把手，展開時把手加整排分頁。字的那一塊刻意不擋（見類別說明）。</returns>
+    private Rect BlockingScreenRect()
+    {
+        Rect handle = HandleScreenRect();
+        if (!showOverlay || !isExpanded) return handle;
+        Rect lastTab = TabScreenRect(VisibleTabCount - 1);
+        return Rect.MinMaxRect(handle.xMin, handle.yMin, lastTab.xMax, handle.yMax);
     }
 
     /// <param name="screenRect">螢幕座標的矩形（原點左下）。</param>
     /// <returns>同一塊地方在 <c>OnGUI</c> 座標的矩形（原點左上）。</returns>
-    private static Rect HandleGuiRect(Rect screenRect)
+    private static Rect ToGuiRect(Rect screenRect)
         => new Rect(screenRect.x, Screen.height - screenRect.yMax, screenRect.width, screenRect.height);
 
-    /// <summary>把手與畫面邊緣的距離，單位 dp。</summary>
-    private const float HandleMarginDp = 6f;
-
     /// <summary>
-    /// 按在把手上就開合。
-    ///
-    /// ⚠️ <b>用 <c>Pointer.current</c> 就夠了</b>，不像 <c>TouchInputController</c> 要鎖 touch id——
-    /// 那支要追整段拖曳，所以第二根手指會咬它；這裡只認「按下的那一瞬間」，
-    /// 而開發者不會用兩根手指去按一個除錯按鈕。
+    /// 按在把手上就開合，展開時按在分頁上就換頁。
+    /// ⚠️ <b>用 <c>Pointer.current</c> 就夠了</b>：這裡只認「按下的那一瞬間」，不用像拖曳那樣鎖 touch id。
     /// </summary>
-    private void PollHandleTap()
+    private void PollTaps()
     {
         if (!showOverlay) return;
 
         Pointer pointer = Pointer.current;
         if (pointer == null || !pointer.press.wasPressedThisFrame) return;
+        Vector2 position = pointer.position.ReadValue();
 
-        if (HandleScreenRect().Contains(pointer.position.ReadValue())) isExpanded = !isExpanded;
+        if (HandleScreenRect().Contains(position))
+        {
+            isExpanded = !isExpanded;
+            lastRefreshTime = float.NegativeInfinity;
+            return;
+        }
+
+        if (!isExpanded) return;
+        for (int i = 0; i < VisibleTabCount; i++)
+        {
+            if (!TabScreenRect(i).Contains(position)) continue;
+            page = (OverlayPage)i;
+            lastRefreshTime = float.NegativeInfinity;
+            return;
+        }
     }
+
+    // ───────── 畫 ─────────
 
     private void OnGUI()
     {
         if (!showOverlay) return;
-        DrawHandle();
-        if (string.IsNullOrEmpty(overlayText)) return;
 
         // GUIStyle 只能在 OnGUI 裡安全地建（GUI.skin 在別的時機無效）
+        EnsureStyles();
+
+        DrawBox(ToGuiRect(HandleScreenRect()), isExpanded ? 0.65f : 0.45f);
+        GUI.Label(ToGuiRect(HandleScreenRect()), isExpanded ? "▲" : "▼", tabStyle);
+        if (!isExpanded) return;
+
+        // 除錯頁被關掉的時候，萬一停在那一頁就退回第一頁
+        if (page == OverlayPage.Debug && !showDebugPage) page = OverlayPage.Puzzle;
+
+        for (int i = 0; i < VisibleTabCount; i++)
+        {
+            Rect tab = ToGuiRect(TabScreenRect(i));
+            DrawBox(tab, (int)page == i ? 0.85f : 0.45f);
+            GUI.Label(tab, PageTitles[i], tabStyle);
+        }
+
+        if (string.IsNullOrEmpty(overlayText)) return;
+
+        // 字的那一塊接在把手底下，寬度到螢幕右緣，高度照字算
+        float margin = ScreenMetrics.ToPixels(MarginDp);
+        float padding = margin;
+        Rect handle = ToGuiRect(HandleScreenRect());
+        float width = Screen.width - margin * 2f;
+        var content = new GUIContent(overlayText);
+        float height = labelStyle.CalcHeight(content, width - padding * 2f);
+
+        var box = new Rect(margin, handle.yMax + margin, width, height + padding * 2f);
+        DrawBox(box, 0.65f);
+        GUI.Label(new Rect(box.x + padding, box.y + padding, width - padding * 2f, height), content, labelStyle);
+    }
+
+    private void EnsureStyles()
+    {
+        int fontSize = Mathf.Max(8, Mathf.RoundToInt(ScreenMetrics.ToPixels(fontSizeDp)));
+
         if (labelStyle == null)
         {
-            labelStyle = new GUIStyle(GUI.skin.label)
-            {
-                alignment = TextAnchor.UpperLeft,
-                richText = false
-            };
+            labelStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperLeft, richText = false, wordWrap = true };
             labelStyle.normal.textColor = Color.white;
         }
         labelStyle.fontSize = fontSize;
 
-        var content = new GUIContent(overlayText);
-        Vector2 size = labelStyle.CalcSize(content);
-
-        const float padding = 6f;
-        // 面板接在把手底下，跟把手切齊——抽屜也是「把手在外、本體從把手長出來」
-        Rect handle = HandleGuiRect(HandleScreenRect());
-        var box = new Rect(handle.x, handle.yMax + ScreenMetrics.ToPixels(HandleMarginDp),
-                           size.x + padding * 2f, size.y + padding * 2f);
-
-        Color previous = GUI.color;
-        GUI.color = new Color(0f, 0f, 0f, 0.65f);
-        GUI.DrawTexture(box, Texture2D.whiteTexture);
-        GUI.color = previous;
-
-        GUI.Label(new Rect(box.x + padding, box.y + padding, size.x, size.y), content, labelStyle);
-    }
-
-    /// <summary>
-    /// 畫把手：一個小方塊加一個箭頭，展開時朝上（收起來）、收折時朝下（打開）。
-    /// 跟抽屜的箭頭同一個意思——<b>箭頭指的是「按下去會往哪邊變」</b>。
-    /// </summary>
-    private void DrawHandle()
-    {
-        Rect handle = HandleGuiRect(HandleScreenRect());
-
-        Color previous = GUI.color;
-        GUI.color = new Color(0f, 0f, 0f, isExpanded ? 0.65f : 0.45f);
-        GUI.DrawTexture(handle, Texture2D.whiteTexture);
-        GUI.color = previous;
-
-        if (handleStyle == null)
+        if (tabStyle == null)
         {
-            handleStyle = new GUIStyle(GUI.skin.label)
-            {
-                alignment = TextAnchor.MiddleCenter,
-                richText = false
-            };
-            handleStyle.normal.textColor = Color.white;
+            tabStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, richText = false, clipping = TextClipping.Clip };
+            tabStyle.normal.textColor = Color.white;
         }
-        handleStyle.fontSize = Mathf.RoundToInt(handle.height * 0.55f);
-
-        GUI.Label(handle, isExpanded ? "▲" : "▼", handleStyle);
+        tabStyle.fontSize = fontSize;
     }
 
-    /// <summary>把手上那個箭頭的樣式。跟 <see cref="labelStyle"/> 一樣只能在 <c>OnGUI</c> 裡建。</summary>
-    private GUIStyle handleStyle;
+    /// <param name="rect">GUI 座標的矩形。</param>
+    /// <param name="alpha">黑底的不透明度。</param>
+    private static void DrawBox(Rect rect, float alpha)
+    {
+        Color previous = GUI.color;
+        GUI.color = new Color(0f, 0f, 0f, alpha);
+        GUI.DrawTexture(rect, Texture2D.whiteTexture);
+        GUI.color = previous;
+    }
 
-    /// <returns>這一幀要顯示的文字。全部唯讀，不會改到任何狀態。</returns>
-    private string BuildText()
+    // ───────── 字 ─────────
+
+    /// <returns>這一頁要顯示的字。全部唯讀，不會改到任何狀態。</returns>
+    private string BuildPageText()
+    {
+        if (page == OverlayPage.Debug) return BuildDebugText();
+
+        if (levelController == null) return "場景裡沒有 LevelController，沒有關卡可以看。";
+
+        // ⭐ 權重跟 LevelController 拿，不自己讀檔——要跟出題用的是同一個實例，理由見 LevelMonitor.Build
+        LevelMonitorReport report = monitor.Build(LevelSession.Current, levelController.CurrentDifficultyWeights,
+                                                  GameClock.NowSeconds, levelController.IsLevelPaused);
+        try
+        {
+            return LevelMonitorText.PageText(report, (MonitorPage)(int)page, maximumHistoryRows);
+        }
+        catch (System.Exception exception)
+        {
+            // 拆解會丟例外的情況（權重在記憶體裡被改壞之類）。顯示出來就好，不要每次重組都洗 Console
+            return $"組監控報告時出錯：{exception.Message}";
+        }
+    }
+
+    // ───────── 除錯頁（P1-12 原本的 overlay，2026-10-23 起預設不顯示）─────────
+
+    /// <returns>除錯頁的字。</returns>
+    private string BuildDebugText()
     {
         builder.Clear();
 
@@ -219,8 +320,7 @@ public class DebugOverlay : MonoBehaviour
         BoardState board = level.Board;
         builder.AppendLine($"盤面    {board.OnBoardCount}/{BoardState.PieceCount} 已放置");
 
-        // 第一層中途回饋的不變式（互動設計 §8）：已放置片的面積和。
-        // 七片放滿時必為 32，因為那就是盒子的面積
+        // 已放置片的面積和。七片放滿時必為 32，因為那就是盒子的面積
         builder.AppendLine($"面積    {PlacedArea(board):0.##} / 32");
 
         AppendDragLine(level);
@@ -230,22 +330,6 @@ public class DebugOverlay : MonoBehaviour
         double boxWidth = (bounds.Maximum.X - bounds.Minimum.X).ToDouble();
         double boxHeight = (bounds.Maximum.Y - bounds.Minimum.Y).ToDouble();
         builder.AppendLine($"盒子    {boxWidth:0.##} × {boxHeight:0.##}   環 {level.BoxRegion.Rings.Length}   origin {level.BoxOrigin}");
-
-        builder.AppendLine($"關卡    {(level.IsSolved ? "已過關" : "進行中")}   提示 {level.HintsUsed}/3");
-
-        // P2-6：難度值。⚠️ 這裡只是「現在看得到它」——正式的顯示位置是 P2-15 的監控面板，
-        // 而這個 overlay 在正式版會自動關掉
-        builder.AppendLine($"難度    {level.Difficulty}   （1200 是基準批次的平均，一個標準差 200）");
-
-        // P2-13：局內統計。⚠️ 前景要用 ForegroundSecondsAt 不是 ForegroundSeconds——
-        // 後者只在「停止」時才累加，玩的時候一直是 0，看了會以為計時壞了
-        double foreground = level.ForegroundSecondsAt(GameClock.NowSeconds);
-        builder.AppendLine(
-            $"時間    前景 {foreground:F1}s　拖曳 {level.DragSeconds:F1}s（{level.DragCount} 次）" +
-            $"　思考 {level.ThinkingSecondsAt(GameClock.NowSeconds):F1}s");
-        builder.AppendLine(
-            $"局內    清空 {level.ClearCount} 次　提示 {level.HintsUsed} 次" +
-            $"　{(level.IsAbandoned ? "⚠️ 已放棄" : level.IsSolved ? "已過關" : "進行中")}");
 
         AppendCameraLine();
         AppendPointerLine();
@@ -267,10 +351,8 @@ public class DebugOverlay : MonoBehaviour
         // 沒有這一格的話會以為是輸入沒反應
         string phase = dragController.IsDragging ? "拖曳" : "按住";
 
-        // 「畫面上吸住了」與「盤面登記了」刻意會在拖曳中不一致（互動設計 §13.10），
-        // 所以兩個都印出來——不然那個差異在畫面上完全看不出來。
-        // ⚠️ 這一格也是驗「點一下不會偷偷 Lift」最快的地方：點一下已放置的片，
-        // 盤面那個字不該從「有」變「無」
+        // 「畫面上吸住了」與「盤面登記了」刻意會在拖曳中不一致（互動設計 §13.10），所以兩個都印出來。
+        // ⚠️ 這一格也是驗「點一下不會偷偷 Lift」最快的地方：點一下已放置的片，盤面那個字不該從「有」變「無」
         bool onBoard = level.Board[pressed.SlotIndex].OnBoard;
         builder.AppendLine($"{phase}    槽{pressed.SlotIndex} {pressed.Kind} " +
                            $"rot{pressed.Rotation}{(pressed.IsFlipped ? " 翻" : "")}   " +
@@ -278,14 +360,8 @@ public class DebugOverlay : MonoBehaviour
     }
 
     /// <summary>
-    /// 被選取（高亮）的是哪一片。
-    ///
-    /// ⚠️ 依互動設計 §4，<b>沒在被拖的時候</b>被選取的片必定不在盤面上。
-    /// 所以這一行同時是那條不變式的檢查點——沒在拖卻印出「盤面有」就代表規則破了，
-    /// 而畫面上只會表現成「按旋轉鈕的時候片飛出去」，離原因很遠。
-    ///
-    /// <b>拖曳中「盤面有」是正常的</b>：拿起已放置的片開始拖，盤面要到放手才把它 <c>Lift</c>。
-    /// 所以警告要扣掉這種情況，不然它每次拖都亮，就沒人看了。
+    /// 被選取（高亮）的是哪一片。⚠️ 依互動設計 §4，<b>沒在被拖的時候</b>被選取的片必定不在盤面上——
+    /// 這一行同時是那條不變式的檢查點。拖曳中「盤面有」是正常的（放手才 <c>Lift</c>），警告要扣掉那種情況。
     /// </summary>
     /// <param name="level">這一關的資料。</param>
     private void AppendSelectionLine(LevelData level)
@@ -335,9 +411,7 @@ public class DebugOverlay : MonoBehaviour
         builder.Append($"手指    ({world.x:0.##}, {world.y:0.##})");
     }
 
-    /// <summary>
-    /// 已放置片的面積和。片的面積只有 2 / 4 / 8 三種，全部放滿是 32。
-    /// </summary>
+    /// <summary>已放置片的面積和。片的面積只有 2 / 4 / 8 三種，全部放滿是 32。</summary>
     /// <param name="board">盤面。</param>
     /// <returns>面積和。</returns>
     private static double PlacedArea(BoardState board)
