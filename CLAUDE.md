@@ -48,6 +48,7 @@ Unity 6000.3.7f1 的**七巧板拼圖遊戲**，參加 2026 大專校院資訊�
 | `待辦清單.md` | **還沒做的事的單一清單**（P1 剩餘、待決、技術債） | 未來式，每天的工作起點 |
 | `協作交接_影片與輪廓.md` | **給協作者看的**：影片規格與注意事項、取輪廓的背景（逼近怎麼做）與前兩輪的紀錄 | 影片的唯一的家；取輪廓的介面 2026-10-17 起搬到下一列；我們這半的演算法邏輯在 `待辦清單.md` |
 | ⭐ `協作交接_辨識模組.md` | **給協作者看的**（2026-10-17）：他只補「照片 → JSON」一個洞——介面與骨架、照片保證什麼、JSON 怎麼回（寬高＝照片、y 朝上）、怎麼在自己 clone 的那份改一行接上去測、C-1／C-3／C-4。**只寫我們目前的東西、不等他回覆**（他會交給 AI 寫、規格自己處理；他手邊沒有 T20） | **取輪廓介面的唯一的家**；程式那邊的約定寫在 `IContourRecognizer` 的 XML doc，改一邊要改另一邊 |
+| ⭐ `協作交接_iPad打包.md` | **給幫忙打包 iPad 的人看的**（2026-10-23）：要準備什麼（Unity 版本一模一樣、git-lfs、repo 要加他）、切平台、**他要調的設定**、打包、測試清單與回報格式。使用者定「程式我們弄好、設定他自己調」 | iPad 打包的唯一的家；我們這邊的狀態在 `待辦清單.md`〈iPad 打包〉 |
 | `協作交接_影片素材.md` | **給協作者看的**：素材清單（分兩批）、每個鏡頭拍什麼、可以直接上投影片的數字、歷屆得獎影片清單 | 素材與鏡頭的唯一的家；規格與規則在上一列那份 |
 | `繳交文件/` | **10/5 報名交出去的成品**：系統概述文件（.docx 正本）、敏捷佐證說明書（.docx ＋ .pdf）、舊的 md 草稿。⚠️ 切結書、學生證、在學證明含簽名與個資，**被 `.gitignore` 擋掉、不進版控** | 交出去的版本；要改內容改這裡的 Word |
 | `協作交接_影片重拍.md` | **給協作者看的**（2026-09-28）：初稿的修正清單、新分工（主體改用負責人定稿的 `Tangrade_影片簡報.pptx`，他只做開場 10 秒＋結尾 30 秒）、完整時間軸與逐行字幕、影像辨識／逼近要他回覆的五題 | 重拍的唯一的家；字幕同時寫在 PPT 備忘稿裡，改一邊要改另一邊 |
@@ -265,7 +266,7 @@ dotnet test Tools/DotnetTests -- "NUnit.Where=name == RescaleDifficultyWeights"
 ## 環境限制
 
 - ⚠️ **唯一的第三方套件：NativeGallery**（2026-10-17，掃描模式「從檔案選擇」用；yasirkula，MIT）。`Packages/manifest.json` 用 git 網址裝、**釘在 `#v1.9.5`**——不釘的話每台機器抓到的版本不一樣。要升級先問使用者。
-  在 Unity 外編 `GameObject/` 時要把它的 `NativeGallery.cs` 與 `Android/*.cs` 一起加進暫時的 csproj（scratchpad clone 一份），**再用 `UNITY_ANDROID`（不加 `UNITY_EDITOR`）另外編一次**，Android 才有的分支（相機權限）才編得到。細節在 `程式說明書.md` §16.21
+  在 Unity 外編 `GameObject/` 時要把它的 `NativeGallery.cs` 與 `Android/*.cs` 一起加進暫時的 csproj（scratchpad clone 一份），**再用 `UNITY_ANDROID`（不加 `UNITY_EDITOR`）另外編一次**，Android 才有的分支（相機權限）才編得到。⭐ 2026-10-23 起 iOS 也要編一次：`UNITY_IOS` 加 `NativeGallery.cs` 與 `iOS/*.cs`（套件快取 `Library/PackageCache/com.yasirkula.nativegallery@…` 直接引用就好）。細節在 `程式說明書.md` §16.21
 - ⚠️ **Unity 官方的推論套件 `com.unity.ai.inference` 2.6.1**（2026-10-20，協作者的 U2Net 辨識模組帶進來的，模型在 `Resources/u2netp.onnx`）。版本釘在 manifest，要升級先問使用者。
   連帶裝進 `com.unity.dt.app-ui`、`com.unity.nuget.newtonsoft-json`，`burst` 變成直接相依；**Standalone 與 Android 的編譯符號自動多了 `SENTIS_ANALYTICS_ENABLED;APP_UI_EDITOR_ONLY`**（套件加的，切到哪個平台就加到哪個——第一次切 iOS 之類的新平台時 `ProjectSettings.asset` 會再被改一次，那是正常的）；`EditorBuildSettings.asset` 也多一條指向套件內 `App UI Settings.asset` 的設定。
   在 Unity 外編 `U2NetContourRecognizer` 時要多 Reference `Library/ScriptAssemblies/` 的 `Unity.InferenceEngine.dll` 與 `Tangram.Recognition.dll`。`Recognition/` 的測試（`Tangram.Recognition.Tests`）**`dotnet test` 跑不到**，要在 Unity 的 Test Runner 跑

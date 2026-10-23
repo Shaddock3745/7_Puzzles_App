@@ -137,9 +137,13 @@ public static class PhotoTextures
 /// <b>為什麼要外掛</b>：Unity 執行中完全沒有選檔案的功能（<c>EditorUtility.OpenFilePanel</c> 只在 Editor 裡有）。
 /// NativeGallery 是 yasirkula 寫的、MIT 授權，從 <c>Packages/manifest.json</c> 用 git 網址裝，釘在 v1.9.5。
 ///
-/// <b>三個平台三種下場</b>：
+/// <b>平台的下場</b>：
 /// <list type="bullet">
 /// <item><b>Android</b>：系統相簿。讀圖時外掛會照 EXIF 轉正、而且先縮到長邊 1024</item>
+/// <item>⭐ <b>iOS／iPadOS</b>（2026-10-23 打開）：跟 Android 同一條路。外掛在 iOS 14 以上用系統的 <c>PHPickerViewController</c>，
+///   <b>不需要相簿權限</b>（外掛把 iOS 固定成 permission-free 模式）；讀圖時一樣照 EXIF 轉正、縮到長邊（原生那半做的）。
+///   ⚠️ 專案的最低版本是 15.0，所以碰不到 iOS 13 以下那條要權限的舊選擇器。相簿說明字串之類的設定在
+///   <b>Project Settings → yasirkula → Native Gallery</b>，由打包的人調</item>
 /// <item><b>Editor</b>：外掛自己會開檔案視窗。⚠️ <b>這條不轉 EXIF、也不縮</b>（外掛只在手機上做這兩件），
 ///   縮圖由這支補上；EXIF 只有 Editor 會碰到，接受</item>
 /// <item><b>桌機版 exe 與其他</b>：回失敗。回饋收集版用不到掃描模式，不值得為它另寫 Windows 的檔案視窗</item>
@@ -174,11 +178,11 @@ public sealed class GalleryPhotoSource : IPhotoSource
 
     private IEnumerator Pick(Action<PhotoCaptureResult> onFinished)
     {
-#if UNITY_EDITOR || UNITY_ANDROID
+#if UNITY_EDITOR || UNITY_ANDROID || UNITY_IOS
         bool answered = false;
         string path = null;
 
-        // ⚠️ Editor 裡這一行會當場跳出檔案視窗、當場叫回呼；Android 上要等玩家選完、外掛轉回主執行緒才叫。
+        // ⚠️ Editor 裡這一行會當場跳出檔案視窗、當場叫回呼；Android 與 iOS 上要等玩家選完、外掛轉回主執行緒才叫。
         // 兩種都只是把答案記下來，下面一律等到下一幀以後才往外回——守住「不能當場回」
         NativeGallery.GetImageFromGallery(pickedPath =>
         {
@@ -221,7 +225,7 @@ public sealed class GalleryPhotoSource : IPhotoSource
         Finish(onFinished, PhotoCaptureResult.Succeeded(photo));
 #else
         yield return null;
-        Finish(onFinished, PhotoCaptureResult.Failed("這個版本不支援從檔案選擇（只有 Android 與 Editor 可以）。"));
+        Finish(onFinished, PhotoCaptureResult.Failed("這個版本不支援從檔案選擇（只有 Android、iOS 與 Editor 可以）。"));
 #endif
     }
 
