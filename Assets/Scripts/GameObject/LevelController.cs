@@ -696,8 +696,68 @@ public class LevelController : MonoBehaviour
     /// <param name="mode">要玩哪一種。</param>
     public void StartMode(GameMode mode)
     {
+        // ⭐ 中途離開（2026-10-23）：按的就是暫停那一關的模式 → 接著玩，不換題。
+        // 按了別的模式就照常進新的一關，暫停的那一關在 EnterLevel 被整包換掉——那一局作廢、不結算
+        if (pausedMode == mode && CanResume)
+        {
+            ResumePausedLevel();
+            return;
+        }
+
         CurrentMode = mode;
         EnterNextLevel();
+    }
+
+    // ───────── 中途離開（2026-10-23，待辦清單〈中途離開〉的丙）─────────
+    //
+    // 不結算、不換題：離開＝暫停（沒代價，回來還是它），放棄＝認輸（有代價），兩件事分開。
+    // ⚠️ 只在同一次執行裡成立：關掉 App 那一局就沒了（使用者 2026-10-23 定這次不存）——沒結算，所以也不扣分。
+
+    /// <summary>
+    /// 暫停中的那一關是哪個模式的。<b>沒有暫停中的關是 null。</b>
+    /// 記模式而不是只記「有沒有暫停」：暫停之後去試了掃描、取消回來，<see cref="CurrentMode"/> 已經變成掃描了，
+    /// 但盤面上還是那一關，按回原本的模式要接得上。
+    /// </summary>
+    private GameMode? pausedMode;
+
+    /// <summary>
+    /// ⭐ 有一關暫停中（主畫面蓋著它）。監控面板顯示「暫停中」，App 回到前景時也看它決定要不要重新計時。
+    /// </summary>
+    public bool IsLevelPaused => pausedMode.HasValue;
+
+    /// <summary>暫停的那一關還在、還沒結束（理論上一定成立，這是保險：被換掉時 <see cref="EnterLevel"/> 已經清了旗標）。</summary>
+    private bool CanResume => session?.Data != null && session.Data.Puzzle != null && !session.Data.IsFinished;
+
+    /// <summary>
+    /// ⭐ 主畫面要出現了：進行中的那一關暫停（2026-10-23）。<b>主畫面的 <c>Show</c> 叫這支</b>——
+    /// 盤面上的「回主畫面」與結果彈窗的「回主畫面」走同一支，所以兩個出口不會分家。
+    ///
+    /// 做三件事：記下是哪個模式、取消進行中的互動（拖到一半的片放回去，拖曳計時跟著停）、兩段計時都停。
+    /// <b>不卸載、不結算</b>：片原地留著，回來接著拼。
+    /// 沒有關、已經結束（打完了，下次按模式本來就是下一題）、已經暫停中：什麼都不做。
+    /// </summary>
+    public void PauseCurrentLevel()
+    {
+        if (pausedMode.HasValue) return;
+        LevelData level = session?.Data;
+        if (level == null || level.Puzzle == null || level.IsFinished) return;
+
+        // 先取消互動再停計時：取消會停拖曳計時，順序反過來也一樣，但這樣讀起來是「先放手、再暫停」
+        if (dragController != null) dragController.CancelInteraction();
+        level.StopAllTiming(GameClock.NowSeconds);
+        pausedMode = CurrentMode;
+
+        Debug.Log($"第 {levelIndex} 關暫停（{CurrentMode}），前景 {level.ForegroundSeconds:F1} 秒。" +
+                  "按同一個模式接著玩，按別的模式這一局作廢、不結算。", this);
+    }
+
+    /// <summary>接著玩暫停的那一關：模式切回它、前景重新計時。</summary>
+    private void ResumePausedLevel()
+    {
+        CurrentMode = pausedMode.Value;
+        pausedMode = null;
+        session.Data.StartForegroundTiming(GameClock.NowSeconds);
+        Debug.Log($"第 {levelIndex} 關接著玩（{CurrentMode}），前景到目前 {session.Data.ForegroundSeconds:F1} 秒。", this);
     }
 
     /// <summary>
@@ -793,7 +853,7 @@ public class LevelController : MonoBehaviour
         if (ScanSourceRequested == null)
         {
             Debug.LogError("掃描模式要跳選擇視窗，但場景裡沒有 ScanSourcePanel 在聽（ScanSourceRequested 沒人訂閱），回主畫面。", this);
-            AbortScan(ScanAbortReason.PuzzleFailed);
+            AbortScan(ScanAbortReason.Unexpected);
             return;
         }
 
@@ -831,7 +891,7 @@ public class LevelController : MonoBehaviour
         if (scanner == null)
         {
             Debug.LogError("LevelController 的「拍照畫面」欄位沒填：「新拍一張」用不了，回主畫面。", this);
-            AbortScan(ScanAbortReason.PuzzleFailed);
+            AbortScan(ScanAbortReason.PhotoFailed);
             return;
         }
 
@@ -862,7 +922,7 @@ public class LevelController : MonoBehaviour
         if (result.Status == ContourScanStatus.Cancelled)
         {
             Debug.Log("掃描取消，回主畫面。", this);
-            AbortScan(ScanAbortReason.Unexpected);
+            AbortScan(ScanAbortReason.Cancelled);
             return;
         }
 
@@ -883,7 +943,7 @@ public class LevelController : MonoBehaviour
             // 訊息會講是哪裡不合法（截斷、點太少、面積是零……），原樣帶出來
             Debug.LogWarning($"辨識模組交回來的輪廓讀不進來，回主畫面。{exception.Message}", this);
             DiscardPhoto(result.Photo);
-            AbortScan(ScanAbortReason.PhotoFailed);
+            AbortScan(ScanAbortReason.RecognitionFailed);
             return;
         }
 
@@ -929,7 +989,7 @@ public class LevelController : MonoBehaviour
         {
             Debug.LogWarning($"這條輪廓（{contour.PixelPoints.Count} 個點）一個候選都逼不出來，回主畫面。", this);
             DiscardPhoto(computation.Photo);
-            AbortScan(ScanAbortReason.Cancelled);
+            AbortScan(ScanAbortReason.PuzzleFailed);
             return;
         }
 
@@ -1023,7 +1083,7 @@ public class LevelController : MonoBehaviour
             Debug.LogError("算難度時出事了，回主畫面。例外的完整內容在下一行。", this);
             Debug.LogException(exception, this);
             DiscardPendingScan();
-            AbortScan(ScanAbortReason.RecognitionFailed);
+            AbortScan(ScanAbortReason.PuzzleFailed);
             return;
         }
 
@@ -1333,6 +1393,7 @@ public class LevelController : MonoBehaviour
         //    挑戰模式的等待同一個道理（P5-2）：等到一半從別的路進關的話，那一題好了也不該再進一次
         IsScanPending = false;
         waitingChallengeTarget = null;
+        pausedMode = null;      // 中途離開（2026-10-23）：暫停的那一關被換掉了，那一局作廢
         var enterClock = System.Diagnostics.Stopwatch.StartNew();
 
         // 1. 載入：算原點、建 Region、換掉整包資料
@@ -1421,6 +1482,10 @@ public class LevelController : MonoBehaviour
     {
         LevelData level = session?.Data;
         if (level == null) return;
+
+        // ⚠️ 暫停中（主畫面蓋著）不重新計時（2026-10-23）：不擋的話「回主畫面、切到別的 App、再切回來」，
+        // 前景就偷偷在主畫面上走，回來接著玩時被時間代價扣
+        if (inForeground && IsLevelPaused) return;
 
         if (inForeground) level.StartForegroundTiming(GameClock.NowSeconds);
         else level.StopAllTiming(GameClock.NowSeconds);

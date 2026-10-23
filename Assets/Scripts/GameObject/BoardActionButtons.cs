@@ -58,6 +58,13 @@ public class BoardActionButtons : MonoBehaviour
              + "還有次數可以按時才出現。")]
     [SerializeField] private GameObject hintButton;
 
+    [Tooltip("⭐「回主畫面」鈕（中途離開，2026-10-23）。onClick 接到這支的 OnLeavePressed。"
+             + "這一關還在進行中才出現；場景裡沒有主畫面（回饋收集）就永遠不出現。")]
+    [SerializeField] private GameObject leaveButton;
+
+    [Tooltip("按「回主畫面」時要叫它出來。留空的話 Awake 會自己找；找不到就不顯示那顆鈕。")]
+    [SerializeField] private MainMenuPanel mainMenu;
+
     [Tooltip("⭐ 提示與放棄共用的唯一門檻（秒）：每隔這麼久多開放一次提示，最多 3 次；"
              + "放棄鈕跟第三次提示同時出現（＝ 這個數字 × 3）。"
              + "⚠️ 評審現場只玩 2~3 局，demo 時調小（例如 5 → 5／10／15 秒）。")]
@@ -76,6 +83,9 @@ public class BoardActionButtons : MonoBehaviour
         if (inputController == null) inputController = FindFirstObjectByType<TouchInputController>();
         if (inputController == null)
             Debug.LogError("BoardActionButtons 找不到 TouchInputController：按鈕永遠不會出現。", this);
+
+        // 找不到不報錯：回饋收集場景本來就沒有主畫面，那裡「回主畫面」鈕不該出現
+        if (mainMenu == null) mainMenu = FindFirstObjectByType<MainMenuPanel>();
 
         if (undoButton == null || clearButton == null)
             Debug.LogError("BoardActionButtons 的按鈕欄位沒填滿：沒填的那顆不會被顯示或隱藏。", this);
@@ -103,6 +113,7 @@ public class BoardActionButtons : MonoBehaviour
         clearArea = RegisterArea(clearButton);
         abandonArea = RegisterArea(abandonButton);
         hintArea = RegisterArea(hintButton);
+        leaveArea = RegisterArea(leaveButton);
     }
 
     private void OnDisable()
@@ -112,6 +123,7 @@ public class BoardActionButtons : MonoBehaviour
         inputController.UnregisterPressBlockingArea(clearArea);
         inputController.UnregisterPressBlockingArea(abandonArea);
         inputController.UnregisterPressBlockingArea(hintArea);
+        inputController.UnregisterPressBlockingArea(leaveArea);
     }
 
     /// <param name="button">按鈕物件，可以是 null。</param>
@@ -136,6 +148,7 @@ public class BoardActionButtons : MonoBehaviour
     private RectTransform clearArea;
     private RectTransform abandonArea;
     private RectTransform hintArea;
+    private RectTransform leaveArea;
 
     /// <summary>
     /// 每幀重算「該不該顯示」。
@@ -156,6 +169,7 @@ public class BoardActionButtons : MonoBehaviour
         SetShown(clearButton, inputController != null && inputController.CanClearBoard);
         SetShown(abandonButton, CanAbandon);
         SetShown(hintButton, CanUseHint);
+        SetShown(leaveButton, CanLeave);
     }
 
     /// <summary>
@@ -226,5 +240,26 @@ public class BoardActionButtons : MonoBehaviour
     public void OnAbandonPressed()
     {
         if (inputController != null) inputController.AbandonLevel();
+    }
+
+    /// <summary>
+    /// ⭐「回主畫面」的顯示條件（中途離開，2026-10-23）：有主畫面、有一關、還沒結束。
+    /// 打完了不出現——結果彈窗本來就有出口，兩顆並存會讓人分不清哪一顆「算數」。
+    /// 抽屜打開時整排一起藏（<c>ButtonGroupVisibility</c>），這裡不另外判斷。
+    /// </summary>
+    private bool CanLeave =>
+        mainMenu != null
+        && inputController != null
+        && LevelSession.Current?.Data?.Puzzle != null
+        && !inputController.IsLevelComplete
+        && !inputController.IsLevelAbandoned;
+
+    /// <summary>
+    /// 「回主畫面」被按下（中途離開，2026-10-23）。接在 Unity <c>Button.onClick</c> 上。
+    /// 就是叫主畫面出來——暫停這一關是主畫面 <c>Show</c> 的事，跟結果彈窗的出口走同一條，兩邊不會分家。
+    /// </summary>
+    public void OnLeavePressed()
+    {
+        if (mainMenu != null) mainMenu.Show();
     }
 }

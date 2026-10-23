@@ -13,6 +13,10 @@ using UnityEngine;
 /// ⭐ 失敗的話多一行字告訴玩家為什麼（2026-10-23，<see cref="noticeText"/>），取消的不寫</item>
 /// </list>
 ///
+/// ⭐ <b>中途離開</b>（2026-10-23）：<see cref="Show"/> 一叫，進行中的那一關就暫停（<see cref="LevelController.PauseCurrentLevel"/>）；
+/// 再按同一個模式是接著玩，按別的模式是新的一關（暫停那局作廢、不結算）。
+/// 盤面上的「回主畫面」鈕（<see cref="BoardActionButtons"/>）與結果彈窗的出口都走 <see cref="Show"/>，兩個出口不會分家。
+///
 /// <b>跟 <see cref="LevelResultPanels"/> 同一個形狀</b>：不做事，只負責「什麼時候顯示」與
 /// 「把按下轉給別人」。模式的真相在 <see cref="LevelController.CurrentMode"/>，這裡不留第二份——
 /// 留了的話「下一題要抽還是要生」就有兩個答案。
@@ -164,7 +168,8 @@ public class MainMenuPanel : MonoBehaviour
     private void Start() => Show();
 
     /// <summary>
-    /// 顯示主畫面。從結果彈窗按「回主畫面」時也走這支。
+    /// 顯示主畫面。從結果彈窗按「回主畫面」、盤面上按「回主畫面」（中途離開）都走這支。
+    /// ⭐ 進行中的那一關暫停（2026-10-23，<see cref="LevelController.PauseCurrentLevel"/>；打完了的、沒有關的什麼都不做）。
     /// ⭐ 順便請 <see cref="LevelController"/> 在背景先把挑戰模式的下一題生好（P5-2，2026-10-23）——
     /// 玩家看主畫面的時候就生完了，按挑戰模式不用等。目標沒變的話那邊什麼都不多做，所以每次都叫是安全的。
     /// 上一次掃描失敗的訊息在這裡清掉（要寫的話 <see cref="OnScanAborted"/> 會在之後補上）。
@@ -175,6 +180,7 @@ public class MainMenuPanel : MonoBehaviour
         SetNotice(string.Empty);
         if (levelController == null) return;
 
+        levelController.PauseCurrentLevel();
         levelController.PrepareNextChallengeLevel();
     }
 
@@ -186,8 +192,8 @@ public class MainMenuPanel : MonoBehaviour
 
     /// <summary>「挑戰模式」被按下。接在 Unity <c>Button.onClick</c> 上。</summary>
     /// <remarks>
-    /// ⚠️ <b>按下去會凍住畫面零點幾到一點多秒</b>，那是出題在跑不是當掉——
-    /// 跟結果彈窗那顆「下一題」一模一樣，理由見 <see cref="LevelResultPanels.OnNextLevelPressed"/>。
+    /// 題目多半已經在主畫面出現時預生好了（P5-2，2026-10-23）；還沒好就蓋等待遮罩，不會凍住。
+    /// 暫停中的是挑戰模式的關，就是接著玩（2026-10-23）。
     /// </remarks>
     public void OnChallengeModePressed() => StartMode(GameMode.GeneratedByRating);
 
