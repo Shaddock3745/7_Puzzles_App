@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 
 /// <summary>
@@ -7,8 +8,9 @@ using UnityEngine;
 /// <item><b>挑戰模式</b>——照實力當場生題，就是原本的遊玩迴圈（P2-7 ＋ P2-14）</item>
 /// <item><b>圖形模式</b>——從題庫隨機抽具象題（貓、船之類），一輪之內不重複</item>
 /// <item><b>掃描模式</b>（2026-10-14，名稱暫定）——先跳選擇視窗（新拍一張／從檔案選擇，<see cref="ScanSourcePanel"/>，2026-10-17），
-/// 再取輪廓、照輪廓出題。⚠️ 辨識還是假的，見 <see cref="GameMode.Scan"/>。
-/// 選擇視窗取消、掃描取消或失敗時這裡會自己顯示回來（<see cref="LevelController.ScanAborted"/>）</item>
+/// 再取輪廓、照輪廓出題。
+/// 選擇視窗取消、掃描取消或失敗時這裡會自己顯示回來（<see cref="LevelController.ScanAborted"/>）；
+/// ⭐ 失敗的話多一行字告訴玩家為什麼（2026-10-23，<see cref="noticeText"/>），取消的不寫</item>
 /// </list>
 ///
 /// <b>跟 <see cref="LevelResultPanels"/> 同一個形狀</b>：不做事，只負責「什麼時候顯示」與
@@ -47,6 +49,22 @@ public class MainMenuPanel : MonoBehaviour
     [Tooltip("擋片區的登記對象。留空的話 Awake 會自己找。")]
     [SerializeField] private TouchInputController inputController;
 
+    [Header("掃描失敗時的訊息（2026-10-23，選填）")]
+    [Tooltip("主畫面上一行字：掃描失敗回來時寫原因，下次按任何模式或主畫面再出現時就清掉。留空的話不顯示（跟之前一樣）。")]
+    [SerializeField] private TMP_Text noticeText;
+
+    [Tooltip("拿照片時失敗：相機打不開、沒權限、照片讀不出來。")]
+    [SerializeField] private string photoFailedText = "打不開相機（或讀不到這張照片），請確認有允許使用相機。";
+
+    [Tooltip("辨識失敗：看不出照片裡的東西。")]
+    [SerializeField] private string recognitionFailedText = "看不出照片裡的東西，換一張背景乾淨、東西完整的照片試試。";
+
+    [Tooltip("出題失敗：這個形狀拼不出來。")]
+    [SerializeField] private string puzzleFailedText = "這個形狀拼不出來，換一樣東西試試。";
+
+    [Tooltip("設定或程式的問題。技術原因在 log。")]
+    [SerializeField] private string unexpectedText = "出了點問題，請再試一次。";
+
     /// <summary>登記進擋片區的那塊矩形，離場時要取消登記。</summary>
     private RectTransform blockingArea;
 
@@ -73,12 +91,46 @@ public class MainMenuPanel : MonoBehaviour
         levelController.SuppressAutoStart();
 
         // 掃描沒進關就結束（取消、失敗）時把主畫面顯示回來。不訂閱的話玩家會停在一個被藏起來的主畫面後面
-        levelController.ScanAborted += Show;
+        levelController.ScanAborted += OnScanAborted;
     }
 
     private void OnDestroy()
     {
-        if (levelController != null) levelController.ScanAborted -= Show;
+        if (levelController != null) levelController.ScanAborted -= OnScanAborted;
+    }
+
+    /// <summary>
+    /// 掃描沒有進關：主畫面顯示回來，失敗的話寫一行原因（2026-10-23）。<b>取消的不寫</b>——那是玩家自己選的。
+    /// 先 <see cref="Show"/> 再寫字：<see cref="Show"/> 會把上一次的訊息清掉。
+    /// </summary>
+    /// <param name="reason">為什麼沒進關。</param>
+    private void OnScanAborted(ScanAbortReason reason)
+    {
+        Show();
+        SetNotice(NoticeFor(reason));
+    }
+
+    /// <param name="reason">為什麼沒進關。</param>
+    /// <returns>給玩家看的那一句；取消時是空字串。</returns>
+    private string NoticeFor(ScanAbortReason reason)
+    {
+        switch (reason)
+        {
+            case ScanAbortReason.PhotoFailed: return photoFailedText;
+            case ScanAbortReason.RecognitionFailed: return recognitionFailedText;
+            case ScanAbortReason.PuzzleFailed: return puzzleFailedText;
+            case ScanAbortReason.Unexpected: return unexpectedText;
+            default: return string.Empty;
+        }
+    }
+
+    /// <summary>寫主畫面上那行訊息；空字串就藏起來。沒接 <see cref="noticeText"/> 的話什麼都不做。</summary>
+    /// <param name="text">要寫的字。</param>
+    private void SetNotice(string text)
+    {
+        if (noticeText == null) return;
+        noticeText.text = text;
+        noticeText.gameObject.SetActive(!string.IsNullOrEmpty(text));
     }
 
     /// <summary>
@@ -115,11 +167,15 @@ public class MainMenuPanel : MonoBehaviour
     /// 顯示主畫面。從結果彈窗按「回主畫面」時也走這支。
     /// ⭐ 順便請 <see cref="LevelController"/> 在背景先把挑戰模式的下一題生好（P5-2，2026-10-23）——
     /// 玩家看主畫面的時候就生完了，按挑戰模式不用等。目標沒變的話那邊什麼都不多做，所以每次都叫是安全的。
+    /// 上一次掃描失敗的訊息在這裡清掉（要寫的話 <see cref="OnScanAborted"/> 會在之後補上）。
     /// </summary>
     public void Show()
     {
         if (panel != null) panel.SetActive(true);
-        if (levelController != null) levelController.PrepareNextChallengeLevel();
+        SetNotice(string.Empty);
+        if (levelController == null) return;
+
+        levelController.PrepareNextChallengeLevel();
     }
 
     /// <summary>藏起主畫面。</summary>
@@ -156,6 +212,7 @@ public class MainMenuPanel : MonoBehaviour
     {
         if (levelController == null) return;
 
+        SetNotice(string.Empty);
         Hide();
         levelController.StartMode(mode);
     }

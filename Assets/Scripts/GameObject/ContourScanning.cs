@@ -28,6 +28,21 @@ public enum ContourScanStatus
 }
 
 /// <summary>
+/// ⭐ 失敗發生在哪一段（2026-10-23）。<c>LevelController</c> 照它決定給玩家看哪一句話——技術原因照舊在 <see cref="ContourScanResult.FailureReason"/>，只進 log。
+/// </summary>
+public enum ContourScanFailureStage
+{
+    /// <summary>沒有失敗。</summary>
+    None,
+
+    /// <summary>拿照片：相機打不開、沒權限、照片讀不出來。</summary>
+    Photo,
+
+    /// <summary>辨識：模型看不出東西、跑不出來、丟例外。<b>辨識模組回的失敗一律是這一段</b>（<see cref="ContourScanResult.Failed"/> 的預設值）。</summary>
+    Recognition,
+}
+
+/// <summary>
 /// 一次掃描（或一次辨識）的結果。三種下場用同一個型別，呼叫端只要寫一個回呼。
 /// </summary>
 public readonly struct ContourScanResult
@@ -41,6 +56,9 @@ public readonly struct ContourScanResult
     /// <summary>失敗的原因，給 log 與之後的畫面訊息用。<b>只有 <see cref="ContourScanStatus.Failed"/> 時有值</b>。</summary>
     public readonly string FailureReason;
 
+    /// <summary>⭐ 失敗發生在哪一段（2026-10-23）。<b>只有 <see cref="ContourScanStatus.Failed"/> 時不是 <see cref="ContourScanFailureStage.None"/></b>。</summary>
+    public readonly ContourScanFailureStage FailureStage;
+
     /// <summary>
     /// 拍到的照片（2026-10-14，照片對照用）。<b>可以是 null</b>（辨識模組那一層不帶照片；掃描那一層才會補上）。
     ///
@@ -50,11 +68,13 @@ public readonly struct ContourScanResult
     /// </summary>
     public readonly Texture2D Photo;
 
-    private ContourScanResult(ContourScanStatus status, string contourJson, string failureReason, Texture2D photo)
+    private ContourScanResult(ContourScanStatus status, string contourJson, string failureReason,
+                              ContourScanFailureStage failureStage, Texture2D photo)
     {
         Status = status;
         ContourJson = contourJson;
         FailureReason = failureReason;
+        FailureStage = failureStage;
         Photo = photo;
     }
 
@@ -62,16 +82,21 @@ public readonly struct ContourScanResult
     /// <param name="photo">拍到的照片，可以是 null。</param>
     /// <returns>成功的結果。</returns>
     public static ContourScanResult Succeeded(string contourJson, Texture2D photo = null) =>
-        new ContourScanResult(ContourScanStatus.Succeeded, contourJson, null, photo);
+        new ContourScanResult(ContourScanStatus.Succeeded, contourJson, null, ContourScanFailureStage.None, photo);
 
     /// <returns>玩家取消的結果。</returns>
     public static ContourScanResult Cancelled() =>
-        new ContourScanResult(ContourScanStatus.Cancelled, null, null, null);
+        new ContourScanResult(ContourScanStatus.Cancelled, null, null, ContourScanFailureStage.None, null);
 
-    /// <param name="reason">失敗的原因。</param>
+    /// <param name="reason">失敗的原因（技術的，只進 log）。</param>
+    /// <param name="stage">
+    /// 發生在哪一段。<b>預設是辨識</b>：辨識模組（協作者的程式）只會碰到這一段，不用知道有這個參數；
+    /// 拿照片那段由 <see cref="PhotoContourScanner"/> 明確傳 <see cref="ContourScanFailureStage.Photo"/>。
+    /// </param>
     /// <returns>失敗的結果。</returns>
-    public static ContourScanResult Failed(string reason) =>
-        new ContourScanResult(ContourScanStatus.Failed, null, reason, null);
+    public static ContourScanResult Failed(string reason, ContourScanFailureStage stage = ContourScanFailureStage.Recognition) =>
+        new ContourScanResult(ContourScanStatus.Failed, null, reason,
+                              stage == ContourScanFailureStage.None ? ContourScanFailureStage.Recognition : stage, null);
 }
 
 /// <summary>
@@ -200,7 +225,7 @@ public sealed class PhotoContourScanner : IContourScanner
         {
             Finish(onFinished, captured.Status == ContourScanStatus.Cancelled
                 ? ContourScanResult.Cancelled()
-                : ContourScanResult.Failed(captured.FailureReason));
+                : ContourScanResult.Failed(captured.FailureReason, ContourScanFailureStage.Photo));
             return;
         }
 

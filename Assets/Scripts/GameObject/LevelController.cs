@@ -28,6 +28,27 @@ public enum GameMode
 }
 
 /// <summary>
+/// ⭐ 掃描為什麼沒有進關（2026-10-23）。<see cref="LevelController.ScanAborted"/> 帶著它，主畫面照它決定給玩家看哪一句話。
+/// </summary>
+public enum ScanAbortReason
+{
+    /// <summary>玩家自己取消（選擇視窗、相機、相簿、選題畫面）。<b>不顯示任何訊息</b>——那是他選的。</summary>
+    Cancelled,
+
+    /// <summary>拿照片時失敗：相機打不開、沒權限、照片讀不出來。</summary>
+    PhotoFailed,
+
+    /// <summary>辨識失敗：模型看不出東西，或交回來的輪廓讀不進來。</summary>
+    RecognitionFailed,
+
+    /// <summary>出題失敗：一個候選都逼不出來，或算難度時出事。</summary>
+    PuzzleFailed,
+
+    /// <summary>設定或程式的問題（場景沒接好、設定檔讀不到）。玩家能做的只有再試一次，技術原因在 log。</summary>
+    Unexpected,
+}
+
+/// <summary>
 /// ⭐ 等待遮罩上要寫哪一個階段（P5-2，2026-10-23）。<see cref="LevelController.WaitingStage"/> 回答，<see cref="ScanWaitingCover"/> 照著換字。
 /// </summary>
 public enum LevelWaitingStage
@@ -291,8 +312,10 @@ public class LevelController : MonoBehaviour
     /// <b>為什麼用事件，不直接叫主畫面</b>：主畫面已經指向這支（按鈕要叫 <see cref="StartMode"/>），
     /// 這支再指回去就是環。這裡也沒有順序問題要防（只有一個訂閱者、做的事只有顯示自己），
     /// 所以不違反類別說明裡「換關不發事件」那一條。
+    ///
+    /// ⭐ 2026-10-23 起帶著<b>為什麼</b>（<see cref="ScanAbortReason"/>），主畫面照它顯示一句話給玩家；取消的不顯示。
     /// </summary>
-    public event System.Action ScanAborted;
+    public event System.Action<ScanAbortReason> ScanAborted;
 
     /// <summary>
     /// 這一場在玩哪一種題目。<b>預設是原本的遊玩迴圈</b>，所以沒有主畫面的場景（回饋收集、工具）行為不變。
@@ -770,7 +793,7 @@ public class LevelController : MonoBehaviour
         if (ScanSourceRequested == null)
         {
             Debug.LogError("掃描模式要跳選擇視窗，但場景裡沒有 ScanSourcePanel 在聽（ScanSourceRequested 沒人訂閱），回主畫面。", this);
-            AbortScan();
+            AbortScan(ScanAbortReason.PuzzleFailed);
             return;
         }
 
@@ -797,7 +820,7 @@ public class LevelController : MonoBehaviour
         // ⚠️ 失敗一律回主畫面：叫這支的時候主畫面與選擇視窗都已經藏起來了，默默 return 的話玩家會停在空畫面上
         if (difficultyWeights == null || !EnsureScanPipeline())
         {
-            AbortScan();        // 權重讀不到的話 Awake 已經報過錯
+            AbortScan(ScanAbortReason.Unexpected);        // 權重讀不到的話 Awake 已經報過錯
             return;
         }
 
@@ -808,7 +831,7 @@ public class LevelController : MonoBehaviour
         if (scanner == null)
         {
             Debug.LogError("LevelController 的「拍照畫面」欄位沒填：「新拍一張」用不了，回主畫面。", this);
-            AbortScan();
+            AbortScan(ScanAbortReason.PuzzleFailed);
             return;
         }
 
@@ -819,7 +842,7 @@ public class LevelController : MonoBehaviour
     public void CancelScanSourceChoice()
     {
         Debug.Log("選擇視窗取消，回主畫面。", this);
-        AbortScan();
+        AbortScan(ScanAbortReason.Cancelled);
     }
 
     /// <summary>
@@ -839,14 +862,14 @@ public class LevelController : MonoBehaviour
         if (result.Status == ContourScanStatus.Cancelled)
         {
             Debug.Log("掃描取消，回主畫面。", this);
-            AbortScan();
+            AbortScan(ScanAbortReason.Unexpected);
             return;
         }
 
         if (result.Status == ContourScanStatus.Failed)
         {
             Debug.LogWarning($"掃描失敗，回主畫面：{result.FailureReason}", this);
-            AbortScan();
+            AbortScan(result.FailureStage == ContourScanFailureStage.Photo ? ScanAbortReason.PhotoFailed : ScanAbortReason.RecognitionFailed);
             return;
         }
 
@@ -860,7 +883,7 @@ public class LevelController : MonoBehaviour
             // 訊息會講是哪裡不合法（截斷、點太少、面積是零……），原樣帶出來
             Debug.LogWarning($"辨識模組交回來的輪廓讀不進來，回主畫面。{exception.Message}", this);
             DiscardPhoto(result.Photo);
-            AbortScan();
+            AbortScan(ScanAbortReason.PhotoFailed);
             return;
         }
 
@@ -906,7 +929,7 @@ public class LevelController : MonoBehaviour
         {
             Debug.LogWarning($"這條輪廓（{contour.PixelPoints.Count} 個點）一個候選都逼不出來，回主畫面。", this);
             DiscardPhoto(computation.Photo);
-            AbortScan();
+            AbortScan(ScanAbortReason.Cancelled);
             return;
         }
 
@@ -1000,7 +1023,7 @@ public class LevelController : MonoBehaviour
             Debug.LogError("算難度時出事了，回主畫面。例外的完整內容在下一行。", this);
             Debug.LogException(exception, this);
             DiscardPendingScan();
-            AbortScan();
+            AbortScan(ScanAbortReason.RecognitionFailed);
             return;
         }
 
@@ -1036,7 +1059,7 @@ public class LevelController : MonoBehaviour
     {
         Debug.Log("選題畫面取消，回主畫面。", this);
         DiscardPendingScan();
-        AbortScan();
+        AbortScan(ScanAbortReason.Cancelled);
     }
 
     /// <summary>待選的掃描結果用不到了：釋放照片、清掉。</summary>
@@ -1092,7 +1115,10 @@ public class LevelController : MonoBehaviour
     }
 
     /// <summary>掃描沒有進關就結束了：讓主畫面顯示回來。待選的結果（如果有）一起丟掉。</summary>
-    private void AbortScan()
+    /// <param name="reason">
+    /// 為什麼沒進關（2026-10-23）。<b>這支只決定「為什麼」，給玩家看的那句話由主畫面決定</b>——字是 UI，住在場景裡、改字不用改程式。
+    /// </param>
+    private void AbortScan(ScanAbortReason reason)
     {
         DiscardPendingScan();
 
@@ -1104,7 +1130,7 @@ public class LevelController : MonoBehaviour
         }
         // 先收遮罩再叫主畫面回來：兩件事同一幀發生，順序其實看不出來，但「等待結束」在邏輯上先於「回主畫面」
         IsScanPending = false;
-        ScanAborted?.Invoke();
+        ScanAborted?.Invoke(reason);
     }
 
     /// <summary>
