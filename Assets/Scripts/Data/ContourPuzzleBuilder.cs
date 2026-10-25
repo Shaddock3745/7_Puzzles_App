@@ -50,17 +50,35 @@ namespace Tangram.Data
         /// </summary>
         public readonly Vector2 OutlineOffset;
 
+        /// <summary>
+        /// ⭐ <b>像不像</b>（2026-10-23）：照片輪廓跟拼出來的形狀，重疊的面積 ÷ 合起來的面積，0 ～ 1。選題畫面翻頁時顯示。
+        /// <b>不是逼近出來的題目沒有這個數字（null）。</b>
+        ///
+        /// ⚠️ 這是逼近<b>在格子上量的</b>（<see cref="ContourApproximation.IntersectionOverUnion"/>），
+        /// 跟驗收工具用多邊形算的 IoU 會差一點（通常在小數第二位）——拿來比哪個候選比較像夠用，
+        /// 影片字卡要引用平均值的話用驗收工具的數字。
+        /// </summary>
+        public readonly double? IntersectionOverUnion;
+
         /// <param name="name">給訊息看的名字。</param>
         /// <param name="puzzle">題目。</param>
         /// <param name="referenceSolution">七片的參考解。</param>
         /// <param name="outlineOffset">輪廓 → 題目座標的平移量，見 <see cref="OutlineOffset"/>。</param>
+        /// <param name="intersectionOverUnion">像不像，見 <see cref="IntersectionOverUnion"/>；沒有就不填。</param>
         /// <exception cref="ArgumentNullException">題目或參考解是 null。</exception>
-        public ContourPuzzle(string name, Puzzle puzzle, Placement[] referenceSolution, Vector2 outlineOffset)
+        /// <exception cref="ArgumentOutOfRangeException">像不像不在 0 ～ 1 之間（或不是數字）。</exception>
+        public ContourPuzzle(string name, Puzzle puzzle, Placement[] referenceSolution, Vector2 outlineOffset,
+                             double? intersectionOverUnion = null)
         {
             Name = name;
             Puzzle = puzzle ?? throw new ArgumentNullException(nameof(puzzle));
             ReferenceSolution = referenceSolution ?? throw new ArgumentNullException(nameof(referenceSolution));
             OutlineOffset = outlineOffset;
+
+            // 寫成「不在範圍內」的反面，NaN 才擋得到（NaN 跟什麼比都是 false）
+            if (intersectionOverUnion.HasValue && !(intersectionOverUnion.Value >= 0.0 && intersectionOverUnion.Value <= 1.0))
+                throw new ArgumentOutOfRangeException(nameof(intersectionOverUnion), intersectionOverUnion, "像不像要在 0 到 1 之間");
+            IntersectionOverUnion = intersectionOverUnion;
         }
     }
 }

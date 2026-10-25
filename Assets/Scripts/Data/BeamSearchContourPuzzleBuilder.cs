@@ -312,7 +312,9 @@ namespace Tangram.Data
             string name = settings.UsesFeatures
                 ? $"掃描題（IoU {approximation.IntersectionOverUnion:0.00}，突出蓋到 {approximation.ProtrusionCoverage:0.00}，缺口被填 {approximation.NotchFill:0.00}，貼合邊長 {approximation.SharedEdgeLength:0.0}）"
                 : $"掃描題（IoU {approximation.IntersectionOverUnion:0.00}，貼合邊長 {approximation.SharedEdgeLength:0.0}）";
-            return new ContourPuzzle(name, approximation.Puzzle, approximation.PiecesBySlot, approximation.OutlineOffset);
+            // ⭐ 2026-10-23：IoU 也帶過去，選題畫面翻頁時顯示（原本只寫在名字字串裡）
+            return new ContourPuzzle(name, approximation.Puzzle, approximation.PiecesBySlot, approximation.OutlineOffset,
+                                     approximation.IntersectionOverUnion);
         }
 
         /// <summary>

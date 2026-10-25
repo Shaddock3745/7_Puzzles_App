@@ -25,7 +25,8 @@ using UnityEngine.UI;
 /// <list type="number">
 /// <item>Canvas 底下建一個<b>全螢幕不透明</b> Panel，排在等待遮罩之後、選擇視窗之前</item>
 /// <item>裡面放：一個 RawImage 放照片（掛 <c>AspectRatioFitter</c>、Fit In Parent，這支會設比例）；一個 RawImage 放候選的剪影（正方形）；
-///   一行 TMP 文字顯示「第幾個／共幾個」（選填）；五顆 Button：上一個／下一個／拼這一題／重拍或重選／回主畫面</item>
+///   一行 TMP 文字顯示「第幾個／共幾個」（選填）；⭐ 一行 TMP 文字顯示「像不像」（選填，2026-10-23，翻頁時跟著換）；
+///   五顆 Button：上一個／下一個／拼這一題／重拍或重選／回主畫面</item>
 /// <item>另一個物件掛這支，填 panel、兩個 RawImage、頁數文字、上一個與下一個兩顆 Button（只有 1 個候選時會變灰）；
 ///   五顆 Button 的 <c>onClick</c> 分別接 <see cref="OnPreviousPressed"/>／<see cref="OnNextPressed"/>／<see cref="OnPlayPressed"/>／
 ///   <see cref="OnRetryPressed"/>／<see cref="OnCancelPressed"/></item>
@@ -45,6 +46,12 @@ public class ScanPickPanel : MonoBehaviour
 
     [Tooltip("顯示「第幾個／共幾個」的文字。選填。")]
     [SerializeField] private TMP_Text pageLabel;
+
+    [Tooltip("⭐ 顯示目前這個候選「像不像」的文字（2026-10-23）。選填；翻頁時跟著換，候選沒有數字時藏起來。")]
+    [SerializeField] private TMP_Text similarityLabel;
+
+    [Tooltip("「像不像」那行的格式。{0} 是 IoU（0～1）：{0:0%} 寫成 87%，{0:0.00} 寫成 0.87。")]
+    [SerializeField] private string similarityFormat = "像不像 {0:0%}";
 
     [Tooltip("「上一個」按鈕。選填：填了的話只有 1 個候選時會變灰。")]
     [SerializeField] private Button previousButton;
@@ -69,6 +76,9 @@ public class ScanPickPanel : MonoBehaviour
 
     /// <summary>這一輪生的剪影貼圖，跟候選同順序；藏起來時釋放。</summary>
     private readonly List<Texture2D> silhouettes = new List<Texture2D>();
+
+    /// <summary>這一輪的候選（只借看「像不像」）。是 <c>LevelController</c> 的，藏起來時放掉參照。</summary>
+    private IReadOnlyList<ContourPuzzle> candidates;
 
     private void Awake()
     {
@@ -139,6 +149,7 @@ public class ScanPickPanel : MonoBehaviour
         }
 
         ReleaseSilhouettes();
+        candidates = pending.Candidates;
         foreach (ContourPuzzle candidate in pending.Candidates)
             silhouettes.Add(PuzzleSilhouette.Draw(candidate.Puzzle, silhouetteSize));
 
@@ -150,12 +161,37 @@ public class ScanPickPanel : MonoBehaviour
         panel.SetActive(true);
     }
 
-    /// <summary>翻到第幾個：換剪影、更新頁數文字。</summary>
+    /// <summary>翻到第幾個：換剪影、更新頁數與「像不像」。</summary>
     private void ShowPage(int index)
     {
         currentIndex = index;
         if (candidateImage != null) candidateImage.texture = index < silhouettes.Count ? silhouettes[index] : null;
         if (pageLabel != null) pageLabel.text = $"{index + 1} / {silhouettes.Count}";
+        ShowSimilarity(candidates != null && index < candidates.Count ? candidates[index].IntersectionOverUnion : null);
+    }
+
+    /// <summary>
+    /// 寫「像不像」那一行（2026-10-23）。沒有數字就藏起來；格式字串寫壞了（例如少了右大括號）就退回百分比、寫一條警告，不讓選題畫面壞掉。
+    /// </summary>
+    /// <param name="intersectionOverUnion">目前這個候選的 IoU；沒有是 null。</param>
+    private void ShowSimilarity(double? intersectionOverUnion)
+    {
+        if (similarityLabel == null) return;
+
+        similarityLabel.gameObject.SetActive(intersectionOverUnion.HasValue);
+        if (!intersectionOverUnion.HasValue) return;
+
+        string text;
+        try
+        {
+            text = string.Format(similarityFormat, intersectionOverUnion.Value);
+        }
+        catch (System.FormatException)
+        {
+            Debug.LogWarning($"ScanPickPanel 的「像不像」格式字串寫壞了：「{similarityFormat}」，改用預設的百分比。", this);
+            text = $"像不像 {intersectionOverUnion.Value:0%}";
+        }
+        similarityLabel.text = text;
     }
 
     private void Hide()
@@ -163,6 +199,7 @@ public class ScanPickPanel : MonoBehaviour
         if (panel != null) panel.SetActive(false);
         if (photoImage != null) photoImage.texture = null;      // 照片不是這支的，不釋放
         if (candidateImage != null) candidateImage.texture = null;
+        candidates = null;                                       // 候選也不是這支的，只放掉參照
         ReleaseSilhouettes();
     }
 

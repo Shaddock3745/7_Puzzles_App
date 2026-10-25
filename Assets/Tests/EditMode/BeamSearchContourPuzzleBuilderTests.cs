@@ -178,6 +178,26 @@ namespace Tangram.Data.Tests
             // 照片對照要用的平移量要一起帶過去（2026-10-14），不然照片疊不回盒子上
             Assert.AreEqual(best.OutlineOffset.x, built.OutlineOffset.x, 0f);
             Assert.AreEqual(best.OutlineOffset.y, built.OutlineOffset.y, 0f);
+
+            // 像不像也要帶過去（2026-10-23），選題畫面翻頁時顯示——原本只寫在名字字串裡
+            Assert.AreEqual(best.IntersectionOverUnion, built.IntersectionOverUnion);
+        }
+
+        /// <summary>
+        /// 題目的「像不像」是選填的（2026-10-23）：不是逼近出來的題目沒有這個數字；有的話一定在 0 ～ 1 之間，NaN 也擋。
+        /// </summary>
+        [Test]
+        public void 題目的像不像是選填的而且要在0到1之間()
+        {
+            Placement[] solution = Fixtures.ClassicSquare();
+            Puzzle puzzle = Puzzle.FromPlacements(solution);
+
+            Assert.IsNull(new ContourPuzzle("沒有數字", puzzle, solution, Vector2.zero).IntersectionOverUnion);
+            Assert.AreEqual(0.87, new ContourPuzzle("有數字", puzzle, solution, Vector2.zero, 0.87).IntersectionOverUnion);
+            Assert.AreEqual(1.0, new ContourPuzzle("剛好", puzzle, solution, Vector2.zero, 1.0).IntersectionOverUnion);
+
+            foreach (double bad in new[] { -0.01, 1.01, double.NaN })
+                Assert.Throws<ArgumentOutOfRangeException>(() => new ContourPuzzle("壞的", puzzle, solution, Vector2.zero, bad), $"{bad}");
         }
 
         /// <summary>
