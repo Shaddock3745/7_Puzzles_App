@@ -118,3 +118,4 @@ dotnet test Tools/DotnetTests
 - [NativeGallery](https://github.com/yasirkula/UnityNativeGallery)（MIT）——掃描模式從相簿選照片
 - [Unity Inference Engine](https://docs.unity3d.com/Packages/com.unity.ai.inference@latest)（`com.unity.ai.inference`）——在裝置上執行辨識模型
 - [U²-Net](https://github.com/xuebinqin/U-2-Net)（Apache-2.0）的輕量版 `u2netp`——前景剪影辨識
+- [Noto Sans TC](https://fonts.google.com/noto/specimen/Noto+Sans+TC)（SIL Open Font License 1.1，授權全文在 `Assets/Font/OFL.txt`）——介面字型
