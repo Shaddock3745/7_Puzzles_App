@@ -4589,7 +4589,7 @@ MonoBehaviour:
   hintButton: {fileID: 21302644}
   leaveButton: {fileID: 1031037946}
   mainMenu: {fileID: 311465952}
-  hintIntervalSeconds: 5
+  hintIntervalSeconds: 45
 --- !u!4 &720275649
 Transform:
   m_ObjectHideFlags: 0
