@@ -1,0 +1,42 @@
+# tests.yml —— 每次 push 都在 GitHub 上跑一次全部的自動化測試（持續集成）
+#
+# 為什麼需要這份（2026-10-28 加）：
+#   測試原本只在開發機上跑（dotnet test，幾十秒），有沒有跑、跑的是哪一版，
+#   只有開發者自己知道。放到 GitHub 上跑，每個 commit 旁邊都會有綠勾或紅叉，
+#   任何人點進去都看得到「這一版的測試過了沒」。
+#
+# 跑的是什麼：
+#   跟本機一模一樣的 `dotnet test Tools/DotnetTests`（Data／Core 兩層＋EditMode 測試）。
+#   GameObject／Editor／Recognition 三層要 Unity 才編得到，這裡跑不到——
+#   跟 CLAUDE.md〈怎麼跑測試〉講的範圍相同。[Explicit] 的工具本來就不在 Run All 裡，這裡也不跑。
+#
+# 為什麼用 Windows 主機：
+#   開發機是 Windows，路徑、中文檔名、時間相關的測試都是在 Windows 上驗過的。
+#   Linux 比較省額度，但第一次很可能要為了環境差異修一兩輪，決賽前不值得。
+
+name: 測試
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:   # 也可以在 Actions 頁面手動按一次
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      # 測試只讀文字檔（權重檔、校準題），不碰 LFS 裡的二進位（模型、圖片），所以不用抓 LFS
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # 印出每一條測試的結果；失敗時在 Actions 頁面直接看得到是哪一條
+      - name: 跑全部測試
+        run: dotnet test Tools/DotnetTests --logger "console;verbosity=normal"
+        env:
+          DOTNET_NOLOGO: true
+          DOTNET_CLI_TELEMETRY_OPTOUT: true
