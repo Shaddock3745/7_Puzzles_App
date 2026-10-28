@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>看板完成圖</title>
+<!--
+  看板完成圖（burn-up）＋自動化測試數，2026-10-28 做的，給決賽簡報（可視性、技術性那幾頁）截圖用。
+  定案在 文件/進度/待辦清單.md〈決賽報告方向〉第 ③ 條。
+
+  資料全部寫死在下面的 <script> 裡，要更新就重撈三樣再貼回來：
+    1. ISSUES：gh issue list --state all --limit 200 --json number,title,createdAt,closedAt,stateReason
+       （NOT_PLANNED → "dropped"、COMPLETED → "done"、還開著 → ""）
+    2. COMMITS：git log --format=%ad --date=short | sort | uniq -c
+    3. TESTS：每一個有 commit 的日子，取那天最後一個 commit 開 git worktree，跑 dotnet test Tools/DotnetTests，
+       記「通過」的數字。Unity 才跑得到的 Recognition 測試不在內。
+  ⚠️ 看板欄位（In Progress／Testing）的移動歷史 GitHub 不提供，所以這是完成圖，不是累積流量圖（CFD）——
+     頁面上的註記照實寫，改圖時不要改名。
+-->
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --band: #f1f0ec;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #77766f;
+    --grid: #e6e5e0;
+    --axis: #b5b4ad;
+    --series-done: #2a78d6;
+    --series-scope: #52514e;
+    --series-tests: #eb6834;
+    --tooltip-bg: #ffffff;
+    --tooltip-border: #d9d8d2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --band: #232321;
+      --text-primary: #f0efec;
+      --text-secondary: #c3c2b7;
+      --text-muted: #9a998f;
+      --grid: #2e2e2b;
+      --axis: #55554f;
+      --series-done: #3987e5;
+      --series-scope: #c3c2b7;
+      --series-tests: #d95926;
+      --tooltip-bg: #262624;
+      --tooltip-border: #3a3a37;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --band: #232321;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #9a998f;
+    --grid: #2e2e2b;
+    --axis: #55554f;
+    --series-done: #3987e5;
+    --series-scope: #c3c2b7;
+    --series-tests: #d95926;
+    --tooltip-bg: #262624;
+    --tooltip-border: #3a3a37;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    font-family: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  main { max-width: 1100px; margin: 0 auto; padding: 28px 16px 40px; }
+  h1 { font-size: 24px; margin: 0 0 4px; font-weight: 700; }
+  .subtitle { color: var(--text-secondary); margin: 0 0 16px; font-size: 14px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 0 0 8px; font-size: 14px; color: var(--text-secondary); }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .legend svg { flex: none; }
+  .chart { position: relative; }
+  .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .tooltip {
+    position: absolute; pointer-events: none; display: none;
+    background: var(--tooltip-bg); border: 1px solid var(--tooltip-border); border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.12);
+    padding: 10px 12px; font-size: 13px; min-width: 190px; max-width: 300px; z-index: 2;
+  }
+  .tooltip .date { font-weight: 700; margin-bottom: 6px; }
+  .tooltip .row { display: flex; justify-content: space-between; gap: 16px; color: var(--text-secondary); }
+  .tooltip .row b { color: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tooltip .row span { white-space: nowrap; }
+  .tooltip .key { display: inline-flex; align-items: center; gap: 6px; }
+  .tooltip .closed { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--tooltip-border); color: var(--text-secondary); }
+  .note { color: var(--text-muted); font-size: 13px; margin: 14px 0 0; }
+  details { margin-top: 20px; font-size: 14px; }
+  summary { cursor: pointer; color: var(--text-secondary); }
+  .table-wrap { overflow-x: auto; margin-top: 10px; }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; }
+  th, td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { color: var(--text-secondary); font-weight: 600; }
+  td.number { font-variant-numeric: tabular-nums; white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>看板完成圖（burn-up）</h1>
+  <p class="subtitle">2026-08-21 ～ 2026-10-28　GitHub issue 46 張、commit 130 個，加上每天的自動化測試數</p>
+
+  <div class="legend" aria-hidden="true">
+    <span><svg width="26" height="10"><line x1="1" y1="5" x2="25" y2="5" stroke="var(--series-done)" stroke-width="2.5" stroke-linecap="round"/></svg>完成的卡</span>
+    <span><svg width="26" height="10"><line x1="1" y1="5" x2="25" y2="5" stroke="var(--series-scope)" stroke-width="2" stroke-dasharray="5 4" stroke-linecap="round"/></svg>範圍（開過的卡 − 決定不做的）</span>
+    <span><svg width="26" height="10"><line x1="1" y1="5" x2="25" y2="5" stroke="var(--series-tests)" stroke-width="2.5" stroke-linecap="round"/></svg>自動化測試數（下圖）</span>
+  </div>
+
+  <div class="chart" id="chart">
+    <svg id="plot" viewBox="0 0 1000 600" role="img" aria-labelledby="plot-title plot-desc">
+      <title id="plot-title">看板完成圖與自動化測試數</title>
+      <desc id="plot-desc">上圖：完成的卡從 0 張累積到 38 張，範圍最後是 43 張。標出 #19 中途回饋從 9/3 開卡到 10/20 決定不做共 47 天。下圖：自動化測試從 9/3 的 53 個成長到 590 個。完整數字見下方資料表。</desc>
+    </svg>
+    <div class="tooltip" id="tooltip" role="status"></div>
+  </div>
+
+  <p class="note">
+    範圍＝開過的卡減去以「不做」關掉的卡（YOLO spike 兩張、中途回饋一張）。
+    GitHub 不提供看板欄位（In Progress／Testing）的移動歷史，所以這是完成圖，不是累積流量圖（CFD）。
+    測試數＝每天最後一個 commit 跑 <code>dotnet test</code> 的通過數；Unity 才跑得到的辨識模組測試不在內。10/5 ～ 10/13 是初賽審查期間，刻意休息。
+  </p>
+
+  <details>
+    <summary>資料表：46 張卡</summary>
+    <div class="table-wrap"><table id="issue-table">
+      <thead><tr><th>#</th><th>卡</th><th>開卡</th><th>關卡</th><th>結果</th><th>天數</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </details>
+</main>
+
+<script>
+// [編號, 開卡日, 關卡日（還開著是空字串）, "done"／"dropped"／"", 標題]
+const ISSUES = [
+  [1, "2026-08-21", "2026-08-21", "done", "建立Git Repository"],
+  [2, "2026-08-21", "2026-08-21", "done", "Unity 空骨架"],
+  [3, "2026-08-21", "2026-08-21", "done", "看板建置"],
+  [4, "2026-08-21", "2026-09-02", "done", "定義Piece資料結構"],
+  [5, "2026-08-21", "2026-09-03", "done", "定義InputSource介面"],
+  [6, "2026-08-21", "2026-09-03", "done", "定義PuzzleValidator骨架"],
+  [7, "2026-08-21", "2026-09-03", "dropped", "YOLO 環境驗證 spike"],
+  [8, "2026-08-21", "2026-09-03", "dropped", "記錄 spike 結果"],
+  [9, "2026-09-03", "2026-09-05", "done", "P1-1 座標橋接 BoardView"],
+  [10, "2026-09-03", "2026-09-05", "done", "P1-2 片的顯示 PieceView"],
+  [11, "2026-09-03", "2026-09-06", "done", "P1-3 盒子顯示 BoxView"],
+  [12, "2026-09-03", "2026-09-03", "done", "P1-4 Geometry 的區域判定"],
+  [13, "2026-09-03", "2026-09-08", "done", "P1-5 待用區 TrayView"],
+  [14, "2026-09-03", "2026-09-06", "done", "P1-6 拖曳控制 TouchInputController"],
+  [15, "2026-09-03", "2026-09-08", "done", "P1-7 吸附層改造（盒子模式）"],
+  [16, "2026-09-03", "2026-09-07", "done", "P1-8 旋轉／翻面按鈕"],
+  [17, "2026-09-03", "2026-09-08", "done", "P1-9 Undo"],
+  [18, "2026-09-03", "2026-09-09", "done", "P1-10 過關判定重寫"],
+  [19, "2026-09-03", "2026-10-20", "dropped", "P1-11 中途回饋（第一、二層）"],
+  [20, "2026-09-03", "2026-09-06", "done", "P1-12 除錯 overlay"],
+  [21, "2026-09-03", "2026-09-11", "done", "P1-13 手感調參"],
+  [22, "2026-09-09", "2026-09-09", "done", "P2-1 抽出共用的擺法枚舉原語"],
+  [23, "2026-09-09", "2026-09-11", "done", "P2-2 難度特徵函數"],
+  [24, "2026-09-09", "2026-09-11", "done", "P2-3 出題器 第一版：隨便生"],
+  [25, "2026-09-09", "2026-09-11", "done", "P2-4 生十題塞進遊戲玩一次"],
+  [26, "2026-09-09", "2026-09-11", "done", "P2-5 跑一次批次統計"],
+  [27, "2026-09-11", "2026-09-12", "done", "P2-6 權重與尺度"],
+  [28, "2026-09-11", "2026-09-12", "done", "P2-7 出題器 第二版：照難度生"],
+  [29, "2026-09-12", "2026-09-12", "done", "P2-8a 存檔格式定案（字串、路徑、追邊）"],
+  [30, "2026-09-12", "2026-09-12", "done", "P2-13 局內統計（ELO 的輸入）"],
+  [31, "2026-09-12", "2026-09-13", "done", "P2-14 ELO 換算（實力值隨每局更新）"],
+  [32, "2026-09-12", "2026-09-14", "done", "P2-15 監控面板最小版（把「為什麼 +13」變成看得見的）"],
+  [33, "2026-09-12", "2026-10-04", "done", "P4 系統概述文件（初賽只看這個 + 影片）"],
+  [34, "2026-09-12", "2026-10-04", "done", "P4 三分鐘作品影片（含那 30 秒的腳本）"],
+  [35, "2026-09-12", "2026-10-04", "done", "P4 報名資料（10/5 15:00 截止，含團體照與證件）"],
+  [36, "2026-10-14", "2026-10-17", "done", "P5-1 掃描模式：流程接通（相機、辨識、出題三段先放假實作）"],
+  [37, "2026-10-14", "2026-10-28", "done", "P5-2 換關等待：背景出題（先第一次進關，再每次換關）"],
+  [38, "2026-10-14", "2026-10-23", "done", "P5-3 監控面板進 App（❓ 先定要不要做）"],
+  [39, "2026-10-14", "2026-10-20", "done", "P2-8b 持久化：進度存檔（中途離開在等它）"],
+  [40, "2026-10-14", "", "", "P5-4 取輪廓接進 App：真的相機、辨識、逼近（時限 10/25）"],
+  [41, "2026-10-14", "", "", "C-1 真實樣本 3～5 組（原照片＋輪廓 JSON）"],
+  [42, "2026-10-14", "", "", "C-2 影片重拍交接第五節：五題的書面回覆"],
+  [43, "2026-10-14", "2026-10-20", "done", "C-3 辨識模組交付：實作 IContourRecognizer（.cs＋模型檔）"],
+  [44, "2026-10-14", "", "", "C-4 取輪廓的準確率數字與量法"],
+  [45, "2026-10-17", "2026-10-17", "done", "P5-5 照片對照：掃描題把照片疊在盤面上（開關＋過關後自動顯示）"],
+  [46, "2026-10-20", "", "", "P5-6 掃描辨識不凍畫面：分段計時 → 分幀推論＋暖機"],
+];
+
+// 每天的 commit 數（git log）
+const COMMITS = {
+  "2026-08-21": 2, "2026-09-03": 4, "2026-09-04": 3, "2026-09-06": 8, "2026-09-07": 4, "2026-09-08": 6,
+  "2026-09-09": 6, "2026-09-10": 9, "2026-09-11": 8, "2026-09-12": 18, "2026-09-13": 2, "2026-09-14": 7,
+  "2026-09-15": 3, "2026-09-17": 1, "2026-09-20": 1, "2026-09-21": 2, "2026-09-22": 3, "2026-09-23": 2,
+  "2026-09-24": 2, "2026-09-25": 2, "2026-10-03": 1, "2026-10-04": 3, "2026-10-14": 7, "2026-10-17": 5,
+  "2026-10-18": 1, "2026-10-20": 2, "2026-10-21": 5, "2026-10-23": 7, "2026-10-25": 1, "2026-10-27": 5,
+  "2026-10-28": 2,
+};
+
+// 每個有 commit 的日子，當天最後一個 commit 的測試通過數（沒 commit 的日子沿用前一天）
+const TESTS = {
+  "2026-09-03": 53, "2026-09-04": 90, "2026-09-06": 108, "2026-09-07": 108, "2026-09-08": 112, "2026-09-09": 136,
+  "2026-09-10": 228, "2026-09-11": 237, "2026-09-12": 276, "2026-09-13": 313, "2026-09-14": 423, "2026-09-15": 470,
+  "2026-09-17": 470, "2026-09-20": 475, "2026-09-21": 485, "2026-09-22": 485, "2026-09-23": 485, "2026-09-24": 495,
+  "2026-09-25": 495, "2026-10-03": 495, "2026-10-04": 495, "2026-10-14": 519, "2026-10-17": 536, "2026-10-18": 555,
+  "2026-10-20": 555, "2026-10-21": 570, "2026-10-23": 589, "2026-10-25": 590, "2026-10-27": 590, "2026-10-28": 590,
+};
+
+// 階段：背景的帶狀
+const PHASES = [
+  ["P0 骨架", "2026-08-21", "2026-09-02"],
+  ["P1 原型", "2026-09-03", "2026-09-08"],
+  ["P2 演算法", "2026-09-09", "2026-09-14"],
+  ["打磨與報名", "2026-09-15", "2026-10-04"],
+  ["初賽審查", "2026-10-05", "2026-10-13"],
+  ["P5 決賽準備", "2026-10-14", "2026-10-28"],
+];
+
+const START = new Date(2026, 7, 21);
+const DAYS = 69;                                   // 8/21 ～ 10/28
+const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
+
+function dayIndex(text) {
+  const [year, month, day] = text.split("-").map(Number);
+  return Math.round((new Date(year, month - 1, day) - START) / 86400000);
+}
+function dateOf(index) { return new Date(2026, 7, 21 + index); }
+function isoOf(index) {
+  const date = dateOf(index);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+function shortOf(index) { const date = dateOf(index); return `${date.getMonth() + 1}/${date.getDate()}`; }
+
+// ---- 每天的累積值 ----
+const series = [];
+let lastTests = null;
+for (let d = 0; d < DAYS; d++) {
+  let opened = 0, dropped = 0, done = 0;
+  for (const [, created, closed, reason] of ISSUES) {
+    if (dayIndex(created) <= d) opened++;
+    if (closed && dayIndex(closed) <= d) {
+      if (reason === "dropped") dropped++;
+      if (reason === "done") done++;
+    }
+  }
+  const iso = isoOf(d);
+  if (iso in TESTS) lastTests = TESTS[iso];
+  series.push({ d, scope: opened - dropped, done, tests: lastTests, measured: iso in TESTS, commits: COMMITS[iso] || 0 });
+}
+
+// ---- 版面 ----
+const SVG_NS = "http://www.w3.org/2000/svg";
+const width = 1000, left = 52, right = 120;
+const top1 = 44, height1 = 300, maximum1 = 50;
+const top2 = top1 + height1 + 44, height2 = 160, maximum2 = 600;
+const bottom = top2 + height2;
+const plot = document.getElementById("plot");
+plot.setAttribute("viewBox", `0 0 ${width} ${bottom + 34}`);
+
+const x = d => left + d / DAYS * (width - left - right);
+const y1 = v => top1 + height1 - v / maximum1 * height1;
+const y2 = v => top2 + height2 - v / maximum2 * height2;
+
+function element(name, attributes, parent = plot) {
+  const node = document.createElementNS(SVG_NS, name);
+  for (const key in attributes) node.setAttribute(key, attributes[key]);
+  parent.appendChild(node);
+  return node;
+}
+function text(content, attributes, parent = plot) {
+  const node = element("text", Object.assign({ "font-size": 13, fill: "var(--text-secondary)" }, attributes), parent);
+  node.textContent = content;
+  return node;
+}
+
+// 階段帶（隔一個塗底色）與標籤
+PHASES.forEach(([name, from, to], i) => {
+  const x0 = x(dayIndex(from)), x1 = x(dayIndex(to) + 1);
+  if (i % 2 === 0) element("rect", { x: x0, y: top1 - 26, width: x1 - x0, height: bottom - top1 + 26, fill: "var(--band)" });
+  text(name, { x: (x0 + x1) / 2, y: top1 - 10, "text-anchor": "middle", "font-size": 13, fill: "var(--text-muted)" });
+});
+
+// 橫格線與 y 軸數字
+for (let v = 0; v <= maximum1; v += 10) {
+  element("line", { x1: left, x2: width - right, y1: y1(v), y2: y1(v), stroke: v === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 });
+  text(v, { x: left - 8, y: y1(v) + 4, "text-anchor": "end", fill: "var(--text-muted)" });
+}
+for (let v = 0; v <= maximum2; v += 200) {
+  element("line", { x1: left, x2: width - right, y1: y2(v), y2: y2(v), stroke: v === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 });
+  text(v, { x: left - 8, y: y2(v) + 4, "text-anchor": "end", fill: "var(--text-muted)" });
+}
+text("卡（張）", { x: left - 8, y: top1 - 32, "text-anchor": "end", "font-size": 12, fill: "var(--text-muted)" });
+text("測試（個）", { x: left, y: top2 - 12, "font-size": 12, fill: "var(--text-muted)" });
+
+// x 軸：每週一
+for (let d = 0; d <= DAYS; d++) {
+  if (d < DAYS && dateOf(d).getDay() !== 1) continue;
+  if (d === DAYS) continue;
+  element("line", { x1: x(d), x2: x(d), y1: bottom, y2: bottom + 5, stroke: "var(--axis)" });
+  text(shortOf(d), { x: x(d), y: bottom + 20, "text-anchor": "middle", fill: "var(--text-muted)" });
+}
+
+// 階梯折線：累積數字一天變一次
+function stepPath(values, scale) {
+  let path = "";
+  let started = false;
+  values.forEach((v, d) => {
+    if (v === null) return;
+    if (!started) { path += `M${x(d)},${scale(v)}`; started = true; }
+    else path += `V${scale(v)}`;
+    path += `H${x(d + 1)}`;
+  });
+  return path;
+}
+
+// ---- 上圖：完成圖 ----
+element("path", { d: stepPath(series.map(s => s.scope), y1), fill: "none", stroke: "var(--series-scope)", "stroke-width": 2, "stroke-dasharray": "6 4", "stroke-linejoin": "round" });
+element("path", { d: stepPath(series.map(s => s.done), y1), fill: "none", stroke: "var(--series-done)", "stroke-width": 2.5, "stroke-linejoin": "round" });
+
+const last = series[DAYS - 1];
+text(`範圍 ${last.scope}`, { x: x(DAYS) + 10, y: y1(last.scope) + 4, fill: "var(--text-primary)", "font-weight": 600 });
+text(`完成 ${last.done}`, { x: x(DAYS) + 10, y: y1(last.done) + 4, fill: "var(--text-primary)", "font-weight": 600 });
+
+// 決定不做的兩個時間點（範圍線上的空心點）
+function dropMarker(dayText, label, anchor, dx, dy) {
+  const d = dayIndex(dayText);
+  const v = series[d].scope;
+  element("circle", { cx: x(d) + 1, cy: y1(v), r: 4.5, fill: "var(--surface-1)", stroke: "var(--series-scope)", "stroke-width": 2 });
+  if (label) text(label, { x: x(d) + dx, y: y1(v) + dy, "text-anchor": anchor, "font-size": 13, fill: "var(--text-secondary)" });
+}
+dropMarker("2026-09-03", "YOLO spike 否決（−2）", "end", -8, 4);
+dropMarker("2026-10-20", null);                    // 文字由下面 #19 的括號講，括號右端直接落在這個點上
+
+// #19：開卡到決定不做的 47 天。放在範圍線上方的空白——範圍最高 43，這一段不會跟任何線重疊
+{
+  const from = dayIndex("2026-09-03"), to = dayIndex("2026-10-20");
+  const level = y1(45.5);
+  const group = element("g", { stroke: "var(--text-secondary)", "stroke-width": 1.5, fill: "none" });
+  element("path", { d: `M${x(from) + 1},${level + 6}V${level}H${x(to) + 1}V${y1(series[to].scope) - 5}` }, group);
+  text(`#19 中途回饋：開卡 9/3 → 延後到 P2 → 10/20 決定不做，共 ${to - from} 天`,
+       { x: (x(from) + x(to + 1)) / 2, y: level - 8, "text-anchor": "middle", "font-size": 13, fill: "var(--text-primary)" });
+}
+
+// ---- 下圖：測試數 ----
+element("path", { d: stepPath(series.map(s => s.tests), y2), fill: "none", stroke: "var(--series-tests)", "stroke-width": 2.5, "stroke-linejoin": "round" });
+series.forEach(s => {
+  if (!s.measured) return;
+  element("circle", { cx: x(s.d) + 1, cy: y2(s.tests), r: 3, fill: "var(--series-tests)", stroke: "var(--surface-1)", "stroke-width": 1.5 });
+});
+{
+  const first = series.find(s => s.tests !== null);
+  text(first.tests, { x: x(first.d) - 6, y: y2(first.tests) + 4, "text-anchor": "end", fill: "var(--text-primary)", "font-weight": 600 });
+  text(`${last.tests} 個`, { x: x(DAYS) + 10, y: y2(last.tests) + 4, fill: "var(--text-primary)", "font-weight": 600 });
+}
+
+// ---- 滑鼠：十字線＋提示框 ----
+const crosshair = element("line", { y1: top1, y2: bottom, stroke: "var(--text-muted)", "stroke-width": 1, "stroke-dasharray": "3 3", visibility: "hidden" });
+const hoverDone = element("circle", { r: 5, fill: "var(--series-done)", stroke: "var(--surface-1)", "stroke-width": 2, visibility: "hidden" });
+const hoverScope = element("circle", { r: 5, fill: "var(--series-scope)", stroke: "var(--surface-1)", "stroke-width": 2, visibility: "hidden" });
+const hoverTests = element("circle", { r: 5, fill: "var(--series-tests)", stroke: "var(--surface-1)", "stroke-width": 2, visibility: "hidden" });
+const hitArea = element("rect", { x: left, y: top1 - 26, width: width - left - right, height: bottom - top1 + 26, fill: "transparent" });
+const tooltip = document.getElementById("tooltip");
+const chart = document.getElementById("chart");
+
+function swatch(color, dashed) {
+  return `<svg width="16" height="8" aria-hidden="true"><line x1="1" y1="4" x2="15" y2="4" stroke="${color}" stroke-width="2.5"${dashed ? ' stroke-dasharray="4 3"' : ""}/></svg>`;
+}
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function show(event) {
+  const box = plot.getBoundingClientRect();
+  const scale = box.width / width;
+  const svgX = (event.clientX - box.left) / scale;
+  const d = Math.max(0, Math.min(DAYS - 1, Math.floor((svgX - left) / (width - left - right) * DAYS)));
+  const s = series[d];
+  const middle = (x(d) + x(d + 1)) / 2;
+
+  crosshair.setAttribute("x1", middle); crosshair.setAttribute("x2", middle); crosshair.setAttribute("visibility", "visible");
+  hoverDone.setAttribute("cx", middle); hoverDone.setAttribute("cy", y1(s.done)); hoverDone.setAttribute("visibility", "visible");
+  hoverScope.setAttribute("cx", middle); hoverScope.setAttribute("cy", y1(s.scope)); hoverScope.setAttribute("visibility", "visible");
+  if (s.tests !== null) {
+    hoverTests.setAttribute("cx", middle); hoverTests.setAttribute("cy", y2(s.tests)); hoverTests.setAttribute("visibility", "visible");
+  } else hoverTests.setAttribute("visibility", "hidden");
+
+  const iso = isoOf(d);
+  const closedToday = ISSUES.filter(([, , closed]) => closed === iso);
+  const openedToday = ISSUES.filter(([, created]) => created === iso).length;
+  let html = `<div class="date">${shortOf(d)}（${WEEKDAYS[dateOf(d).getDay()]}）</div>`;
+  html += `<div class="row"><span class="key">${swatch("var(--series-done)")}完成</span><b>${s.done}</b></div>`;
+  html += `<div class="row"><span class="key">${swatch("var(--series-scope)", true)}範圍</span><b>${s.scope}</b></div>`;
+  html += `<div class="row"><span>進行中</span><b>${s.scope - s.done}</b></div>`;
+  html += `<div class="row"><span class="key">${swatch("var(--series-tests)")}測試</span><b>${s.tests === null ? "—" : s.tests}</b></div>`;
+  html += `<div class="row"><span>commit／開卡</span><b>${s.commits}／${openedToday}</b></div>`;
+  if (closedToday.length) {
+    html += `<div class="closed">` + closedToday.map(([number, , , reason, title]) =>
+      `${reason === "dropped" ? "不做" : "完成"} #${number} ${escapeHtml(title)}`).join("<br>") + `</div>`;
+  }
+  tooltip.innerHTML = html;
+  tooltip.style.display = "block";
+
+  const chartBox = chart.getBoundingClientRect();
+  const pointerX = event.clientX - chartBox.left;
+  const tooltipWidth = tooltip.offsetWidth;
+  const placeLeft = pointerX + 16 + tooltipWidth > chartBox.width;
+  tooltip.style.left = `${placeLeft ? pointerX - 16 - tooltipWidth : pointerX + 16}px`;
+  tooltip.style.top = `${Math.max(0, event.clientY - chartBox.top - 40)}px`;
+}
+function hide() {
+  [crosshair, hoverDone, hoverScope, hoverTests].forEach(node => node.setAttribute("visibility", "hidden"));
+  tooltip.style.display = "none";
+}
+hitArea.addEventListener("pointermove", show);
+hitArea.addEventListener("pointerleave", hide);
+
+// ---- 資料表 ----
+const body = document.querySelector("#issue-table tbody");
+for (const [number, created, closed, reason, title] of ISSUES) {
+  const row = document.createElement("tr");
+  const days = closed ? dayIndex(closed) - dayIndex(created) : DAYS - 1 - dayIndex(created);
+  const result = reason === "done" ? "完成" : reason === "dropped" ? "不做" : "進行中";
+  row.innerHTML = `<td class="number">#${number}</td><td>${escapeHtml(title)}</td><td class="number">${created.slice(5).replace("-", "/")}</td>`
+    + `<td class="number">${closed ? closed.slice(5).replace("-", "/") : "—"}</td><td>${result}</td><td class="number">${days}${closed ? "" : "＋"}</td>`;
+  body.appendChild(row);
+}
+</script>
+</body>
+</html>
