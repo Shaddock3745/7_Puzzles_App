@@ -1,0 +1,139 @@
+<!doctype html>
+<!--
+  決賽展示區海報（A1 橫式 841×594 mm，貼在桌子前緣往下垂）。
+  整張是一個 SVG，座標單位就是公釐，所以印多大都不會跑版。
+  七片的顏色抄自 PieceSpriteLibrary.SlotColors，跟遊戲裡一樣。
+  字型用 repo 裡的 Noto Sans TC（相對路徑），離線也印得出來。
+  列印：Chrome 開這個檔 → 列印 → 另存為 PDF，邊界選「無」（@page 已經指定 A1 橫式）。
+  讀者是路過的人，不是評審：只講「這是什麼、好不好玩」，驗證與開發的數字不放（使用者 10/30 定）。
+  ⚠️ 匿名：不能出現學校、課程、教授的名字。
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>展示區海報</title>
+<style>
+  @font-face {
+    font-family: "Noto Sans TC Local";
+    src: url("../../Assets/Font/NotoSansTC-VariableFont_wght.ttf") format("truetype");
+    font-weight: 100 900;
+  }
+  @page { size: 841mm 594mm; margin: 0; }
+  html, body { margin: 0; background: #d9d6cf; }
+  body { padding: 24px 16px; font-family: "Noto Sans TC Local", "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+  .note { max-width: 1200px; margin: 0 auto 12px; color: #444; font-size: 14px; }
+  svg.poster { display: block; width: 100%; max-width: 1200px; height: auto; margin: 0 auto;
+               box-shadow: 0 4px 24px rgba(0,0,0,.18); font-family: inherit; }
+  @media print {
+    body { padding: 0; background: none; }
+    .note { display: none; }
+    svg.poster { width: 841mm; height: 594mm; max-width: none; box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+<p class="note">初稿 · A1 橫式 841×594 mm · 印的時候在 Chrome 選「列印 → 另存為 PDF」、邊界「無」</p>
+
+<svg class="poster" viewBox="0 0 841 594" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="lift" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="4" dy="6" stdDeviation="5" flood-color="#000" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <!-- 底色 -->
+  <rect width="841" height="594" fill="#FAF6EE"/>
+
+  <!-- 左上：引導到桌上（海報掛在桌子前緣下面，往上指就是平板） -->
+  <g transform="translate(40 30)">
+    <rect width="200" height="42" rx="21" fill="#2B2A33"/>
+    <text x="100" y="29" text-anchor="middle" font-size="21" font-weight="700" fill="#FAF6EE">↑ 桌上就能試玩</text>
+  </g>
+
+  <!-- 左：七巧板。原始座標是邊長 280 的正方形（一格 35），整組放大 1.15 倍；兩片被拿起來 -->
+  <g transform="translate(50 118) scale(1.15)">
+    <g stroke="#FAF6EE" stroke-width="3" stroke-linejoin="round">
+      <polygon points="0,0 280,0 140,140" fill="#E8613C"/>       <!-- 大三角 -->
+      <polygon points="0,0 140,140 0,280" fill="#E9A13B"/>       <!-- 大三角 -->
+      <polygon points="280,140 280,280 140,280" fill="#A8C13F"/> <!-- 中三角 -->
+      <polygon points="140,140 210,210 70,210" fill="#3E9BD4"/>  <!-- 小三角 -->
+      <polygon points="140,140 210,70 280,140 210,210" fill="#6B72C9"/> <!-- 正方形 -->
+    </g>
+    <!-- 拿走的兩片留下的空位 -->
+    <g fill="none" stroke="#B9B2A4" stroke-width="2.5" stroke-dasharray="7 6" stroke-linejoin="round">
+      <polygon points="280,0 280,140 210,70"/>
+      <polygon points="0,280 70,210 210,210 140,280"/>
+    </g>
+    <!-- 拿起來的兩片 -->
+    <g filter="url(#lift)" stroke="#FAF6EE" stroke-width="3" stroke-linejoin="round">
+      <polygon points="280,0 280,140 210,70" fill="#3FB58A" transform="translate(10 -46) rotate(-22 250 70)"/>
+      <polygon points="0,280 70,210 210,210 140,280" fill="#D4589B" transform="translate(64 40) rotate(-12 105 245)"/>
+    </g>
+  </g>
+
+  <!-- 右：標題 -->
+  <text x="444" y="122" font-size="20" font-weight="500" fill="#7A7468" letter-spacing="2">七巧板拼圖 App</text>
+  <text x="440" y="226" font-size="104" font-weight="800" fill="#2B2A33">巧級</text>
+  <text x="654" y="224" font-size="34" font-weight="600" fill="#2B2A33">Tangrade</text>
+  <text x="444" y="290" font-size="34" font-weight="700" fill="#E8613C">你變強，題目就跟著變難</text>
+  <text x="444" y="328" font-size="17" font-weight="500" fill="#7A7468">全程離線・不用帳號・每一題保證拼得出來</text>
+
+  <!-- 右：迴圈 -->
+  <g font-weight="700" text-anchor="middle">
+    <g transform="translate(444 362)">
+      <rect width="86" height="66" rx="12" fill="#FFFFFF" stroke="#E8613C" stroke-width="3"/>
+      <text x="43" y="31" font-size="19" fill="#2B2A33">當場出題</text>
+      <text x="43" y="53" font-size="13" font-weight="500" fill="#7A7468">每次都不一樣</text>
+    </g>
+    <g transform="translate(542 362)">
+      <rect width="86" height="66" rx="12" fill="#FFFFFF" stroke="#E9A13B" stroke-width="3"/>
+      <text x="43" y="31" font-size="19" fill="#2B2A33">算出難度</text>
+      <text x="43" y="53" font-size="13" font-weight="500" fill="#7A7468">看形狀算出來</text>
+    </g>
+    <g transform="translate(640 362)">
+      <rect width="86" height="66" rx="12" fill="#FFFFFF" stroke="#3FB58A" stroke-width="3"/>
+      <text x="43" y="31" font-size="19" fill="#2B2A33">你來拼</text>
+      <text x="43" y="53" font-size="13" font-weight="500" fill="#7A7468">卡住有提示</text>
+    </g>
+    <g transform="translate(738 362)">
+      <rect width="86" height="66" rx="12" fill="#FFFFFF" stroke="#3E9BD4" stroke-width="3"/>
+      <text x="43" y="31" font-size="19" fill="#2B2A33">換算實力</text>
+      <text x="43" y="53" font-size="13" font-weight="500" fill="#7A7468">依表現升降</text>
+    </g>
+  </g>
+  <g fill="none" stroke="#2B2A33" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M532 395 h8 m-5 -5 l5 5 l-5 5"/>
+    <path d="M630 395 h8 m-5 -5 l5 5 l-5 5"/>
+    <path d="M728 395 h8 m-5 -5 l5 5 l-5 5"/>
+    <!-- 回到第一格：下一題 -->
+    <path d="M781 432 v14 q0 14 -14 14 h-266 q-14 0 -14 -14 v-10"/>
+    <path d="M482 441 l5 -6 l5 6"/>
+  </g>
+  <text x="634" y="494" text-anchor="middle" font-size="18" font-weight="600" fill="#2B2A33">下一題照你的實力出，不會太難、也不會太簡單</text>
+
+  <!-- 右下：掃描模式 -->
+  <g transform="translate(444 512)">
+    <rect width="380" height="46" rx="12" fill="#2B2A33"/>
+    <!-- 相機 -->
+    <g transform="translate(16 11)" fill="none" stroke="#FAF6EE" stroke-width="2.5" stroke-linejoin="round">
+      <path d="M0 7 q0 -3 3 -3 h6 l3 -4 h10 l3 4 h6 q3 0 3 3 v14 q0 3 -3 3 h-28 q-3 0 -3 -3 z"/>
+      <circle cx="17.5" cy="14" r="5.5"/>
+    </g>
+    <text x="64" y="30" font-size="21" font-weight="800" fill="#FAF6EE">拍照變題目</text>
+    <text x="182" y="29" font-size="15" font-weight="500" fill="#D6D0C4">拍身邊的東西，七片拼出來</text>
+  </g>
+
+  <!-- 底：七片的顏色排成一條 -->
+  <g>
+    <rect x="0"     y="570" width="120.2" height="24" fill="#E8613C"/>
+    <rect x="120.1" y="570" width="120.2" height="24" fill="#E9A13B"/>
+    <rect x="240.3" y="570" width="120.2" height="24" fill="#A8C13F"/>
+    <rect x="360.4" y="570" width="120.2" height="24" fill="#3FB58A"/>
+    <rect x="480.6" y="570" width="120.2" height="24" fill="#3E9BD4"/>
+    <rect x="600.7" y="570" width="120.2" height="24" fill="#6B72C9"/>
+    <rect x="720.9" y="570" width="120.2" height="24" fill="#D4589B"/>
+  </g>
+</svg>
+</body>
+</html>
