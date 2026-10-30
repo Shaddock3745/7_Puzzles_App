@@ -340,7 +340,7 @@ dropMarker("2026-10-20", null);                    // 文字由下面 #19 的括
   const level = y1(45.5);
   const group = element("g", { stroke: "var(--text-secondary)", "stroke-width": 1.5, fill: "none" });
   element("path", { d: `M${x(from) + 1},${level + 6}V${level}H${x(to) + 1}V${y1(series[to].scope) - 5}` }, group);
-  text(`#19 中途回饋：開卡 9/3 → 延後到 P2 → 10/20 決定不做，共 ${to - from} 天`,
+  text(`#19「拼到一半，提醒哪一片沒地方放」：9/3 開卡 → 延後 → 10/20 決定不做，共 ${to - from} 天`,
        { x: (x(from) + x(to + 1)) / 2, y: level - 8, "text-anchor": "middle", "font-size": 13, fill: "var(--text-primary)" });
 }
 
