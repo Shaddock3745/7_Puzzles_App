@@ -1,5 +1,7 @@
+using Tangram.Core;
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 /// <summary>
 /// ⭐ <b>簡易主畫面</b>（2026-09-23）：兩顆按鈕，選這一場要玩哪一種題目。
@@ -35,6 +37,7 @@ using UnityEngine;
 /// <item>兩顆的 <c>onClick</c> 分別接到 <see cref="OnChallengeModePressed"/> /
 /// <see cref="OnFigurativeModePressed"/></item>
 /// <item>（2026-10-14）第三顆「掃描模式」的 <c>onClick</c> 接到 <see cref="OnScanModePressed"/></item>
+/// <item>（2026-10-30）「清除紀錄」鈕（只在展示版出現）拖進 <see cref="clearProgressButton"/>，<c>onClick</c> 接到 <see cref="OnClearProgressPressed"/></item>
 /// <item>⚠️ <b>這支腳本掛在另一個物件上，不能掛在 Panel 身上</b>——
 /// 停用的物件不跑 <c>Update</c> 也收不到別人叫它的機會，藏起來就再也開不回來
 /// （除錯記錄 004 踩過一次）</item>
@@ -69,6 +72,27 @@ public class MainMenuPanel : MonoBehaviour
     [Tooltip("設定或程式的問題。技術原因在 log。")]
     [SerializeField] private string unexpectedText = "出了點問題，請再試一次。";
 
+    [Header("清除紀錄（2026-10-30，只在展示版出現）")]
+    [Tooltip("「清除紀錄」鈕。onClick 接 OnClearProgressPressed。不是展示版（DemonstrationBuild）時開場就藏起來。選填。")]
+    [SerializeField] private GameObject clearProgressButton;
+
+    [Tooltip("清除之後寫在訊息那一行的字。{0} 是清除之後的實力。")]
+    [SerializeField] private string progressClearedText = "紀錄已清除，實力回到 {0}。";
+
+    [Header("快速提示（2026-10-30，只在展示版出現）")]
+    [Tooltip("「快速提示」勾選。On Value Changed 接 OnQuickHintToggled（選 Dynamic bool 那一區的）。不是展示版時開場就藏起來。選填。")]
+    [SerializeField] private Toggle quickHintToggle;
+
+    [Tooltip("勾起來時的提示間隔（秒）。放棄鈕＝這個 × 3。不勾時回到場景裡 BoardActionButtons 原本設的值。")]
+    [Min(1f)]
+    [SerializeField] private float quickHintIntervalSeconds = 5f;
+
+    [Tooltip("提示間隔的真相在它身上。留空的話 Awake 會自己找。")]
+    [SerializeField] private BoardActionButtons boardActionButtons;
+
+    /// <summary>場景裡原本設的提示間隔，開場記一次；取消勾選時改回它（45 秒不寫死在這裡）。</summary>
+    private float originalHintIntervalSeconds;
+
     /// <summary>登記進擋片區的那塊矩形，離場時要取消登記。</summary>
     private RectTransform blockingArea;
 
@@ -83,6 +107,21 @@ public class MainMenuPanel : MonoBehaviour
             Debug.LogError(
                 "MainMenuPanel 掛在它自己要開關的 Panel 上了。藏起來之後這支就跟著被停用，" +
                 "再也沒辦法把自己開回來。請把這支腳本移到另一個物件上（照 LevelResultPanels 的做法）。", this);
+
+        // 展示版才有：換評審時從頭開始用的。只在開場決定一次（編譯時就定了，執行中不會變）
+        if (clearProgressButton != null) clearProgressButton.SetActive(DemonstrationBuild.IsActive);
+
+        // 快速提示：同一個開關。每次開 App 都從「不勾」開始（不記住，使用者定）——
+        // 不通知地設成 false，免得場景裡存成勾起來的話開場就被改成 5 秒、卻沒人知道
+        if (boardActionButtons == null) boardActionButtons = FindFirstObjectByType<BoardActionButtons>();
+        if (boardActionButtons != null) originalHintIntervalSeconds = boardActionButtons.HintIntervalSeconds;
+        if (quickHintToggle != null)
+        {
+            quickHintToggle.SetIsOnWithoutNotify(false);
+            quickHintToggle.gameObject.SetActive(DemonstrationBuild.IsActive);
+            if (boardActionButtons == null && DemonstrationBuild.IsActive)
+                Debug.LogError("MainMenuPanel 找不到 BoardActionButtons：「快速提示」勾了不會有作用。", this);
+        }
 
         if (levelController == null)
         {
@@ -207,6 +246,49 @@ public class MainMenuPanel : MonoBehaviour
     /// 選擇視窗取消、掃描取消或失敗會經由 <see cref="LevelController.ScanAborted"/> 叫回 <see cref="Show"/>。
     /// </remarks>
     public void OnScanModePressed() => StartMode(GameMode.Scan);
+
+    /// <summary>
+    /// ⭐「快速提示」勾選變了（2026-10-30，只在展示版出現）。接在 Toggle 的 <c>On Value Changed</c>（Dynamic bool）上。
+    /// 勾了：提示間隔改成 <see cref="quickHintIntervalSeconds"/>（放棄＝× 3）；不勾：改回場景原本的值。
+    ///
+    /// ⚠️ <b>ELO 的平衡跟著變</b>：提示代價 P（30 秒）是配 45 秒間隔定的（<c>SkillRatingSettings.hintPenaltySeconds</c> 的說明），
+    /// 間隔 5 秒時「卡住就拿提示」很划算——跟 K 的 10 倍同一類展示用的調整，所以只在展示版。
+    /// </summary>
+    /// <param name="isOn">勾了沒。</param>
+    public void OnQuickHintToggled(bool isOn)
+    {
+        if (boardActionButtons == null || !DemonstrationBuild.IsActive) return;
+
+        float seconds = isOn ? quickHintIntervalSeconds : originalHintIntervalSeconds;
+        boardActionButtons.SetHintIntervalSeconds(seconds);
+        Debug.Log($"快速提示{(isOn ? "開" : "關")}：提示間隔 {seconds:0.#} 秒，放棄鈕 {seconds * LevelData.MaximumHints:0.#} 秒。", this);
+    }
+
+    /// <summary>
+    /// ⭐「清除紀錄」被按下（2026-10-30，只在展示版出現）。接在 Unity <c>Button.onClick</c> 上。
+    /// 做事的是 <see cref="LevelController.ResetProgress"/>（刪檔、實力回起始值、暫停的那關作廢、重生下一題），這裡只轉達、寫一行結果。
+    /// 主畫面不藏：清完還在主畫面上，接著按模式就是從頭開始。
+    /// </summary>
+    public void OnClearProgressPressed()
+    {
+        if (levelController == null || !DemonstrationBuild.IsActive) return;
+
+        int? rating = levelController.ResetProgress();
+        if (!rating.HasValue) return;      // ELO 設定讀不到，LevelController 開場已經報過錯
+
+        string text;
+        try
+        {
+            text = string.Format(progressClearedText, rating.Value);
+        }
+        catch (System.FormatException)
+        {
+            // 格式字串寫壞了也不能讓按鈕壞掉（同選題畫面「像不像」那行）
+            Debug.LogWarning($"MainMenuPanel 的清除訊息格式寫壞了：「{progressClearedText}」，改用預設的字。", this);
+            text = $"紀錄已清除，實力回到 {rating.Value}。";
+        }
+        SetNotice(text);
+    }
 
     /// <summary>
     /// 先藏起自己再進關。

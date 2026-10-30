@@ -22,6 +22,9 @@ using UnityEngine;
 /// <see cref="OnClearPressed"/></item>
 /// <item>⚠️ <b>這支腳本掛在另一個物件上，不能掛在那兩顆按鈕身上</b>（理由見下）</item>
 /// <item>把兩顆的 <c>GameObject</c> 填進下面兩個欄位</item>
+/// <item>⭐ 放棄的確認小窗（2026-10-29）：Canvas 底下一個全螢幕 Panel（蓋在按鈕排上面、結果彈窗下面），
+/// 裡面「繼續拼」與「放棄」兩顆鈕，分別接 <see cref="OnAbandonCancelPressed"/>／<see cref="OnAbandonConfirmPressed"/>，
+/// Panel 填進 <c>abandonConfirmPanel</c></item>
 /// </list>
 ///
 /// ⚠️ <b>擺位：四顆鈕不要排在會互相推擠的群組裡。</b>
@@ -54,6 +57,11 @@ public class BoardActionButtons : MonoBehaviour
              + "⚠️ 它跟另外兩顆不一樣：卡夠久才會出現，見下面那個門檻。")]
     [SerializeField] private GameObject abandonButton;
 
+    [Tooltip("⭐ 放棄的確認小窗（2026-10-29，第二輪回饋）。全螢幕、要擋住底下的按鈕（Image 勾 Raycast Target）；"
+             + "裡面兩顆鈕：「繼續拼」接 OnAbandonCancelPressed、「放棄」接 OnAbandonConfirmPressed。"
+             + "留空的話按放棄就直接放棄（回饋收集場景是這樣）。⚠️ 不能是這支腳本自己所在的物件。")]
+    [SerializeField] private GameObject abandonConfirmPanel;
+
     [Tooltip("提示鈕的 GameObject（2026-09-15）。onClick 接到這支的 OnHintPressed。"
              + "還有次數可以按時才出現。")]
     [SerializeField] private GameObject hintButton;
@@ -78,6 +86,18 @@ public class BoardActionButtons : MonoBehaviour
     /// </summary>
     private float StuckSecondsBeforeAbandon => hintIntervalSeconds * LevelData.MaximumHints;
 
+    /// <summary>現在的提示間隔（秒）。主畫面的「快速提示」開場時讀一次，記下場景原本的值（2026-10-30）。</summary>
+    public float HintIntervalSeconds => hintIntervalSeconds;
+
+    /// <summary>
+    /// ⭐ 改提示間隔（2026-10-30，展示版主畫面的「快速提示」勾選叫這支）。<b>真相還是這個欄位</b>，勾選不另存一份。
+    ///
+    /// 改了<b>馬上生效</b>：按鈕每幀拿「卡了幾秒」跟間隔比，所以玩到一半回主畫面改小、再回去，
+    /// 已經累積的提示與放棄鈕會一起出現——同一套規則照算，不是 bug。
+    /// </summary>
+    /// <param name="seconds">新的間隔（秒），小於 1 時夾到 1（同 Inspector 的下限）。</param>
+    public void SetHintIntervalSeconds(float seconds) => hintIntervalSeconds = Mathf.Max(1f, seconds);
+
     private void Awake()
     {
         if (inputController == null) inputController = FindFirstObjectByType<TouchInputController>();
@@ -97,6 +117,19 @@ public class BoardActionButtons : MonoBehaviour
                 "BoardActionButtons 掛在它自己要開關的按鈕上了。第一幀條件不成立時它會把自己 " +
                 "SetActive(false)，而停用的物件不再跑 Update——按鈕從此永遠不會出現。" +
                 "請把這支腳本移到另一個物件上（照 PieceActionButtons 的做法）。", this);
+
+        if (abandonConfirmPanel == gameObject)
+        {
+            Debug.LogError("BoardActionButtons 掛在放棄的確認小窗上了。小窗藏起來時這支會跟著被停用，" +
+                           "所有按鈕從此不再更新。請把這支腳本移到另一個物件上；這一局按放棄會直接放棄。", this);
+            abandonConfirmPanel = null;
+        }
+        else if (abandonConfirmPanel != null)
+            abandonConfirmPanel.SetActive(false);
+        else if (abandonButton != null && mainMenu != null)
+            // 有主畫面＝正式的遊戲場景，那裡應該要有確認小窗；回饋收集場景沒有主畫面，不吵
+            Debug.LogWarning("BoardActionButtons 的放棄確認小窗沒填：按放棄會直接放棄，" +
+                             "跟提示鈕按錯就回不去（第二輪回饋）。", this);
     }
 
     /// <summary>
@@ -114,6 +147,8 @@ public class BoardActionButtons : MonoBehaviour
         abandonArea = RegisterArea(abandonButton);
         hintArea = RegisterArea(hintButton);
         leaveArea = RegisterArea(leaveButton);
+        // 小窗開著時底下的片不能被抓到；藏起來時擋片區會自己跳過它
+        abandonConfirmArea = RegisterArea(abandonConfirmPanel);
     }
 
     private void OnDisable()
@@ -124,6 +159,7 @@ public class BoardActionButtons : MonoBehaviour
         inputController.UnregisterPressBlockingArea(abandonArea);
         inputController.UnregisterPressBlockingArea(hintArea);
         inputController.UnregisterPressBlockingArea(leaveArea);
+        inputController.UnregisterPressBlockingArea(abandonConfirmArea);
     }
 
     /// <param name="button">按鈕物件，可以是 null。</param>
@@ -149,6 +185,7 @@ public class BoardActionButtons : MonoBehaviour
     private RectTransform abandonArea;
     private RectTransform hintArea;
     private RectTransform leaveArea;
+    private RectTransform abandonConfirmArea;
 
     /// <summary>
     /// 每幀重算「該不該顯示」。
@@ -170,6 +207,11 @@ public class BoardActionButtons : MonoBehaviour
         SetShown(abandonButton, CanAbandon);
         SetShown(hintButton, CanUseHint);
         SetShown(leaveButton, CanLeave);
+
+        // 小窗開著、但這一局已經放棄不了了（例如被別的路結束掉）：一起收掉，不留一個按了沒反應的窗。
+        // 只關不開——打開只有按放棄鈕那一條路
+        if (abandonConfirmPanel != null && abandonConfirmPanel.activeSelf && !CanAbandon)
+            abandonConfirmPanel.SetActive(false);
     }
 
     /// <summary>
@@ -191,8 +233,13 @@ public class BoardActionButtons : MonoBehaviour
     /// ⭐ <b>「卡夠久才出現」一次解掉兩個問題</b>：
     /// ① 按鈕已經很擠（旋轉／翻面、undo／清空、抽屜箭頭、回收框），而它前
     /// <see cref="StuckSecondsBeforeAbandon"/> 秒<b>根本不佔位</b>；
-    /// ② 放棄不可逆而且會扣實力值，但<b>只有真的卡住的人看得到它</b>——
-    /// 所以刻意<b>不做二次確認</b>，兩個決定互相支援。
+    /// ② 放棄不可逆而且會扣實力值，但<b>只有真的卡住的人看得到它</b>。
+    ///
+    /// ⚠️ <b>原本因為 ② 刻意不做二次確認（2026-09-12），2026-10-29 推翻，改成跳確認小窗</b>（第二輪回饋）：
+    /// 門檻擋得掉「沒卡住的人誤觸」，擋不掉「卡住的人要按提示、按到旁邊的放棄」——
+    /// 而看得到放棄鈕的人，正好是一直在按提示的人。
+    ///
+    /// ⭐ 這個算式同時是<b>小窗能不能留著</b>的條件（見 <see cref="Update"/>）：顯示、作用、收窗三件事共用一個。
     ///
     /// 💡 它跟 undo／清空是同一個形狀：<b>按鈕只是某個算式的函數，不訂閱任何東西</b>。
     /// ⭐ 之後三級提示鈕照同一個框架接上來，各自有自己的門檻（而且要比放棄早）。
@@ -234,12 +281,32 @@ public class BoardActionButtons : MonoBehaviour
     /// <summary>
     /// 放棄鈕被按下（P2-13）。接在 Unity <c>Button.onClick</c> 上。
     ///
-    /// ⚠️ <b>刻意沒有二次確認</b>——理由見 <see cref="CanAbandon"/>：
-    /// 這顆鈕要卡夠久才出現，誤觸的風險已經被門檻吃掉了。
+    /// ⭐ 2026-10-29 起<b>只打開確認小窗</b>，真的放棄要在小窗裡再按一次（理由見 <see cref="CanAbandon"/>）。
+    /// 小窗沒接的話照舊直接放棄——放棄鈕不能因為少接一個物件就壞掉。
     /// </summary>
     public void OnAbandonPressed()
     {
-        if (inputController != null) inputController.AbandonLevel();
+        if (!CanAbandon) return;        // 跟顯示同一個算式：鈕消失的那一幀剛好被按到，不開窗
+
+        if (abandonConfirmPanel == null)
+        {
+            inputController.AbandonLevel();
+            return;
+        }
+        abandonConfirmPanel.SetActive(true);
+    }
+
+    /// <summary>確認小窗的「放棄」（2026-10-29）。接在 Unity <c>Button.onClick</c> 上。先收窗、再真的放棄。</summary>
+    public void OnAbandonConfirmPressed()
+    {
+        if (abandonConfirmPanel != null) abandonConfirmPanel.SetActive(false);
+        if (CanAbandon) inputController.AbandonLevel();
+    }
+
+    /// <summary>確認小窗的「繼續拼」（2026-10-29）。接在 Unity <c>Button.onClick</c> 上。只收窗，什麼都不改。</summary>
+    public void OnAbandonCancelPressed()
+    {
+        if (abandonConfirmPanel != null) abandonConfirmPanel.SetActive(false);
     }
 
     /// <summary>

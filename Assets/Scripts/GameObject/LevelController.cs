@@ -104,8 +104,17 @@ public class LevelController : MonoBehaviour
     [Tooltip("勾起來的話 Start 會自動載入第一關。⚠️ 2026-09-12 從 loadClassicSquareOnStart 改名——場景裡的舊值會失效並退回預設的 true，而那就是原本的值。")]
     [SerializeField] private bool loadFirstLevelOnStart = true;
 
-    [Tooltip("固定種子，同一個值每次都生出同一串題目——看到怪東西才重現得出來。")]
+    [Tooltip("⭐ 勾起來才用下面那個固定種子（2026-10-30 起預設不勾：每次開 App 用時間當種子，題目順序才不會每次都一樣）。" +
+             "要重現某一場的怪題目時，把那一場開場 log 印的種子填進下面、再勾這個。")]
+    [SerializeField] private bool useFixedGeneratorSeed;
+
+    [Tooltip("固定種子，只在上面勾起來時用。同一個值每次都生出同一串題目——看到怪東西才重現得出來。")]
     [SerializeField] private int generatorSeed = 20260910;
+
+    /// <summary>
+    /// 這一場實際用的出題種子（挑戰模式的出題器、圖形模式的洗牌都用它）。<b>Awake 定一次</b>，見 <see cref="ChooseGeneratorSeed"/>。
+    /// </summary>
+    private int sessionSeed;
 
     /// <summary>這一場。<b>別人請走 <c>LevelSession.Current</c>，不要跟這支要。</b></summary>
     private LevelSession session;
@@ -384,6 +393,8 @@ public class LevelController : MonoBehaviour
             Debug.LogError("LevelController 找不到 BoxView：盒子不會被畫出來。" +
                            "請在場景裡建一個掛 BoxView 的物件，或直接拖到這支的欄位上。", this);
 
+        sessionSeed = ChooseGeneratorSeed();
+
         difficultyWeights = LoadJsonResource(DifficultyWeightsResourceName, DifficultyWeights.FromJson,
                                              "沒有權重就算不出難度");
 
@@ -392,6 +403,48 @@ public class LevelController : MonoBehaviour
         // ⚠️ tracker 本身在 Start 才建（P2-8b），理由見 CreateRatingTracker
         ratingSettings = LoadJsonResource(
             SkillRatingSettingsResourceName, SkillRatingSettings.FromJson, "沒有 ELO 設定就不知道下一題要多難");
+        ApplyDemonstrationMultiplierPolicy();
+    }
+
+    /// <summary>
+    /// 定這一場的出題種子（2026-10-30，使用者定）。原本永遠是固定的 <see cref="generatorSeed"/>，每次開 App 題目順序都一模一樣；
+    /// 現在<b>預設用時間</b>，勾 <see cref="useFixedGeneratorSeed"/> 才用固定值。
+    ///
+    /// ⭐ <b>一定印一行 log</b>：固定種子當初的理由是「看到怪題目重現得出來」——種子印出來，那件事照樣做得到
+    /// （填進 <see cref="generatorSeed"/>、勾起固定）。
+    /// 💡 回饋收集場景的題單種子（<c>FeedbackSessionController.basePlanSeed</c>）刻意不跟著改：那是「每位受試者一批固定的題」，資料對得上靠它。
+    /// </summary>
+    /// <returns>這一場的種子。</returns>
+    private int ChooseGeneratorSeed()
+    {
+        if (useFixedGeneratorSeed)
+        {
+            Debug.Log($"這一場的出題種子是 {generatorSeed}（固定）。", this);
+            return generatorSeed;
+        }
+
+        // 取 Ticks 的低 31 位：每 100 奈秒變一次，兩次開 App 撞到同一個值實際上不可能
+        int seed = (int)(System.DateTime.UtcNow.Ticks & int.MaxValue);
+        Debug.Log($"這一場的出題種子是 {seed}（用時間）。要重現：填進 LevelController 的 Generator Seed、勾 Use Fixed Generator Seed。", this);
+        return seed;
+    }
+
+    /// <summary>
+    /// ⭐ K 的展示倍率只在展示版用（2026-10-30，使用者定）：設定檔裡的 <c>demonstrationMultiplier</c>（10）
+    /// 的意思是「展示版用的倍率」，<b>不是展示版（<see cref="DemonstrationBuild"/>）就改成 1</b>，K 回到正式的基準 20。
+    ///
+    /// 所以對外文件寫的「展示版 K 是正式設定的 10 倍」跟程式完全一致：正式版真的是 1 倍。
+    /// 監控面板顯示的是改過之後的數字，「展示版 K 是 N 倍」那行本來就只在倍率不是 1 時出現。
+    /// ⚠️ 在建實力追蹤（<see cref="Start"/>）之前改，追蹤一建好就拿著這份設定算。
+    /// </summary>
+    private void ApplyDemonstrationMultiplierPolicy()
+    {
+        if (ratingSettings == null || DemonstrationBuild.IsActive) return;
+        if (ratingSettings.demonstrationMultiplier == 1.0) return;
+
+        Debug.Log($"不是展示版：K 的展示倍率 {ratingSettings.demonstrationMultiplier:0.##} 改成 1，" +
+                  $"K ＝ 基準 {ratingSettings.baseKFactor:0.##}。", this);
+        ratingSettings.demonstrationMultiplier = 1.0;
     }
 
     /// <summary>
@@ -585,6 +638,54 @@ public class LevelController : MonoBehaviour
                 Debug.Log($"沒有進度存檔，實力從起始的 {ratingSettings.initialRating} 開始。存檔會寫在 {progressFile.FilePath}", this);
                 return null;
         }
+    }
+
+    /// <summary>
+    /// ⭐ <b>清除紀錄</b>（2026-10-30，展示版主畫面的「清除紀錄」鈕叫這支）：決賽換一位評審時從頭開始。
+    ///
+    /// 只刪檔不夠——Editor 選單那條就是這樣：Play 中刪了，下一局結算又把記憶體裡的實力寫回去。所以四件一起做：
+    /// <list type="number">
+    /// <item><b>刪進度存檔</b>。刪不掉就報錯、照樣往下做：下一局結算會用新的實力把檔案蓋掉，結果一樣</item>
+    /// <item><b>實力回到起始值</b>：換一個新的實力追蹤（走勢一起清空，監控面板從頭畫），累計局數歸 0。
+    ///   跟開場 <see cref="CreateRatingTracker"/> 同一行建法，只是不讀檔</item>
+    /// <item><b>暫停中的那一關作廢</b>：那一題是照舊實力出的，再按挑戰模式要是新的一題。不結算——跟中途離開後按別的模式同一條規則；
+    ///   那一關的資料留在盤面上，下次進關時被整包換掉（<see cref="EnterLevel"/>）</item>
+    /// <item><b>背景照新目標重生下一題</b>（<see cref="PrepareNextChallengeLevel"/>），按挑戰模式不用等</item>
+    /// </list>
+    /// 不做確認：這顆鈕只在展示版出現，按到的結果也只是「從頭開始」（使用者 2026-10-30 定）。
+    /// </summary>
+    /// <returns>清除之後的實力（四捨五入）；ELO 設定讀不到、根本沒有實力可清時是 null。</returns>
+    public int? ResetProgress()
+    {
+        if (ratingSettings == null) return null;     // Awake 已經報過錯
+
+        if (persistProgress)
+        {
+            if (progressFile == null) progressFile = new PlayerProgressFile(Application.persistentDataPath);
+            try
+            {
+                progressFile.Delete();
+            }
+            catch (System.Exception error) when (error is System.IO.IOException || error is System.UnauthorizedAccessException)
+            {
+                Debug.LogError($"清除紀錄：進度存檔刪不掉，下一局結算時會用新的實力蓋掉它。{error.Message}：{progressFile.FilePath}", this);
+            }
+        }
+
+        settledCountBeforeThisRun = 0;
+        session.Rating = new SkillRatingTracker(ratingSettings, ratingSettings.initialRating);
+
+        if (pausedMode.HasValue)
+        {
+            Debug.Log($"清除紀錄：暫停中的第 {levelIndex} 關（{pausedMode.Value}）作廢、不結算。", this);
+            pausedMode = null;
+        }
+
+        PrepareNextChallengeLevel();
+
+        int rating = SkillRating.RoundRating(session.Rating.CurrentRating);
+        Debug.Log($"清除紀錄：實力回到 {rating}，走勢清空。", this);
+        return rating;
     }
 
     /// <summary>存檔裡的權重指紋跟現在的不一樣時寫一條警告。照用的理由見 <see cref="PlayerProgress.weightsFingerprint"/>。</summary>
@@ -839,7 +940,7 @@ public class LevelController : MonoBehaviour
         }
 
         // 固定種子，跟出題器同一套理由：看到怪東西才重現得出來
-        figurativeBag = new PuzzleShuffleBag(puzzleLibrary.FigurativeShapes.Count, new System.Random(generatorSeed));
+        figurativeBag = new PuzzleShuffleBag(puzzleLibrary.FigurativeShapes.Count, new System.Random(sessionSeed));
         return true;
     }
 
@@ -1150,7 +1251,7 @@ public class LevelController : MonoBehaviour
             return;
         }
 
-        if (photo == null || photo.width != contour.ImageWidth || photo.height != contour.ImageHeight)
+        if (!ScanCandidateSet.PhotoMatchesContour(photo, contour))
         {
             if (photo != null)
                 Debug.LogWarning($"照片是 {photo.width}×{photo.height}，辨識模組的 JSON 講的是 " +
@@ -1283,7 +1384,7 @@ public class LevelController : MonoBehaviour
         if (difficultyWeights == null) return null;
         if (challengePrefetch != null) return challengePrefetch;
 
-        generator = new TargetedPuzzleGenerator(new PuzzleGenerator(generatorSeed, AestheticLimits.Default), difficultyWeights);
+        generator = new TargetedPuzzleGenerator(new PuzzleGenerator(sessionSeed, AestheticLimits.Default), difficultyWeights);
 
         // ⚠️ 這個 lambda 在背景執行緒上跑。它只碰出題器，而 TargetedPrefetch 保證同一時間只有一件——
         // 主執行緒不能再在任何地方直接叫 generator.Generate，不然那條保證就破了

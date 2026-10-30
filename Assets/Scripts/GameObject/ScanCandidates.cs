@@ -71,4 +71,15 @@ public sealed class ScanCandidateSet
         Contour = contour;
         Candidates = candidates;
     }
+
+    /// <summary>
+    /// 這張照片能不能疊回輪廓上（2026-10-30 從 <c>LevelController.HandPhotoToView</c> 搬出來，選題畫面也要問）：
+    /// 照片的寬高必須等於 JSON 的 <c>width</c>／<c>height</c>（辨識模組的約定）。對不上代表點不在這張照片的座標上，
+    /// 硬疊會整張歪掉而且不報錯。⭐ 兩個地方問同一支，免得一邊疊、一邊不疊。
+    /// </summary>
+    /// <param name="photo">照片，可以是 null。</param>
+    /// <param name="contour">辨識出來的輪廓。</param>
+    /// <returns>有照片、而且寬高跟輪廓講的一樣。</returns>
+    public static bool PhotoMatchesContour(Texture2D photo, RecognizedContour contour) =>
+        photo != null && contour != null && photo.width == contour.ImageWidth && photo.height == contour.ImageHeight;
 }

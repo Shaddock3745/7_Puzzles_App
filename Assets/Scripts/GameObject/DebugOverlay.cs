@@ -13,7 +13,7 @@ using UnityEngine.InputSystem;
 /// 原本那幾行除錯資訊（盤面、拖曳、選取不變式、相機與吸附的像素、手指位置）<b>留著但預設不顯示</b>（使用者定）——
 /// 勾 <see cref="showDebugPage"/> 就多一個「除錯」分頁，在 T20 上調手感時用得到。
 ///
-/// <b>什麼時候出現</b>（使用者 2026-10-23 選乙）：Editor、Development Build，或 <b>Player Settings 的 Scripting Define Symbols 有 <c>TANGRADE_MONITOR</c></b>。
+/// <b>什麼時候出現</b>（使用者 2026-10-23 選乙）：<b>展示版</b>（<see cref="DemonstrationBuild"/>）——Editor、Development Build，或 <b>Player Settings 的 Scripting Define Symbols 有 <c>TANGRADE_MONITOR</c></b>。
 /// 選乙的理由：Development Build 會連作弊鈕（<c>DebugTools</c> 的「填 6 片」）與浮水印一起帶出來，而決賽的 build 要給評審看面板、不能有作弊鈕。
 /// 其他 build 直接關掉自己（不靠人記得刪，同 P1-12 的原則）。
 ///
@@ -23,6 +23,8 @@ using UnityEngine.InputSystem;
 /// 跟原本的把手同一套，手機上不用賭 IMGUI 收不收得到觸控。<b>為什麼分頁不捲動</b>：IMGUI 的捲動在手機上用手指拖不動。
 ///
 /// ⚠️ <b>擋片區只登記把手與分頁那一排</b>，字的那一塊不擋——面板開著也要能拼（評審看著算式玩），點在字上就是點在盤面上。
+/// ⭐ 但 <b>UI 按鈕整塊都擋</b>（2026-10-30）：OnGUI 擋不住 UI 事件，原本點分頁會順便按到底下的放棄／提示／返回，
+/// 所以另外蓋一塊透明的 UI 擋板跟著面板走（<see cref="EnsureButtonBlocker"/>）。拖片與按鈕是兩套命中測試，這裡刻意一套擋、一套不擋。
 /// </summary>
 [DisallowMultipleComponent]
 public class DebugOverlay : MonoBehaviour
@@ -100,6 +102,25 @@ public class DebugOverlay : MonoBehaviour
     private GUIStyle tabStyle;
     private readonly StringBuilder builder = new StringBuilder();
 
+    // ───────── 擋按鈕（2026-10-30，使用者 Xperia 實測發現）─────────
+    //
+    // OnGUI 畫的東西 Unity 的 UI 事件系統看不到：點在面板上會穿過去按到下面的按鈕（右上角的放棄／提示／返回正好在分頁那一排底下）。
+    // 所以在最上層自己蓋一塊透明的 UI 擋板，範圍每幀跟著面板走。
+    // ⚠️ 它<b>只擋 UI 按鈕、不擋拖片</b>（使用者選甲）：拖片那邊看的是 TouchInputController 自己的擋片區（上面 BlockingScreenRect，字那塊刻意不擋），
+    // 擋板沒有登記進去——面板開著照樣能看著算式拼。
+
+    /// <summary>擋板的根物件（自己一個 Screen Space - Overlay 的 Canvas，排在所有 UI 最上面）。第一次 <c>OnEnable</c> 才建。</summary>
+    private GameObject buttonBlocker;
+
+    /// <summary>擋板那一塊透明圖的矩形，每幀照面板的範圍擺。</summary>
+    private RectTransform buttonBlockerArea;
+
+    /// <summary>
+    /// 字那一塊上一次畫在哪（螢幕座標，原點左下）。高度要量字才知道，只有 <c>OnGUI</c> 量得到，所以畫的時候記下來給擋板用——
+    /// 位置只在畫的那裡算一次，不另外算一份（同「版面」那段的原則）。沒有字時是 <see cref="Rect.zero"/>。
+    /// </summary>
+    private Rect lastTextBoxScreenRect;
+
     private void Awake()
     {
         if (levelController == null) levelController = FindFirstObjectByType<LevelController>();
@@ -107,15 +128,18 @@ public class DebugOverlay : MonoBehaviour
         if (dragController == null) dragController = FindFirstObjectByType<TouchInputController>();
         isExpanded = startExpanded;
 
-#if !UNITY_EDITOR && !DEVELOPMENT_BUILD && !TANGRADE_MONITOR
         // 不該出現的 build 直接關掉自己。**這樣就不必在交出去之前記得刪**——
-        // 「記得拿掉」是靠人的規定，跟這個專案踩過的兩個坑同一類（除錯記錄 001、002）
-        enabled = false;
-#endif
+        // 「記得拿掉」是靠人的規定，跟這個專案踩過的兩個坑同一類（除錯記錄 001、002）。
+        // 什麼叫展示版只在 DemonstrationBuild 定義一次（2026-10-30，清除紀錄鈕與 K 倍率也問它）
+        if (!DemonstrationBuild.IsActive) enabled = false;
     }
 
     private void OnEnable()
     {
+        // 不是展示版時 Awake 已經把 enabled 關掉，這裡不會跑到——擋板也就不會建
+        EnsureButtonBlocker();
+        buttonBlocker.SetActive(true);
+
         if (dragController == null) return;
         if (blockingRectProvider == null) blockingRectProvider = () => BlockingScreenRect();
         dragController.RegisterPressBlockingScreenRect(blockingRectProvider);
@@ -123,7 +147,61 @@ public class DebugOverlay : MonoBehaviour
 
     private void OnDisable()
     {
+        if (buttonBlocker != null) buttonBlocker.SetActive(false);
         if (dragController != null) dragController.UnregisterPressBlockingScreenRect(blockingRectProvider);
+    }
+
+    private void OnDestroy()
+    {
+        if (buttonBlocker != null) Destroy(buttonBlocker);
+    }
+
+    /// <summary>
+    /// 建擋板：一個獨立的 Screen Space - Overlay Canvas（排序 32767，蓋在所有 UI 上面）加一塊全透明、會接射線的 Image。
+    /// 沒有 CanvasScaler，所以 1 單位＝1 螢幕像素、原點在左下，跟面板的螢幕座標同一套，直接照抄矩形就好。
+    /// 放在場景根部、不掛在這支底下：這支的物件如果在別的 Canvas 裡，巢狀 Canvas 的排序會被父層牽著走。
+    /// </summary>
+    private void EnsureButtonBlocker()
+    {
+        if (buttonBlocker != null) return;
+
+        buttonBlocker = new GameObject("監控面板的按鈕擋板", typeof(RectTransform), typeof(Canvas), typeof(UnityEngine.UI.GraphicRaycaster));
+        Canvas canvas = buttonBlocker.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = short.MaxValue;
+
+        var area = new GameObject("擋板", typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.UI.Image));
+        area.transform.SetParent(buttonBlocker.transform, false);
+        UnityEngine.UI.Image image = area.GetComponent<UnityEngine.UI.Image>();
+        image.color = new Color(0f, 0f, 0f, 0f);    // 全透明；alpha 0 照樣接得到射線（沒設 alphaHitTestMinimumThreshold）
+        image.raycastTarget = true;
+        area.GetComponent<CanvasRenderer>().cullTransparentMesh = true;     // 不畫，只擋
+
+        buttonBlockerArea = area.GetComponent<RectTransform>();
+        buttonBlockerArea.anchorMin = Vector2.zero;
+        buttonBlockerArea.anchorMax = Vector2.zero;
+        buttonBlockerArea.pivot = Vector2.zero;
+    }
+
+    /// <summary>
+    /// 擋板擺到面板現在佔的地方：收起時只有把手，展開時把手、整排分頁、加上字那一塊。
+    /// 字的範圍是上一次 <c>OnGUI</c> 量的，所以換頁時會晚一幀跟上——那一幀的手指不會剛好按在新多出來的那一條上，不值得為它在這裡再量一次字。
+    /// </summary>
+    private void LateUpdate()
+    {
+        if (buttonBlockerArea == null) return;
+
+        bool shown = showOverlay;
+        if (buttonBlocker.activeSelf != shown) buttonBlocker.SetActive(shown);
+        if (!shown) return;
+
+        Rect area = BlockingScreenRect();
+        if (isExpanded && lastTextBoxScreenRect.width > 0f)
+            area = Rect.MinMaxRect(Mathf.Min(area.xMin, lastTextBoxScreenRect.xMin), Mathf.Min(area.yMin, lastTextBoxScreenRect.yMin),
+                                   Mathf.Max(area.xMax, lastTextBoxScreenRect.xMax), Mathf.Max(area.yMax, lastTextBoxScreenRect.yMax));
+
+        buttonBlockerArea.anchoredPosition = area.position;
+        buttonBlockerArea.sizeDelta = area.size;
     }
 
     private void Update()
@@ -222,6 +300,9 @@ public class DebugOverlay : MonoBehaviour
         // GUIStyle 只能在 OnGUI 裡安全地建（GUI.skin 在別的時機無效）
         EnsureStyles();
 
+        // 先當作沒有字，畫了字那一塊才記下來（給擋板用）
+        lastTextBoxScreenRect = Rect.zero;
+
         DrawBox(ToGuiRect(HandleScreenRect()), isExpanded ? 0.65f : 0.45f);
         GUI.Label(ToGuiRect(HandleScreenRect()), isExpanded ? "▲" : "▼", tabStyle);
         if (!isExpanded) return;
@@ -247,6 +328,7 @@ public class DebugOverlay : MonoBehaviour
         float height = labelStyle.CalcHeight(content, width - padding * 2f);
 
         var box = new Rect(margin, handle.yMax + margin, width, height + padding * 2f);
+        lastTextBoxScreenRect = new Rect(box.x, Screen.height - box.yMax, box.width, box.height);   // GUI 座標翻回螢幕座標
         DrawBox(box, 0.65f);
         GUI.Label(new Rect(box.x + padding, box.y + padding, width - padding * 2f, height), content, labelStyle);
     }
