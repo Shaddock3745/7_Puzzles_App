@@ -1,0 +1,348 @@
+<!doctype html>
+<!--
+  決賽競賽區：給評審的講義，A4 雙面，印 8 份，報告一開始就發（待辦清單.md〈決賽前總表〉11/4 那列）。
+  順序跟製作過程影片（3:50）一樣：正面 ① 流程、② 適應性；背面 ③ 可視性、④ 技術性，外加「影片裡沒講的」——評審打分時手上有東西可以對。
+  字與配色沿用影片字卡（報告_期中與決賽/製作檔/字卡/cards.html，不進 repo），進度圖與甘特圖的資料也抄自那裡：
+    進度圖＝gh issue list --state all 的 COMPLETED 關閉日（10/30 撈的，不做的 #7、#8、#19 與協作者還開著的不算）；
+    甘特圖＝開發進度.md〈每張卡的預定日期〉（9/11 訂的預定）＋實際完成日。
+  測試數 590、55 秒是 2026-10-31 跑的。改數字先改它們的家，再回來抄。
+  ⚠️ 匿名：不能出現學校、課程、教授的名字，也不寫協作者的名字。⚠️ 寫「玩家」，不預設年齡段。⚠️ 畫面與口頭都不用「中途回饋」四個字（使用者 10/30）。
+  列印：Chrome 開這個檔 → 列印 → 另存為 PDF，紙張 A4、邊界「無」、勾「背景圖形」，雙面（長邊翻）。
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>競賽區評審講義</title>
+<style>
+  @font-face {
+    font-family: "Noto Sans TC Local";
+    src: url("../../Assets/Font/NotoSansTC-VariableFont_wght.ttf") format("truetype");
+    font-weight: 100 900;
+  }
+  :root {
+    --ink: #1D2B3A; --ink-2: #5E7185; --ink-3: #9AA5B1; --line: #D9E0E7;
+    --orange: #E8833A; --peach: #FCEBDD; --panel: #F1F4F7; --ice: #C9D3DD; --green: #2E9E5B;
+  }
+  @page { size: A4; margin: 0; }
+  html, body { margin: 0; background: #d0d5db; }
+  body { padding: 24px 16px; font-family: "Noto Sans TC Local", "Noto Sans TC", "Microsoft JhengHei", sans-serif; color: var(--ink);
+         line-break: strict; text-spacing-trim: trim-start; text-wrap: pretty;
+         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { width: 210mm; height: 297mm; margin: 0 auto 24px; box-sizing: border-box; padding: 11mm 13mm 0; background: #FFFFFF;
+          position: relative; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,.18); }
+  @media print { body { padding: 0; background: none; } .page { box-shadow: none; margin: 0; break-after: page; } }
+  b { font-weight: 700; }
+  svg text { font-family: "Noto Sans TC Local", "Noto Sans TC", sans-serif; }
+
+  .top { display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 2.5mm; border-bottom: .6mm solid var(--ink); }
+  .top .brand { font-size: 10pt; color: var(--ink-3); letter-spacing: .04em; }
+  .top .brand b { color: var(--orange); }
+  .top h1 { margin: 1mm 0 0; font-size: 21pt; font-weight: 800; }
+  .top .order { font-size: 9pt; color: var(--ink-2); text-align: right; line-height: 1.55; }
+  .top .order b { color: var(--ink); }
+  .about { margin: 2.5mm 0 0; font-size: 9.5pt; color: var(--ink-2); line-height: 1.6; }
+
+  h2 { margin: 5mm 0 2.5mm; font-size: 13.5pt; font-weight: 800; display: flex; align-items: baseline; gap: 2mm; }
+  h2 .number { color: var(--orange); }
+  h2 .aside { margin-left: auto; font-size: 8.5pt; font-weight: 500; color: var(--ink-3); }
+  h3 { margin: 0 0 1.5mm; font-size: 10.5pt; font-weight: 800; }
+  p, li { font-size: 9.2pt; line-height: 1.6; }
+  p { margin: 0; }
+
+  /* ① 看板四欄 */
+  .columns { display: flex; align-items: stretch; }
+  .column { flex: 1; background: var(--panel); border-radius: 2.5mm; padding: 2mm 1mm; text-align: center; font-size: 10pt; font-weight: 700; display: flex; flex-direction: column; justify-content: center; }
+  .column.gate { background: var(--peach); }
+  .column span { display: block; font-size: 7.8pt; font-weight: 500; color: var(--orange); }
+  .connector { width: 4mm; display: flex; align-items: center; justify-content: center; color: var(--ink-3); font-size: 9pt; }
+
+  .boards { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1.8mm; margin-top: 2mm; }
+  .board { background: var(--panel); border-radius: 2.5mm; padding: 1.8mm 2mm; }
+  .board .when { font-size: 7pt; color: var(--ink-3); }
+  .board .name { font-size: 9.5pt; font-weight: 800; margin: .3mm 0; }
+  .board .what { font-size: 7.8pt; color: var(--ink-2); line-height: 1.4; }
+  .board.extra { background: var(--peach); }
+  .board.extra .name { color: var(--orange); }
+
+  .flow { display: flex; align-items: stretch; margin-top: 3mm; }
+  .step { flex: 1; border-radius: 2.5mm; background: var(--panel); padding: 2.2mm 1mm; text-align: center; }
+  .step .who { font-size: 7.6pt; color: var(--ink-2); }
+  .step .what { font-size: 10pt; font-weight: 800; line-height: 1.35; margin-top: .5mm; }
+  .step.gate { background: var(--peach); }
+  .step.gate .who { color: var(--orange); font-weight: 700; }
+  .step.ai { background: #FFFFFF; border: .4mm solid var(--line); }
+  .statement { margin-top: 2.5mm; background: var(--peach); border-radius: 2.5mm; padding: 2mm 3.5mm; font-size: 9.5pt; font-weight: 700; line-height: 1.5; }
+
+  .logic { display: grid; grid-template-columns: 1.1fr 1fr 1fr 1.2fr; gap: 1.8mm; margin-top: 2.5mm; align-items: stretch; }
+  .logic-step { background: var(--panel); border-radius: 2.5mm; padding: 2mm 2.5mm; }
+  .logic-step .q { font-size: 7.6pt; color: var(--orange); font-weight: 700; }
+  .logic-step .a { font-size: 9pt; font-weight: 700; line-height: 1.4; margin-top: .5mm; }
+  .logic-note { font-size: 8pt; color: var(--ink-2); line-height: 1.5; display: flex; align-items: center; }
+
+  /* ② 轉向 */
+  .pivots { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; }
+  .pivot { border: .4mm solid var(--line); border-radius: 3mm; padding: 2.8mm 3.5mm; }
+  .pivot h3 { font-size: 11pt; }
+  .pivot h3 .tag { color: var(--orange); margin-right: 1.5mm; }
+  .pivot ul { margin: 0; padding: 0; list-style: none; }
+  .pivot li { position: relative; padding-left: 4.5mm; margin-bottom: .8mm; font-size: 9.4pt; line-height: 1.6; }
+  .pivot li::before { content: "→"; position: absolute; left: 0; color: var(--ink-3); font-weight: 700; }
+  .pivot li.end::before { content: "✓"; color: var(--orange); }
+  .pivot li.end { font-weight: 600; }
+  .figures { display: flex; gap: 5mm; margin: .5mm 0 1.2mm; }
+  .figures .value { font-size: 15pt; font-weight: 800; color: var(--orange); line-height: 1.1; }
+  .figures .label { font-size: 8pt; color: var(--ink-2); }
+
+  /* ③ ④ */
+  .chart { display: block; width: 100%; height: auto; }
+  .legend { font-size: 8pt; color: var(--ink-2); margin: -.5mm 0 1mm; }
+  .legend i { display: inline-block; vertical-align: middle; margin: 0 1.2mm 0 3mm; }
+  .homes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.6mm 2.5mm; }
+  .home { background: var(--panel); border-radius: 2mm; padding: 1.5mm 2.5mm; display: flex; justify-content: space-between; align-items: baseline; font-size: 8.4pt; gap: 2mm; }
+  .home .what { color: var(--ink-2); }
+  .home .where { font-weight: 700; white-space: nowrap; }
+
+  .tech { display: grid; grid-template-columns: 50mm 1fr; gap: 4mm; align-items: start; }
+  .big { background: var(--peach); border-radius: 3mm; padding: 3mm 4mm; }
+  .big .value { font-size: 24pt; font-weight: 800; color: var(--orange); line-height: 1.05; }
+  .big .label { font-size: 8.4pt; color: var(--ink-2); line-height: 1.5; margin-top: 1mm; }
+  .extra-list { margin: 0; padding: 0; list-style: none; }
+  .extra-list li { position: relative; padding-left: 4.5mm; margin-bottom: 1mm; font-size: 8.8pt; line-height: 1.55; }
+  .extra-list li::before { content: "＋"; position: absolute; left: 0; color: var(--orange); font-weight: 800; }
+
+  .runs { margin-top: 2mm; border: .4mm solid var(--line); border-radius: 2.5mm; overflow: hidden; }
+  .run { display: flex; align-items: center; gap: 2.5mm; padding: 1mm 3mm; font-size: 8pt; }
+  .run + .run { border-top: .3mm solid var(--line); }
+  .run .check { width: 3.6mm; height: 3.6mm; border-radius: 50%; background: var(--green); color: #fff; font-size: 6.5pt; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: none; }
+  .run .title { flex: 1; }
+  .run .sha { font-family: Consolas, monospace; color: var(--ink-3); }
+  .run .when { color: var(--ink-3); width: 9mm; text-align: right; }
+
+  footer { position: absolute; left: 13mm; right: 13mm; bottom: 6mm; display: flex; justify-content: space-between; font-size: 8pt; color: var(--ink-3); border-top: .3mm solid var(--line); padding-top: 2mm; }
+</style>
+</head>
+<body>
+
+<!-- ───────────── 正面：① 流程、② 適應性 ───────────── -->
+<div class="page">
+  <div class="top">
+    <div>
+      <div class="brand"><b>巧級 Tangrade</b>　以七巧板為基底的空間邏輯訓練系統</div>
+      <h1>製作過程：評審講義</h1>
+    </div>
+    <div class="order">跟影片同一個順序<br><b>① 流程　② 適應性</b>（正面）<br><b>③ 可視性　④ 技術性</b>（背面）</div>
+  </div>
+  <p class="about">題目由演算法當場生成、難度從形狀算出、下一題照玩家實力出，全程離線。開發 8/21 開始，10/30 功能凍結；開發者一人，協作者一人中途加入、負責影像辨識。</p>
+
+  <h2><span class="number">①</span>每張卡都走同一套流程</h2>
+  <div class="columns">
+    <div class="column">待辦</div><div class="connector">→</div>
+    <div class="column">進行中</div><div class="connector">→</div>
+    <div class="column gate">測試中<span>實機玩過才往下</span></div><div class="connector">→</div>
+    <div class="column">完成</div>
+    <div style="flex: 2.4; padding-left: 4mm; font-size: 8.6pt; line-height: 1.55; color: var(--ink-2); display: flex; align-items: center">用看板（Kanban）開發：一個人開發，不排固定的衝刺週期，做完一張拉下一張；範圍變了就加卡，或把卡以「不做」關掉。</div>
+  </div>
+  <div class="boards">
+    <div class="board"><div class="when">8/21～9/2</div><div class="name">打地基</div><div class="what">建專案、定資料怎麼存</div></div>
+    <div class="board"><div class="when">9/3～9/9</div><div class="name">做原型</div><div class="what">拖曳、吸附、過關，一局玩得完</div></div>
+    <div class="board"><div class="when">9/9～9/14</div><div class="name">出題與難度</div><div class="what">自動出題、算難度、玩家實力</div></div>
+    <div class="board"><div class="when">9/12～10/4</div><div class="name">報名</div><div class="what">系統文件、影片、報名資料</div></div>
+    <div class="board"><div class="when">10/14～</div><div class="name">決賽準備</div><div class="what">拍照出題、換題不卡、進度存檔</div></div>
+    <div class="board extra"><div class="when">10/14～</div><div class="name">協作者</div><div class="what">中途加入，額外一張；負責影像辨識</div></div>
+  </div>
+  <div class="flow">
+    <div class="step gate"><div class="who">開發者決定</div><div class="what">需求與架構</div></div><div class="connector">→</div>
+    <div class="step ai"><div class="who">AI 程式助理</div><div class="what">寫中文邏輯</div></div><div class="connector">→</div>
+    <div class="step gate"><div class="who">人工關卡 1</div><div class="what">確認了才動手</div></div><div class="connector">→</div>
+    <div class="step ai"><div class="who">AI 程式助理</div><div class="what">實作與自動化測試</div></div><div class="connector">→</div>
+    <div class="step gate"><div class="who">人工關卡 2</div><div class="what">實機玩過才進完成</div></div>
+  </div>
+  <div class="logic">
+    <div class="logic-step"><div class="q">中文邏輯：它記住什麼</div><div class="a">出題器、難度權重</div></div>
+    <div class="logic-step"><div class="q">能被要求做什麼</div><div class="a">「給我一題，目標難度 T」</div></div>
+    <div class="logic-step"><div class="q">被要求時發生什麼</div><div class="a">最多試 200 次 → 正中、將就、失敗</div></div>
+    <div class="logic-note">例：照難度出題（9/12）。寫程式之前先寫這三段，開發者對照確認 OK 才動手。</div>
+  </div>
+  <div class="statement">方向由開發者決定、實作由 AI 程式助理完成，每張卡都要過兩道人工關卡</div>
+
+  <h2><span class="number">②</span>計畫跟著證據改<span class="aside">設計是會被推翻的假說</span></h2>
+  <div class="pivots">
+    <div class="pivot">
+      <h3><span class="tag">A</span>一個想做的功能，47 天後決定不做</h3>
+      <ul>
+        <li>原本想做：拼到一半，提醒玩家哪一片已經沒地方放</li>
+        <li>動手前先寫測試檢查做法：392 個擺法只有 <b>41 個</b>符合假設，做法行不通</li>
+        <li>延到下一個階段，改跟自動解題一起做</li>
+        <li class="end">10/20 權衡決賽時程，決定不做，留下「提示下一片放哪」</li>
+      </ul>
+    </div>
+    <div class="pivot">
+      <h3><span class="tag">B</span>給人玩：第一輪（9 月）</h3>
+      <div class="figures">
+        <div><div class="value">11 人</div><div class="label">試玩</div></div>
+        <div><div class="value">56 題</div><div class="label">不含練習題</div></div>
+      </div>
+      <ul>
+        <li>難度越高的題目，提示用得越多：難度的尺是對的</li>
+        <li>真人推翻兩個定案：翻面鈕改成每一片都有、放棄之後改問原因</li>
+        <li class="end">調權重最多只把相關係數從 0.456 提到 0.475，在誤差內 → 決定不改</li>
+      </ul>
+    </div>
+    <div class="pivot">
+      <h3><span class="tag">B</span>給人玩：第二輪（10/29）</h3>
+      <div class="figures">
+        <div><div class="value">1 位</div><div class="label">國三，在平板上試玩</div></div>
+        <div><div class="value">5 條</div><div class="label">發現：3 條凍結前改好、1 條進待辦、1 條不改</div></div>
+      </div>
+      <ul>
+        <li class="end">放棄要先確認（推翻了 9/12 定的「不做二次確認」）</li>
+        <li class="end">主畫面加新手教學</li>
+        <li class="end">拍照出題選題時，把照片疊在剪影上對照</li>
+      </ul>
+    </div>
+    <div class="pivot">
+      <h3><span class="tag">F</span>連這份報告也照著改</h3>
+      <ul>
+        <li>10/27 入圍公布：只入圍鈦坦敏捷開發特別獎</li>
+        <li class="end">隔天把報告主角從演算法換成開發過程</li>
+      </ul>
+      <h3 style="margin-top: 2.5mm"><span class="tag">C</span>拍照出題：換一把尺<span style="font-weight: 500; font-size: 8pt; color: var(--ink-3)">（影片沒放）</span></h3>
+      <ul>
+        <li>原本拿自己拼的造型題當標準，本來就拼得出來，太好考 → 改用公開資料集：剪影 116 張、真實照片 300 張</li>
+        <li class="end">六種改進方法都只差 0.005 以內：接近七片的極限，知道該停</li>
+      </ul>
+    </div>
+  </div>
+
+  <footer><span>巧級 Tangrade　製作過程</span><span>背面：③ 可視性　④ 技術性 →</span></footer>
+</div>
+
+<!-- ───────────── 背面：③ 可視性、④ 技術性 ───────────── -->
+<div class="page">
+  <h2 style="margin-top: 0"><span class="number">③</span>讓進度看得見<span class="aside">資料來自 GitHub Projects 的工作卡，10/30</span></h2>
+  <h3>工作卡一張一張做完（累積做完 40 張）</h3>
+  <svg class="chart progress" viewBox="0 0 1600 640"></svg>
+  <p style="font-size: 8.4pt; color: var(--ink-2); margin-top: 1mm">中間平的那段是試玩、寫文件與初賽審查；括號是 A 那張卡從開卡到決定不做的 47 天。</p>
+
+  <h3 style="margin-top: 4mm">時程規劃：預定與實際（演算法階段，9/11 訂的預定）</h3>
+  <div class="legend"><i style="width: 7mm; height: 2.6mm; border-radius: 1mm; background: var(--ice)"></i>預定（訂了就不改，只補實際）<i style="width: 3mm; height: 3mm; border-radius: 50%; background: var(--orange)"></i>實際完成<i style="width: 7mm; height: 2.6mm; border-radius: 1mm; background: var(--orange); opacity: .35"></i>不在規劃裡</div>
+  <svg class="chart" id="gantt" viewBox="0 0 1600 520"></svg>
+  <p style="font-size: 8.4pt; color: var(--ink-2); margin-top: 1mm">大多提前做完，空出來的時間拿去找人試玩（第一輪 11 人）。</p>
+
+  <h3 style="margin-top: 4mm">配合文件記錄開發歷程：每件事只寫在一個地方，別處只放一行指標</h3>
+  <div class="homes">
+    <div class="home"><span class="what">規格與定案</span><span class="where">互動設計</span></div>
+    <div class="home"><span class="what">還沒做的事</span><span class="where">待辦清單</span></div>
+    <div class="home"><span class="what">做過什麼、數字</span><span class="where">開發進度</span></div>
+    <div class="home"><span class="what">不報錯的怪 bug</span><span class="where">除錯記錄</span></div>
+    <div class="home"><span class="what">每支程式為什麼這樣寫</span><span class="where">程式說明書</span></div>
+    <div class="home"><span class="what">跟協作者溝通</span><span class="where">交接文件 5 份</span></div>
+  </div>
+
+  <h2><span class="number">④</span>讓改動不會悄悄壞掉<span class="aside">標「＋」的是影片裡沒講的</span></h2>
+  <div class="tech">
+    <div class="big">
+      <div class="value">590 個</div>
+      <div class="label">自動化測試，不用開遊戲引擎，55 秒跑完；每次 push，GitHub Actions 自動再跑一次（持續集成）</div>
+    </div>
+    <div>
+      <ul class="extra-list">
+        <li><b>9/3 的 53 個 → 10/28 的 590 個</b>，規則層（幾何、出題、難度、實力、拍照逼近）都在引擎外直接測</li>
+        <li><b>變異測試</b>：故意把程式改壞，確認指定的那一條會變紅，證明測試真的抓得到</li>
+        <li><b>手指拖曳那一層沒有自動化測試</b>，靠「測試中」那一欄的實機試玩把關</li>
+        <li><b>16 則除錯記錄</b>：不報錯、但行為不對的問題，每則寫預期、實際、原因（含怎麼發現的）、處理（含失敗的嘗試），再寫成規則，收進給 AI 程式助理的交接文件，每次開工先讀</li>
+        <li><b>持續集成是 10/28 補的</b>：拿評分表回顧，發現少了這一項，當週補上</li>
+      </ul>
+    </div>
+  </div>
+
+  <footer><span>影片裡是展示版：左上角是監控面板，實力變化是正式版的 10 倍</span><span>巧級 Tangrade</span></footer>
+</div>
+
+<script>
+  // 甘特圖：預定取自 開發進度.md〈每張卡的預定日期〉（9/11 訂，不准改），實際取自同一張表補上的「實際」。跟影片字卡同一份資料
+  const rows = [
+    { name: "會自己出題（第一版）", plan: ["09-10", "09-10"], done: "09-10" },
+    { name: "一次生一千題看分布", plan: ["09-10", "09-11"], done: "09-11" },
+    { name: "難度怎麼算", plan: ["09-12", "09-14"], done: "09-12" },
+    { name: "照指定難度出題", plan: ["09-15", "09-16"], done: "09-12" },
+    { name: "玩家實力（ELO）", plan: ["09-17", "09-19"], done: "09-13" },
+    { name: "監控面板", plan: ["09-20", "09-24"], done: "09-14" },
+    { name: "接進遊戲", plan: ["09-25", "09-27"], done: null, note: "9/12 跟著一起完成" },
+    { name: "不在規劃：找人試玩", plan: null, extra: ["09-14", "09-20"] },
+    { name: "文件、影片、報名", plan: ["09-29", "10-05"], done: "10-04" },
+  ];
+  const day = 86400000;
+  const start = new Date("2026-09-10"), end = new Date("2026-10-06");
+  const left = 470, right = 1580, rowHeight = 52, chartTop = 46;
+  const x = (text) => left + (new Date("2026-" + text) - start) / (end - start) * (right - left);
+  const dayWidth = (right - left) / ((end - start) / day);
+  let markup = "";
+  ["09-10", "09-17", "09-24", "10-01"].forEach(tick => {
+    const position = x(tick);
+    markup += `<line x1="${position}" y1="${chartTop - 12}" x2="${position}" y2="${chartTop + rows.length * rowHeight}" stroke="#D9E0E7" stroke-width="2"/>`;
+    markup += `<text x="${position}" y="${chartTop - 20}" font-size="28" fill="#9AA5B1" text-anchor="middle">${Number(tick.slice(0, 2))}/${Number(tick.slice(3))}</text>`;
+  });
+  rows.forEach((row, i) => {
+    const center = chartTop + i * rowHeight + rowHeight / 2;
+    markup += `<text x="0" y="${center + 10}" font-size="30" fill="${row.extra ? "#E8833A" : "#1D2B3A"}" font-weight="${row.extra ? 700 : 400}">${row.name}</text>`;
+    if (row.plan) {
+      const from = x(row.plan[0]), to = x(row.plan[1]) + dayWidth;
+      markup += `<rect x="${from}" y="${center - 13}" width="${to - from}" height="26" rx="7" fill="#C9D3DD"/>`;
+    }
+    if (row.extra) {
+      const from = x(row.extra[0]), to = x(row.extra[1]) + dayWidth;
+      markup += `<rect x="${from}" y="${center - 13}" width="${to - from}" height="26" rx="7" fill="#E8833A" opacity="0.35"/>`;
+    }
+    if (row.done) markup += `<circle cx="${x(row.done) + dayWidth / 2}" cy="${center}" r="13" fill="#E8833A"/>`;
+    if (row.note) markup += `<text x="${x(row.plan[1]) + 50}" y="${center + 10}" font-size="27" fill="#5E7185">${row.note}</text>`;
+  });
+  document.getElementById("gantt").innerHTML = markup;
+
+  // 進度圖：累積做完的工作卡，階段用白話；括號標 A 那張卡（開卡到決定不做）
+  const doneDates = [
+    "08-21", "08-21", "08-21", "09-02", "09-03", "09-03",
+    "09-05", "09-05", "09-06", "09-03", "09-08", "09-06", "09-08", "09-07", "09-08", "09-09",
+    "09-06", "09-11", "09-09", "09-11", "09-11", "09-11", "09-11", "09-12", "09-12", "09-12", "09-12", "09-13", "09-14",
+    "10-04", "10-04", "10-04", "10-17", "10-28", "10-23", "10-20", "10-29", "10-20", "10-17", "10-29",
+  ];
+  const phases = [
+    ["打地基", "08-21", "09-02"], ["做原型", "09-03", "09-08"], ["出題難度", "09-09", "09-14"],
+    ["試玩、文件、報名", "09-15", "10-04"], ["初賽審查", "10-05", "10-13"], ["決賽準備", "10-14", "10-30"],
+  ];
+  const progressStart = new Date("2026-08-21"), progressDays = 71; // 8/21 ～ 10/30（含）
+  const plotLeft = 70, plotRight = 1400, plotTop = 160, plotBottom = 580, maximum = 40;
+  const dayOf = (text) => Math.round((new Date("2026-" + text) - progressStart) / day);
+  const px = (index) => plotLeft + index / progressDays * (plotRight - plotLeft);
+  const py = (count) => plotBottom - count / maximum * (plotBottom - plotTop);
+  const cumulative = [];
+  for (let i = 0; i < progressDays; i++) cumulative.push(doneDates.filter(text => dayOf(text) <= i).length);
+  let out = "";
+  phases.forEach(([name, from, to], i) => {
+    const x1 = px(dayOf(from)), x2 = px(dayOf(to) + 1);
+    if (i % 2 === 0) out += `<rect x="${x1}" y="0" width="${x2 - x1}" height="${plotBottom}" fill="#F1F4F7"/>`;
+    out += `<text x="${(x1 + x2) / 2}" y="40" font-size="27" fill="#5E7185" text-anchor="middle">${name}</text>`;
+  });
+  [10, 20, 30, 40].forEach(count => {
+    out += `<line x1="${plotLeft}" y1="${py(count)}" x2="${plotRight}" y2="${py(count)}" stroke="#D9E0E7" stroke-width="2"/>`;
+    out += `<text x="${plotLeft - 16}" y="${py(count) + 9}" font-size="27" fill="#9AA5B1" text-anchor="end">${count}</text>`;
+  });
+  out += `<line x1="${plotLeft}" y1="${plotBottom}" x2="${plotRight}" y2="${plotBottom}" stroke="#9AA5B1" stroke-width="2"/>`;
+  ["08-21", "09-03", "09-15", "10-01", "10-14", "10-30"].forEach(text => {
+    out += `<text x="${px(dayOf(text) + 0.5)}" y="${plotBottom + 40}" font-size="27" fill="#9AA5B1" text-anchor="middle">${Number(text.slice(0, 2))}/${Number(text.slice(3))}</text>`;
+  });
+  let path = `M ${px(0)} ${py(0)}`;
+  cumulative.forEach((count, i) => { path += ` L ${px(i)} ${py(count)} L ${px(i + 1)} ${py(count)}`; });
+  out += `<path d="${path} L ${px(progressDays)} ${py(0)} Z" fill="#E8833A" opacity="0.18"/>`;
+  out += `<path d="${path}" fill="none" stroke="#E8833A" stroke-width="5" stroke-linejoin="round"/>`;
+  out += `<text x="${plotRight + 18}" y="${py(40) + 11}" font-size="32" font-weight="700" fill="#E8833A">做完 40 張</text>`;
+  {
+    const x1 = px(dayOf("09-03")), x2 = px(dayOf("10-20") + 1), y = 112;
+    out += `<path d="M ${x1} ${y + 22} L ${x1} ${y} L ${x2} ${y} L ${x2} ${y + 22}" fill="none" stroke="#1D2B3A" stroke-width="4"/>`;
+    out += `<text x="${(x1 + x2) / 2}" y="${y - 16}" font-size="29" font-weight="700" fill="#1D2B3A" text-anchor="middle">A：開卡到決定不做，47 天</text>`;
+  }
+  document.querySelector("svg.progress").innerHTML = out;
+</script>
+</body>
+</html>

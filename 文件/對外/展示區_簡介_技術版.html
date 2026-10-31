@@ -1,0 +1,273 @@
+<!doctype html>
+<!--
+  決賽展示區：A4 產品簡介（技術版），雙面，給停下來問「怎麼做的」的人（廠商、其他參賽者）。
+  正面：演算法（精確幾何、出題、難度、照難度出題、實力）；背面：拍照出題、驗證、架構與開發。
+  數字的出處：權重與 ELO 參數抄自 Assets/Resources/DifficultyWeights.json、SkillRatingSettings.json；
+  回饋數字與凸多邊形校準在 開發進度.md〈13 個凸多邊形校準 ＋ 回饋資料第一次分析〉；逼近在 程式說明書.md §13.12、§16.23；
+  T20 的秒數在 開發進度.md〈T20 實測〉；測試數 590、55 秒是 2026-10-31 跑的。改數字先改那些地方再回來抄。
+  ⚠️ 對外不寫確切解數（求解器的完整性沒有證明）。⚠️ 匿名：不能出現學校、課程、教授、協作者的名字。⚠️ 寫「玩家」，不預設年齡段。
+  列印：Chrome 開這個檔 → 列印 → 另存為 PDF，紙張 A4、邊界「無」、勾「背景圖形」，雙面（長邊翻）。
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>展示區簡介技術版</title>
+<style>
+  @font-face {
+    font-family: "Noto Sans TC Local";
+    src: url("../../Assets/Font/NotoSansTC-VariableFont_wght.ttf") format("truetype");
+    font-weight: 100 900;
+  }
+  :root {
+    --ink: #2B2A33; --ink-2: #5C574E; --ink-3: #8A8377; --paper: #FAF6EE; --card: #FFFFFF; --line: #E4DDCF; --tint: #F3EEE3;
+    --red: #E8613C; --amber: #E9A13B; --lime: #A8C13F; --green: #3FB58A; --blue: #3E9BD4; --violet: #6B72C9; --pink: #D4589B;
+  }
+  @page { size: A4; margin: 0; }
+  html, body { margin: 0; background: #d9d6cf; }
+  body { padding: 24px 16px; font-family: "Noto Sans TC Local", "Noto Sans TC", "Microsoft JhengHei", sans-serif; color: var(--ink);
+         line-break: strict; text-spacing-trim: trim-start; text-wrap: pretty;
+         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { width: 210mm; height: 297mm; margin: 0 auto 24px; box-sizing: border-box; padding: 12mm 13mm 0; background: var(--paper);
+          position: relative; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,.18); }
+  @media print { body { padding: 0; background: none; } .page { box-shadow: none; margin: 0; break-after: page; } }
+  b { font-weight: 700; }
+  .math { font-family: "Cambria Math", "Times New Roman", serif; font-style: italic; }
+
+  .top { display: flex; justify-content: space-between; align-items: baseline; border-bottom: .5mm solid var(--ink); padding-bottom: 2.5mm; }
+  .top h1 { margin: 0; font-size: 22pt; font-weight: 800; }
+  .top h1 small { font-size: 12pt; font-weight: 600; margin-left: 2mm; }
+  .top .side { font-size: 9pt; color: var(--ink-3); text-align: right; line-height: 1.5; }
+  .lead { margin: 3mm 0 0; font-size: 10pt; line-height: 1.7; color: var(--ink-2); }
+
+  h2 { font-size: 12.5pt; font-weight: 800; margin: 4mm 0 1.6mm; display: flex; align-items: baseline; gap: 2mm; }
+  h2 .number { color: var(--c, var(--red)); font-size: 12.5pt; }
+  h2 .aside { font-size: 9pt; font-weight: 500; color: var(--ink-3); margin-left: auto; }
+  p, li { font-size: 9.5pt; line-height: 1.6; }
+  p { margin: 0 0 1.5mm; }
+  ul { margin: 0; padding-left: 4.5mm; }
+  li { margin-bottom: .8mm; }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+  .card { background: var(--card); border-radius: 3mm; padding: 3mm 4mm; }
+
+  /* 系統循環 */
+  .loop { display: flex; align-items: stretch; margin-top: 3mm; }
+  .loop .step { flex: 1; background: var(--card); border: .5mm solid var(--c); border-radius: 3mm; padding: 2mm 1.5mm; text-align: center; }
+  .loop .step b { display: block; font-size: 10pt; }
+  .loop .step span { display: block; font-size: 8pt; color: var(--ink-2); line-height: 1.45; margin-top: .5mm; }
+  .loop .arrow { width: 5mm; display: flex; align-items: center; justify-content: center; color: var(--ink-3); font-size: 9pt; }
+  .loop-back { font-size: 8.5pt; color: var(--ink-3); margin-top: 1mm; text-align: center; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 9pt; }
+  th, td { padding: .8mm 2mm; text-align: left; border-bottom: .3mm solid var(--line); line-height: 1.45; }
+  th { font-weight: 700; color: var(--ink-2); border-bottom: .4mm solid var(--ink-3); }
+  td.number, th.number { text-align: right; font-variant-numeric: tabular-nums; }
+  .bar { display: inline-block; height: 2.2mm; background: var(--amber); border-radius: 1mm; vertical-align: middle; }
+
+  .formula { background: var(--tint); border-radius: 3mm; padding: 3mm 4mm; }
+  .formula .row { display: grid; grid-template-columns: 15mm 1fr; gap: 2mm; font-size: 9pt; line-height: 1.7; }
+  .formula .row .label { color: var(--ink-2); }
+  .note { font-size: 8.5pt; color: var(--ink-3); line-height: 1.55; margin-top: 1.5mm; }
+
+  .pipeline { display: flex; align-items: stretch; gap: 0; margin: 1mm 0 2.5mm; }
+  .pipeline .stage { flex: 1; background: var(--card); border-radius: 3mm; padding: 2.5mm 2mm; border-top: 1.2mm solid var(--c); }
+  .pipeline .stage b { display: block; font-size: 9.5pt; }
+  .pipeline .stage span { display: block; font-size: 8pt; color: var(--ink-2); line-height: 1.5; margin-top: .8mm; }
+  .pipeline .arrow { width: 4.5mm; display: flex; align-items: center; justify-content: center; color: var(--ink-3); font-size: 9pt; }
+
+  .claims { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; }
+  .claim { background: var(--card); border-radius: 3mm; padding: 2.5mm 3.5mm; }
+  .claim .q { font-size: 9.5pt; font-weight: 800; }
+  .claim .how { font-size: 8.8pt; color: var(--ink-2); line-height: 1.6; margin-top: .8mm; }
+
+  .layers { display: grid; grid-template-columns: 1fr; gap: 1.5mm; }
+  .layer { border-radius: 3mm; padding: 2.2mm 3.5mm; font-size: 9pt; line-height: 1.55; }
+  .layer b { margin-right: 2mm; }
+  .layer.view { background: var(--card); border: .3mm solid var(--line); }
+  .layer.rule { background: #FCEBDD; }
+
+  footer { position: absolute; left: 13mm; right: 13mm; bottom: 6mm; display: flex; justify-content: space-between; font-size: 8pt; color: var(--ink-3); }
+  .stripe { position: absolute; left: 0; right: 0; bottom: 0; height: 3mm; display: flex; }
+  .stripe i { flex: 1; }
+</style>
+</head>
+<body>
+
+<!-- ───────────── 正面：演算法 ───────────── -->
+<div class="page">
+  <div class="top">
+    <h1>巧級<small>Tangrade</small>　技術簡介</h1>
+    <div class="side">可驗證難度的空間邏輯訓練系統<br>Unity 6・C#・Android</div>
+  </div>
+  <p class="lead">題目由演算法當場生成，難度由題目形狀算出，玩家實力用 ELO 換算，三者互相驅動。<b>全程離線、不用生成式 AI。</b>每一項宣稱的驗證在背面。</p>
+
+  <div class="loop">
+    <div class="step" style="--c: var(--blue)"><b>實力 R</b><span>起始 900</span></div>
+    <div class="arrow">→</div>
+    <div class="step" style="--c: var(--red)"><b>當場生成</b><span>目標難度 R ± 50</span></div>
+    <div class="arrow">→</div>
+    <div class="step" style="--c: var(--amber)"><b>算難度 D</b><span>六個形狀特徵</span></div>
+    <div class="arrow">→</div>
+    <div class="step" style="--c: var(--green)"><b>玩家解題</b><span>時間、拖曳、提示</span></div>
+    <div class="arrow">→</div>
+    <div class="step" style="--c: var(--violet)"><b>ELO 結算</b><span>ΔR = K(S − E)</span></div>
+  </div>
+  <div class="loop-back">↻ 新的 R 決定下一題；結算當下就在背景執行緒生下一題</div>
+
+  <h2><span class="number" style="--c: var(--red)">1</span>精確幾何：沒有容差</h2>
+  <div class="two">
+    <p>七巧板的邊長含 √2，用浮點數必然有誤差，而七巧板到處是貼邊與碰角，容差判斷容易誤判。座標一律用 <b>ℤ[√2]</b>：<span class="math">a + b√2</span>（<span class="math">a, b</span> 為整數），兩點是否重合是整數比較。</p>
+    <p>旋轉 45° 之後仍留在 ℤ[√2] 裡；重疊用<b>分離軸定理</b>，距離 0 算「分離」，所以貼邊、碰角都合法。手指的浮點位置先經吸附換成精確座標。片只能吸在題目框內、不能重疊，所以<b>七片都放進去 ＝ 過關</b>。</p>
+  </div>
+
+  <h2><span class="number" style="--c: var(--amber)">2</span>出題：先拼好，再描外框</h2>
+  <div class="two">
+    <p><b>隨機化深度優先回溯</b>：七片一片一片貼上去，每一步列出所有「貼得上、不重疊」的擺法，隨機挑一個，走不下去就退回。七片拼好後用<b>邊界追蹤</b>描出外框當題目，所以<b>答案先於題目存在，每一題保證有解</b>。</p>
+    <p>描出來的形狀還要過審美門檻（面積 ÷ 凸包面積 ≥ 3/5，乘開成整數比較）與去重（旋轉、翻面共 16 種姿態取標準形再雜湊）。存檔只存七片的轉向與六條連接，座標需要時重算。</p>
+  </div>
+
+  <h2><span class="number" style="--c: var(--lime)">3</span>難度：六個形狀特徵加權</h2>
+  <div class="two">
+    <div class="card" style="padding: 2mm 3mm">
+      <table>
+        <tr><th>特徵</th><th>方向</th><th class="number">權重</th></tr>
+        <tr><td>外框周長</td><td>越短越難</td><td class="number"><span class="bar" style="width:10.5mm"></span> 0.35</td></tr>
+        <tr><td>轉角數</td><td>越少越難</td><td class="number"><span class="bar" style="width:7.5mm"></span> 0.25</td></tr>
+        <tr><td>只露一個頂點的片</td><td>越多越難</td><td class="number"><span class="bar" style="width:4.5mm"></span> 0.15</td></tr>
+        <tr><td>被外框逼出位置的片</td><td>越多越簡單</td><td class="number"><span class="bar" style="width:4.5mm"></span> 0.15</td></tr>
+        <tr><td>兩片大三角拼成一塊</td><td>有就簡單</td><td class="number"><span class="bar" style="width:4.5mm"></span> 0.15</td></tr>
+        <tr><td>片與片錯開的接觸</td><td>越少越難</td><td class="number"><span class="bar" style="width:3mm"></span> 0.10</td></tr>
+      </table>
+    </div>
+    <div>
+      <p>每個特徵用一批基準題的平均與標準差<b>標準化</b>，加權相加後換到<b>平均 1200、標準差 200</b> 的尺上。平均與標準差是存下來的常數，不是現算，所以<b>同一題永遠同一個難度</b>。</p>
+      <p>權重寫在設定檔（JSON），是唯一的源頭；換一套標準不改程式。後三個特徵要看參考解，所以一題＝形狀＋一組固定的參考解，一起存。</p>
+    </div>
+  </div>
+
+  <h2><span class="number" style="--c: var(--green)">4</span>照難度出題，換題不等</h2>
+  <div class="two">
+    <p>給一個目標難度 T：最多試 <b>200 次</b>出題，落在 <b>T ± 50</b> 內立刻回傳；預算用完就回傳最接近的一題（標「將就」），一題都沒生出來才算失敗。目標夾在量過生得到的 744～1660。</p>
+    <p>出題在<b>背景執行緒</b>跑：結算的那一刻就照新實力開始生下一題，玩家看結果的時候已經生好。決賽用的平板（Nokia T20）上，按「下一題」到進關最久 <b>0.63 秒</b>。</p>
+  </div>
+
+  <h2><span class="number" style="--c: var(--violet)">5</span>實力：ELO，看時間與提示</h2>
+  <div class="two">
+    <div class="formula">
+      <div class="row"><span class="label">預期表現</span><span><span class="math">E</span> = 1 ÷ (1 + 10<sup>(<span class="math">D</span> − <span class="math">R</span>) ÷ 400</sup>)</span></div>
+      <div class="row"><span class="label">時間代價</span><span><span class="math">C</span> = 前景秒數 − 0.5 × 拖曳秒數 ＋ 提示 × 30</span></div>
+      <div class="row"><span class="label">實際表現</span><span>過關 <span class="math">S</span> = 90 ÷ (90 + <span class="math">C</span>)；放棄 <span class="math">S</span> = 0</span></div>
+      <div class="row"><span class="label">實力變化</span><span>Δ<span class="math">R</span> = <span class="math">K</span> × (<span class="math">S</span> − <span class="math">E</span>)，<span class="math">K</span> = 20</span></div>
+    </div>
+    <div>
+      <p><b>實力 R 的意思：你大約 90 秒解完的難度。</b>比 90 秒快加分、慢扣分；拖著片的時間打五折（手在動，不全是在想）；一次提示算多想 30 秒，免得「等提示」變成最佳策略。</p>
+      <p class="note">玩家畫面不顯示分數，只說「下一題會難一點／差不多／簡單一點」。展示版為了幾局內看得到變化，K 是正式版的 10 倍；左上角的監控面板會把每一項算給你看。</p>
+    </div>
+  </div>
+
+  <footer><span>技術簡介・正面：演算法</span><span>背面：拍照出題・驗證・開發 →</span></footer>
+  <div class="stripe"><i style="background:#E8613C"></i><i style="background:#E9A13B"></i><i style="background:#A8C13F"></i><i style="background:#3FB58A"></i><i style="background:#3E9BD4"></i><i style="background:#6B72C9"></i><i style="background:#D4589B"></i></div>
+</div>
+
+<!-- ───────────── 背面：拍照出題、驗證、開發 ───────────── -->
+<div class="page">
+  <h2 style="margin-top: 0"><span class="number" style="--c: var(--blue)">6</span>拍照出題：在拼得出來的擺法裡找最像的<span class="aside">掃描模式</span></h2>
+  <div class="pipeline">
+    <div class="stage" style="--c: var(--blue)"><b>取出剪影</b><span>U2Net（u2netp）在手機上離線推論，把主體從背景分出來</span></div>
+    <div class="arrow">→</div>
+    <div class="stage" style="--c: var(--blue)"><b>縮放輪廓</b><span>描出外框，縮到面積 32（七片的總面積）</span></div>
+    <div class="arrow">→</div>
+    <div class="stage" style="--c: var(--violet)"><b>Beam search</b><span>沿用出題器的貼片步驟，每一步只留分數最高的 100 條路</span></div>
+    <div class="arrow">→</div>
+    <div class="stage" style="--c: var(--violet)"><b>三組參數</b><span>同時在背景跑，各取前 2 名，去掉重複的形狀</span></div>
+    <div class="arrow">→</div>
+    <div class="stage" style="--c: var(--green)"><b>玩家挑選</b><span>剪影疊在照片上翻頁比較，附相似度</span></div>
+  </div>
+  <div class="two">
+    <div>
+      <p>照片的輪廓面積不是 32、頂點不在格點上，<b>修不成合法的題目</b>，所以反過來：候選全部來自合法的擺法，結果<b>永遠拼得出來，只是有時不夠像</b>。</p>
+      <p>打分在格子上算：一片＝蓋到輪廓內的格數 − 伸到外面的格數；最後用 IoU（交集 ÷ 聯集）排名。浮點只用來打分，挑出來的永遠是精確擺法。</p>
+    </div>
+    <div>
+      <p>只看面積會讓大片吃掉耳朵和尾巴，所以加了<b>特徵</b>：用開閉運算找出突出與缺口，蓋到突出、留住缺口另外加分；再加<b>貼邊獎勵</b>，讓把手不會被拼成鋸齒。</p>
+      <p class="note">影像辨識模組由協作者負責；逼近、選題與照片對照由開發者完成。在 T20 上，拍照到選題約 36 秒。</p>
+    </div>
+  </div>
+
+  <h2><span class="number" style="--c: var(--red)">7</span>每一項宣稱，怎麼驗證</h2>
+  <div class="claims">
+    <div class="claim">
+      <div class="q">幾何是對的</div>
+      <div class="how">七巧板只拼得出 13 種凸多邊形（Wang 與 Hsiung，1942）；程式獨立算出的邊數分布與論文完全一致。</div>
+    </div>
+    <div class="claim">
+      <div class="q">每一題都拼得出來</div>
+      <div class="how">答案先於題目存在（先拼後描）；另外實測連續出題 300 次，沒有一次拼不起來。</div>
+    </div>
+    <div class="claim">
+      <div class="q">同一題永遠同一個難度</div>
+      <div class="how">旋轉、翻面後重算必須完全相同，由自動化測試把關；監控面板另外重算一次對帳。</div>
+    </div>
+    <div class="claim">
+      <div class="q">拍照出題的基準用真實資料</div>
+      <div class="how">不拿自己拼的造型題當標準（太好考），改用公開資料集：MPEG-7 剪影 116 張、Caltech-101 照片 300 張。</div>
+    </div>
+  </div>
+
+  <div class="two" style="margin-top: 3mm; align-items: start">
+    <div class="card">
+      <div style="font-size: 9.5pt; font-weight: 800; margin-bottom: 1mm">難度跟真人表現一致（9 月，11 人、56 題）</div>
+      <table>
+        <tr><th>目標難度</th><td class="number">800</td><td class="number">1000</td><td class="number">1200</td><td class="number">1400</td><td class="number">1600</td></tr>
+        <tr><th>題數</th><td class="number">11</td><td class="number">12</td><td class="number">11</td><td class="number">11</td><td class="number">11</td></tr>
+        <tr><th>中位秒數</th><td class="number">110</td><td class="number">137</td><td class="number">166</td><td class="number">159</td><td class="number">231</td></tr>
+        <tr><th>平均提示</th><td class="number">0.45</td><td class="number">0.50</td><td class="number">1.00</td><td class="number">1.09</td><td class="number"><b>1.82</b></td></tr>
+      </table>
+    </div>
+    <div>
+      <p>難度越高，提示次數一路增加。扣除個人差異後，難度與解題時間的相關 <span class="math">r</span> ≈ 0.46、與提示次數 <span class="math">r</span> ≈ 0.50。</p>
+      <p><b>權重沒有因這批資料調整</b>，所以這是驗證、不是事後擬合。試過調權重，最好的候選只把相關從 0.456 提到 0.475，在誤差內，決定不改。</p>
+    </div>
+  </div>
+
+  <h2><span class="number" style="--c: var(--green)">8</span>架構與開發</h2>
+  <div class="two">
+    <div class="card" style="font-size: 9pt; line-height: 1.65">
+      <div><b>規則層</b>　純 C#，不依賴遊戲引擎：幾何、出題、難度、ELO、逼近</div>
+      <div><b>畫面層</b>　Unity：盤面、拖曳吸附、相機、監控面板</div>
+      <div><b>設定檔</b>　權重與實力參數是 JSON，換標準不改程式</div>
+    </div>
+    <ul>
+      <li><b>590 個自動化測試</b>，引擎外 55 秒跑完；每次 push 由 GitHub Actions 再跑一次</li>
+      <li><b>看板開發</b>，「測試中」一欄要在實機玩過才進「完成」</li>
+      <li>開發者定方向與架構；<b>AI 程式助理</b>先寫中文邏輯、確認了才實作</li>
+    </ul>
+  </div>
+
+  <!-- 數字出處：開發進度.md〈P5-6 的實測〉（Xperia，10/20）與其下〈T20 實測〉（10/29）；換關：T20 的 2～3 秒在 待辦清單.md〈用平板展示帶出來的四件事〉；Xperia 寫「感覺不到」是使用者 10/31 說的（實測從沒在出題卡過，沒有計秒）。
+       逼近兩台量法不同（Xperia 逐組、T20 三組同時），只寫在註腳、不放進表格對比 -->
+  <h2><span class="number" style="--c: var(--blue)">9</span>效能：旗艦手機與入門平板</h2>
+  <div class="two" style="align-items: start; grid-template-columns: 1.15fr 1fr">
+    <div class="card" style="padding: 2mm 3mm">
+      <table>
+        <tr><th style="font-weight: 500; font-size: 7.6pt">S8 Gen 3 ／ Unisoc T610</th><th class="number" style="white-space: nowrap">Xperia 1 VI</th><th class="number" style="white-space: nowrap">Nokia T20</th></tr>
+        <tr><td>換關：沒有背景出題</td><td class="number">感覺不到</td><td class="number">2～3 秒</td></tr>
+        <tr><td>換關：背景出題之後</td><td class="number">感覺不到</td><td class="number" style="white-space: nowrap"><b>最久 0.63 秒</b></td></tr>
+        <tr><td>辨識：安裝後第一次</td><td class="number">4.2 秒</td><td class="number">27.4 秒</td></tr>
+        <tr><td>辨識：之後每一次</td><td class="number">0.52 秒</td><td class="number">13.2 秒</td></tr>
+      </table>
+    </div>
+    <div>
+      <p>出題在 CPU 上：旗艦手機本來就不卡，入門平板靠<b>背景出題</b>壓到 1 秒內。</p>
+      <p>辨識是 GPU 跑神經網路，T20 約慢 <b>25 倍</b>、藏不住；CPU 那幾段兩台都在 0.3 秒以下。第一次慢是 GPU 驅動在編譯，一次安裝只付一次。</p>
+      <p class="note">逼近：T20 三組同時跑約 23 秒；Xperia 是逐組量的（每組 2～4 秒），量法不同不直接比。</p>
+    </div>
+  </div>
+
+  <footer><span>技術簡介・背面</span><span>桌上的平板可以試玩，掃描模式可以拿桌上的東西拍</span></footer>
+  <div class="stripe"><i style="background:#E8613C"></i><i style="background:#E9A13B"></i><i style="background:#A8C13F"></i><i style="background:#3FB58A"></i><i style="background:#3E9BD4"></i><i style="background:#6B72C9"></i><i style="background:#D4589B"></i></div>
+</div>
+
+</body>
+</html>

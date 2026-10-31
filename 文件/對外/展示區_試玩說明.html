@@ -1,0 +1,138 @@
+<!doctype html>
+<!--
+  決賽展示區：試玩說明，A4 直式單面，立在平板旁邊（或護貝平放）。讀者是路過、拿起平板的人：字大、步驟短。
+  按鈕名稱抄自 GameScene 的 UI 文字（挑戰模式／經典模式／掃描模式、左轉／右轉／翻面、提示、放棄、返回、照片、開啟相機）；
+  教學頁的說法抄自 TutorialPanel 在場景裡的五頁。場景改了按鈕字，這裡要跟著改。
+  掃描的秒數是 T20 實測（開發進度.md〈T20 實測〉：拍完到選題約 36 秒）；道具的挑法在 待辦清單.md〈決賽前總表〉11/6 器材那列。
+  ⚠️ 監控面板會顯示分數，展示版 K 是 10 倍——有數字的地方一定要寫明（競賽注意事項）。⚠️ 匿名、寫「玩家」不寫孩子。
+  列印：Chrome 開這個檔 → 列印 → 另存為 PDF，紙張 A4、邊界「無」、勾「背景圖形」。
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>展示區試玩說明</title>
+<style>
+  @font-face {
+    font-family: "Noto Sans TC Local";
+    src: url("../../Assets/Font/NotoSansTC-VariableFont_wght.ttf") format("truetype");
+    font-weight: 100 900;
+  }
+  :root {
+    --ink: #2B2A33; --ink-2: #5C574E; --ink-3: #8A8377; --paper: #FAF6EE; --card: #FFFFFF; --line: #E4DDCF;
+    --red: #E8613C; --amber: #E9A13B; --lime: #A8C13F; --green: #3FB58A; --blue: #3E9BD4; --violet: #6B72C9; --pink: #D4589B;
+  }
+  @page { size: A4; margin: 0; }
+  html, body { margin: 0; background: #d9d6cf; }
+  body { padding: 24px 16px; font-family: "Noto Sans TC Local", "Noto Sans TC", "Microsoft JhengHei", sans-serif; color: var(--ink);
+         line-break: strict; text-spacing-trim: trim-start; text-wrap: pretty;
+         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { width: 210mm; height: 297mm; margin: 0 auto; box-sizing: border-box; padding: 12mm 14mm 0; background: var(--paper);
+          position: relative; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,.18); }
+  @media print { body { padding: 0; background: none; } .page { box-shadow: none; } }
+  b { font-weight: 800; }
+  .key { display: inline-block; background: var(--ink); color: var(--paper); border-radius: 1.6mm; padding: 0 2mm; font-weight: 700; font-size: .92em; line-height: 1.5; margin: 0 .5mm; }
+
+  header { display: flex; align-items: flex-end; justify-content: space-between; }
+  header h1 { margin: 0; font-size: 44pt; font-weight: 800; line-height: 1; }
+  header .sub { margin-top: 3mm; font-size: 15pt; font-weight: 600; color: var(--ink-2); }
+  header .brand { text-align: right; font-size: 11pt; color: var(--ink-3); line-height: 1.4; }
+  header .brand b { display: block; font-size: 20pt; color: var(--ink); }
+
+  h2 { margin: 7mm 0 3mm; font-size: 17pt; font-weight: 800; display: flex; align-items: center; gap: 3mm; }
+  h2 .badge { width: 9mm; height: 9mm; border-radius: 50%; background: var(--c); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 14pt; flex: none; }
+
+  .modes { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3.5mm; }
+  .mode { background: var(--card); border-radius: 3.5mm; padding: 3.5mm 4mm; border-left: 2mm solid var(--c); }
+  .mode .name { font-size: 13.5pt; font-weight: 800; }
+  .mode .what { font-size: 10.5pt; color: var(--ink-2); line-height: 1.5; margin-top: 1mm; }
+  .mode .first { display: inline-block; margin-top: 1.5mm; font-size: 9pt; font-weight: 700; color: var(--red); }
+
+  .steps { display: grid; grid-template-columns: 1fr 1fr; gap: 3.5mm; }
+  .step { background: var(--card); border-radius: 3.5mm; padding: 3.5mm 4.5mm; display: flex; gap: 3.5mm; align-items: flex-start; }
+  .step .n { font-size: 20pt; font-weight: 800; color: var(--c); line-height: 1; flex: none; width: 7mm; }
+  .step .t { font-size: 12.5pt; line-height: 1.55; }
+  .step .t small { display: block; font-size: 10pt; color: var(--ink-2); margin-top: .8mm; }
+
+  .stuck { margin-top: 3.5mm; background: #FCEBDD; border-radius: 3.5mm; padding: 3.5mm 5mm; font-size: 12pt; line-height: 1.6; }
+
+  .scan { display: grid; grid-template-columns: 1.35fr 1fr; gap: 4mm; }
+  .scan ol { margin: 0; padding: 0; list-style: none; counter-reset: s; }
+  .scan li { counter-increment: s; position: relative; padding-left: 9mm; font-size: 12pt; line-height: 1.55; margin-bottom: 2.2mm; }
+  .scan li::before { content: counter(s); position: absolute; left: 0; top: .6mm; width: 6mm; height: 6mm; border-radius: 50%; background: var(--blue); color: #fff; font-size: 10pt; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+  .scan li small { display: block; font-size: 10pt; color: var(--ink-2); }
+  .tips { background: var(--card); border-radius: 3.5mm; padding: 3.5mm 4.5mm; font-size: 10.5pt; line-height: 1.6; }
+  .tips .head { font-size: 11.5pt; font-weight: 800; margin-bottom: 1.5mm; }
+  .tips .good, .tips .bad { display: flex; gap: 2mm; margin-bottom: 1.5mm; }
+  .tips .good::before { content: "✓"; color: var(--green); font-weight: 800; }
+  .tips .bad::before { content: "✗"; color: var(--red); font-weight: 800; }
+
+  .monitor { margin-top: 6mm; display: flex; gap: 4mm; align-items: center; border: .5mm dashed var(--ink-3); border-radius: 3.5mm; padding: 3.5mm 5mm; font-size: 10.5pt; line-height: 1.6; color: var(--ink-2); }
+  .monitor .head { font-size: 12pt; font-weight: 800; color: var(--ink); }
+  .monitor svg { flex: none; }
+
+  .stripe { position: absolute; left: 0; right: 0; bottom: 0; height: 5mm; display: flex; }
+  .stripe i { flex: 1; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <div>
+      <h1>歡迎試玩</h1>
+      <div class="sub">平板直接拿起來玩，玩完放回桌上就好</div>
+    </div>
+    <div class="brand"><b>巧級 Tangrade</b>七巧板拼圖 App</div>
+  </header>
+
+  <h2><span class="badge" style="--c: var(--amber)">1</span>在主畫面選一種模式</h2>
+  <div class="modes">
+    <div class="mode" style="--c: var(--red)"><div class="name">挑戰模式</div><div class="what">照你的實力當場出題，拼得順下一題就難一點</div><div class="first">第一次玩選這個</div></div>
+    <div class="mode" style="--c: var(--green)"><div class="name">經典模式</div><div class="what">人手拼的造型題：房子、動物、船……</div></div>
+    <div class="mode" style="--c: var(--blue)"><div class="name">掃描模式</div><div class="what">拍一樣東西，把它變成一題（見下面第 3 步）</div></div>
+  </div>
+
+  <h2><span class="badge" style="--c: var(--green)">2</span>怎麼拼</h2>
+  <div class="steps">
+    <div class="step" style="--c: var(--red)"><div class="n">1</div><div class="t">點下面的<b>抽屜</b>，七片就出來了</div></div>
+    <div class="step" style="--c: var(--amber)"><div class="n">2</div><div class="t">把片<b>拖進中間的框</b>，靠近就會自動吸上去</div></div>
+    <div class="step" style="--c: var(--green)"><div class="n">3</div><div class="t">點一下片，旁邊會出現按鈕<span style="display:block; margin-top:1.2mm"><span class="key">左轉</span><span class="key">右轉</span><span class="key">翻面</span></span></div></div>
+    <div class="step" style="--c: var(--blue)"><div class="n">4</div><div class="t">片要<b>整片在框裡、不能疊</b>，不然放不上去<small>七片都放進去就過關！</small></div></div>
+  </div>
+  <div class="stuck">
+    <b>卡住了？</b>等一下會出現<span class="key">提示</span>，告訴你一片該放哪裡。真的拼不出來可以按<span class="key">放棄</span>換一題（會先問你一次）。想回主畫面按<span class="key">返回</span>。主畫面的<span class="key">教學</span>有圖解。
+  </div>
+
+  <h2><span class="badge" style="--c: var(--blue)">3</span>拍一樣東西，變成一道題</h2>
+  <div class="scan">
+    <ol>
+      <li>主畫面選<span class="key">掃描模式</span> → <span class="key">開啟相機</span></li>
+      <li>拍桌上的東西，或拿白紙用麥克筆<b>塗滿</b>一個形狀<small>放在白紙上、整個東西都要入鏡</small></li>
+      <li>等大約 <b>40 秒</b>：先辨識輪廓，再找拼法</li>
+      <li>左右翻頁，挑一個<b>最像的</b>，開始拼<small>拼的時候按<span class="key">照片</span>，可以把原本的照片疊上來對照</small></li>
+    </ol>
+    <div class="tips">
+      <div class="head">什麼東西拼得像？</div>
+      <div class="good">胖胖的、有耳朵或把手的：馬克杯、玩具車、滑鼠、遊戲手把</div>
+      <div class="bad">細長的柄：湯匙、叉子、剪刀（會被拼成鋸齒）</div>
+      <div style="font-size: 9.5pt; color: var(--ink-3); margin-top: 1mm">七片拼不出曲線，所以是「最像」，不是一模一樣；但一定拼得出來。</div>
+    </div>
+  </div>
+
+  <div class="monitor">
+    <svg width="14mm" height="11mm" viewBox="0 0 56 44" aria-hidden="true">
+      <rect x="2" y="2" width="52" height="40" rx="5" fill="#FFFFFF" stroke="#2B2A33" stroke-width="3"/>
+      <rect x="8" y="8" width="20" height="13" rx="2" fill="#2B2A33"/>
+      <path d="M11 17 l4 -4 l4 3 l5 -6" fill="none" stroke="#E9A13B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div>
+      <div class="head">左上角那塊有數字的面板是什麼？</div>
+      監控面板：這一題的難度怎麼算出來、你的實力怎麼變，全部算給你看（一般玩家版看不到），點把手可以收起來。<b>展示版的實力變化是正式版的 10 倍</b>，讓你玩兩三題就看得到變化。
+    </div>
+  </div>
+
+  <div class="stripe"><i style="background:#E8613C"></i><i style="background:#E9A13B"></i><i style="background:#A8C13F"></i><i style="background:#3FB58A"></i><i style="background:#3E9BD4"></i><i style="background:#6B72C9"></i><i style="background:#D4589B"></i></div>
+</div>
+</body>
+</html>

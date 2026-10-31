@@ -1,0 +1,186 @@
+<!doctype html>
+<!--
+  決賽展示區：A4 產品簡介（白話版），單面，放桌上給路過的人拿或看。
+  讀者是路人，不是評審：講「這是什麼、怎麼玩、為什麼不一樣」，數字只留最下面一行開發亮點（待辦清單〈決賽前總表〉11/3 那列）。
+  配色與七片的顏色跟海報（海報_展示區.html）一樣；字型用 repo 裡的 Noto Sans TC（相對路徑），離線也印得出來。
+  列印：Chrome 開這個檔 → 列印 → 另存為 PDF，紙張 A4、邊界「無」、勾「背景圖形」。
+  ⚠️ 匿名：不能出現學校、課程、教授的名字。⚠️ 不預設年齡段：寫「玩家」，不寫孩子。
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>展示區簡介白話版</title>
+<style>
+  @font-face {
+    font-family: "Noto Sans TC Local";
+    src: url("../../Assets/Font/NotoSansTC-VariableFont_wght.ttf") format("truetype");
+    font-weight: 100 900;
+  }
+  :root {
+    --ink: #2B2A33; --ink-2: #5C574E; --ink-3: #8A8377; --paper: #FAF6EE; --card: #FFFFFF; --line: #E4DDCF;
+    --red: #E8613C; --amber: #E9A13B; --lime: #A8C13F; --green: #3FB58A; --blue: #3E9BD4; --violet: #6B72C9; --pink: #D4589B;
+  }
+  @page { size: A4; margin: 0; }
+  html, body { margin: 0; background: #d9d6cf; }
+  body { padding: 24px 16px; font-family: "Noto Sans TC Local", "Noto Sans TC", "Microsoft JhengHei", sans-serif; color: var(--ink);
+         line-break: strict; text-spacing-trim: trim-start; text-wrap: pretty;
+         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { width: 210mm; height: 297mm; margin: 0 auto; box-sizing: border-box; padding: 13mm 14mm 0; background: var(--paper);
+          position: relative; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,.18); }
+  @media print { body { padding: 0; background: none; } .page { box-shadow: none; } }
+  b { font-weight: 700; }
+
+  header { display: flex; align-items: center; gap: 7mm; margin-bottom: 2mm; }
+  header svg { width: 36mm; height: 38mm; flex: none; }
+  .kicker { font-size: 10.5pt; color: var(--ink-3); letter-spacing: .12em; font-weight: 500; }
+  h1 { margin: 1mm 0 0; font-size: 40pt; font-weight: 800; line-height: 1.05; }
+  h1 small { font-size: 17pt; font-weight: 600; margin-left: 3mm; }
+  .tagline { margin-top: 2.5mm; font-size: 17pt; font-weight: 700; color: var(--red); }
+  .facts { margin-top: 2mm; font-size: 10.5pt; color: var(--ink-2); }
+
+  h2 { font-size: 15pt; font-weight: 800; margin: 7mm 0 3mm; display: flex; align-items: center; gap: 2.5mm; }
+  h2::before { content: ""; width: 4mm; height: 4mm; background: var(--chip, var(--red)); transform: rotate(45deg); flex: none; }
+  p { margin: 0; font-size: 11pt; line-height: 1.7; }
+
+  .intro { margin-top: 6mm; background: var(--card); border-radius: 4mm; padding: 5mm 6mm; font-size: 12pt; line-height: 1.75; }
+
+  .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+  .mode { background: var(--card); border-radius: 4mm; padding: 4mm 4.5mm; border-top: 2mm solid var(--c); }
+  .mode .name { font-size: 13pt; font-weight: 800; }
+  .mode .what { margin-top: 1.5mm; font-size: 10pt; line-height: 1.6; color: var(--ink-2); }
+
+  .loop { display: flex; align-items: stretch; gap: 0; }
+  .step { flex: 1; background: var(--card); border-radius: 4mm; padding: 3.5mm 3mm; text-align: center; border: .6mm solid var(--c); }
+  .step .name { font-size: 12pt; font-weight: 800; }
+  .step .what { margin-top: 1mm; font-size: 9pt; line-height: 1.5; color: var(--ink-2); }
+  .arrow { width: 6mm; display: flex; align-items: center; justify-content: center; color: var(--ink-3); font-weight: 700; }
+  /* 回到第一格的線：內容寬 182 mm，一格 (182 − 3 × 6) ÷ 4 = 41 mm，所以第一格與最後一格的中心在 20.5 與 161.5 */
+  .back svg { display: block; width: 182mm; height: 6mm; }
+  .back p { margin-top: 1mm; text-align: center; font-size: 10pt; color: var(--ink-2); }
+
+  .why { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+  .why .item { background: var(--card); border-radius: 4mm; padding: 4mm 5mm; }
+  .why .q { font-size: 11.5pt; font-weight: 800; margin-bottom: 1.5mm; }
+  .why p { font-size: 10pt; line-height: 1.65; color: var(--ink-2); }
+
+  .scan { display: flex; gap: 4mm; align-items: stretch; }
+  .scan .flow { flex: 1; display: flex; gap: 2mm; align-items: center; }
+  .scan .box { flex: 1; background: var(--card); border-radius: 3mm; padding: 3mm 2.5mm; text-align: center; font-size: 10pt; font-weight: 700; line-height: 1.45; }
+  .scan .box span { display: block; font-weight: 400; font-size: 8.5pt; color: var(--ink-3); margin-top: .8mm; }
+  .scan .note { margin-top: 2.5mm; font-size: 9.5pt; color: var(--ink-2); line-height: 1.6; }
+
+  footer { position: absolute; left: 0; right: 0; bottom: 0; }
+  .dev { margin: 0 14mm 5mm; padding-top: 3.5mm; border-top: .4mm solid var(--line); font-size: 9.5pt; line-height: 1.6; color: var(--ink-2); }
+  .dev b { color: var(--ink); }
+  .stripe { display: flex; height: 5mm; }
+  .stripe i { flex: 1; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <!-- 七片拼成正方形，兩片稍微拿起來（跟海報同一組座標，邊長 280） -->
+    <svg viewBox="-12 -56 320 356" aria-hidden="true">
+      <g stroke="#FAF6EE" stroke-width="5" stroke-linejoin="round">
+        <polygon points="0,0 280,0 140,140" fill="#E8613C"/>
+        <polygon points="0,0 140,140 0,280" fill="#E9A13B"/>
+        <polygon points="280,140 280,280 140,280" fill="#A8C13F"/>
+        <polygon points="140,140 210,210 70,210" fill="#3E9BD4"/>
+        <polygon points="140,140 210,70 280,140 210,210" fill="#6B72C9"/>
+      </g>
+      <g fill="none" stroke="#C9C1B1" stroke-width="3.5" stroke-dasharray="9 8" stroke-linejoin="round">
+        <polygon points="280,0 280,140 210,70"/>
+        <polygon points="0,280 70,210 210,210 140,280"/>
+      </g>
+      <g stroke="#FAF6EE" stroke-width="5" stroke-linejoin="round">
+        <polygon points="280,0 280,140 210,70" fill="#3FB58A" transform="translate(6 -34) rotate(-18 250 70)"/>
+        <polygon points="0,280 70,210 210,210 140,280" fill="#D4589B" transform="translate(30 14) rotate(-9 105 245)"/>
+      </g>
+    </svg>
+    <div>
+      <div class="kicker">七巧板拼圖 App</div>
+      <h1>巧級<small>Tangrade</small></h1>
+      <div class="tagline">你變強，題目就跟著變難</div>
+      <div class="facts">每一題都是電腦當場拼出來的；你拼得越順，下一題就越難一點</div>
+      <div class="facts">全程離線・不用帳號・不用生成式 AI</div>
+    </div>
+  </header>
+
+  <h2 style="--chip: var(--amber)">三種玩法</h2>
+  <div class="modes">
+    <div class="mode" style="--c: var(--red)">
+      <div class="name">挑戰模式</div>
+      <div class="what">照你現在的實力，當場出一題給你。每一題都不一樣，題目沒有用完的一天。</div>
+    </div>
+    <div class="mode" style="--c: var(--green)">
+      <div class="name">經典模式</div>
+      <div class="what">一個一個用手拼出來的造型題：房子、動物、船……在挑戰之間換換口味。</div>
+    </div>
+    <div class="mode" style="--c: var(--blue)">
+      <div class="name">掃描模式</div>
+      <div class="what">拍一樣身邊的東西，系統找出七片拼起來最像它的形狀，變成一題。</div>
+    </div>
+  </div>
+
+  <h2 style="--chip: var(--green)">題目怎麼跟著你走</h2>
+  <div class="loop">
+    <div class="step" style="--c: var(--red)"><div class="name">當場出題</div><div class="what">電腦先把七片拼好，<br>再描下外框當題目</div></div>
+    <div class="arrow">→</div>
+    <div class="step" style="--c: var(--amber)"><div class="name">算出難度</div><div class="what">看外框的形狀，<br>算出一個難度分數</div></div>
+    <div class="arrow">→</div>
+    <div class="step" style="--c: var(--green)"><div class="name">你來拼</div><div class="what">卡住可以要提示，<br>真的不行可以換一題</div></div>
+    <div class="arrow">→</div>
+    <div class="step" style="--c: var(--blue)"><div class="name">換算實力</div><div class="what">看你花多久、用了幾次<br>提示，實力上升或下降</div></div>
+  </div>
+  <div class="back">
+    <svg viewBox="0 0 182 6" aria-hidden="true">
+      <path d="M161.5 0 v3 q0 2 -2 2 h-137 q-2 0 -2 -2 v-2.4" fill="none" stroke="#2B2A33" stroke-width=".6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M18.8 2.2 l1.7 -1.7 l1.7 1.7" fill="none" stroke="#2B2A33" stroke-width=".6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <p>下一題照新的實力出。畫面上不顯示分數，只告訴你「下一題會難一點、差不多、或簡單一點」。</p>
+  </div>
+
+  <h2 style="--chip: var(--blue)">跟一般七巧板 App 哪裡不一樣</h2>
+  <div class="why">
+    <div class="item">
+      <div class="q">每一題保證拼得出來</div>
+      <p>題目是從「已經拼好的七片」描出來的，答案在出題那一刻就存在。</p>
+    </div>
+    <div class="item">
+      <div class="q">難度是算的，不是猜的</div>
+      <p>外框越平滑、轉角越少，越看不出每一片在哪，就越難。系統把這些特徵算成分數。</p>
+    </div>
+    <div class="item">
+      <div class="q">拼對了一定給過</div>
+      <p>七巧板的邊長有 √2，用小數算會有誤差。巧級用精確的數學記每個位置，不會「拼對了卻不給過」。</p>
+    </div>
+  </div>
+
+  <h2 style="--chip: var(--violet)">拍一個東西，變成一道題</h2>
+  <div class="scan">
+    <div style="flex:1">
+      <div class="flow">
+        <div class="box">拍照<span>身邊的東西、<br>或塗滿的手繪</span></div>
+        <div class="arrow">→</div>
+        <div class="box">找出輪廓<span>影像辨識<br>把東西框出來</span></div>
+        <div class="arrow">→</div>
+        <div class="box">找最像的拼法<span>只在拼得出來<br>的擺法裡找</span></div>
+        <div class="arrow">→</div>
+        <div class="box">你挑一個來拼<span>翻頁比一比<br>哪一個最像</span></div>
+      </div>
+      <div class="note">七片拼不出曲線，所以結果是「最像」，不是一模一樣；但一定拼得出來。胖胖的、有耳朵或把手的東西拼得最像。</div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="dev">
+      <b>它是怎麼做出來的</b>　用看板（Kanban）開發，每張工作卡都要在平板上實際玩過才算完成；找真人試玩，依回饋修改設計；590 個自動化測試，每次更新程式都自動再跑一遍。
+    </div>
+    <div class="stripe"><i style="background:#E8613C"></i><i style="background:#E9A13B"></i><i style="background:#A8C13F"></i><i style="background:#3FB58A"></i><i style="background:#3E9BD4"></i><i style="background:#6B72C9"></i><i style="background:#D4589B"></i></div>
+  </footer>
+
+</div>
+</body>
+</html>
