@@ -6,11 +6,17 @@
 一款七巧板拼圖 App。題目由程式當場生成，難度由題目形狀算出來，玩家實力用西洋棋的等級分（ELO）換算，
 下一題再照實力生——出題、難度、實力三者自己轉成一個循環，不需要人工標難度。
 
-2026 大專校院資訊應用服務創新競賽參賽作品（資訊應用組）。**不使用生成式 AI 出題，全程離線，不需要帳號。**
+2026 大專校院資訊應用服務創新競賽參賽作品，入圍**鈦坦敏捷開發特別獎**決賽。**不使用生成式 AI 出題，全程離線，不需要帳號。**
 
 ---
 
 ## 玩起來是什麼樣子
+
+<p>
+  <img src="Assets/Pics/Tutorial/Tutorial1b_Drag.png" width="260" alt="把片拖進題目外框">
+  &nbsp;
+  <img src="Assets/Pics/Tutorial/Tutorial5_Scan.png" width="260" alt="掃描模式：照片辨識出的剪影與七片拼法疊在一起">
+</p>
 
 畫面上有一個題目外框（「盒子」），把下方抽屜裡的七片拖進去填滿就過關。
 
@@ -52,7 +58,7 @@
 | | |
 |---|---|
 | 引擎 | Unity **6000.3.7f1**（C#），URP |
-| 平台 | Android 手機／平板、Windows；iPad 打包測試中 |
+| 平台 | Android 手機／平板、Windows；iPad 打包測試過 |
 | 精確幾何 | ℤ[√2] 算術（`Scalar` 型別）；浮點只出現在繪圖與手指拖曳 |
 | 重疊判斷 | 分離軸定理（SAT），貼邊與碰角不算重疊 |
 | 出題 | 隨機化深度優先回溯搜尋；邊界追蹤取外框；標準形雜湊去除重複題 |
@@ -112,6 +118,8 @@ dotnet test Tools/DotnetTests
 | `報告_期中與決賽/` | 期中報告與決賽的講稿（簡報與影片不進版控） |
 | `CLAUDE.md` | 開發者交接筆記（給接手的人與 AI 助理，內容很細） |
 
+文件記錄的是開發當下的想法與來回，包括後來推翻的決定；以程式與 `文件/進度/開發進度.md` 的現況為準。
+
 ---
 
 ## 使用的第三方元件
@@ -120,3 +128,14 @@ dotnet test Tools/DotnetTests
 - [Unity Inference Engine](https://docs.unity3d.com/Packages/com.unity.ai.inference@latest)（`com.unity.ai.inference`）——在裝置上執行辨識模型
 - [U²-Net](https://github.com/xuebinqin/U-2-Net)（Apache-2.0）的輕量版 `u2netp`——前景剪影辨識
 - [Noto Sans TC](https://fonts.google.com/noto/specimen/Noto+Sans+TC)（SIL Open Font License 1.1，授權全文在 `Assets/Font/OFL.txt`）——介面字型
+- [Material Symbols](https://fonts.google.com/icons)（Apache-2.0）——按鈕圖示
+
+各元件的授權條款與位置整理在 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+
+---
+
+## 授權
+
+本專案的程式碼與文件採 [MIT 授權](LICENSE)。上面列的第三方元件不在此限，依各自的授權條款。
+
+辨識模組（`Assets/Scripts/Recognition/`、`U2NetContourRecognizer.cs`）由另一名隊友撰寫，一併以 MIT 授權釋出。
