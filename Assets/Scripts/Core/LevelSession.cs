@@ -28,7 +28,7 @@ namespace Tangram.Core
 
         /// <summary>
         /// 參考解，**已經平移到盤面座標**（加過 <see cref="BoxOrigin"/>）。
-        /// P1-3 用它三角化盒子的填色；P2 的提示覆蓋框也用它。
+        /// 盒子的填色用它三角化；提示覆蓋框也用它。
         /// </summary>
         public readonly Placement[] ReferenceSolution;
 
@@ -39,7 +39,7 @@ namespace Tangram.Core
         public readonly BoardState Board;
 
         /// <summary>
-        /// undo 的步驟堆疊（P1-9）。每一步是**動之前**那幾槽的樣子，
+        /// undo 的步驟堆疊。每一步是**動之前**那幾槽的樣子，
         /// 一般一步一筆，清空是一步七筆。
         ///
         /// <b>放這裡而不是放長生的 <see cref="LevelSession"/> 外殼上</b>：換關是整包換掉，
@@ -51,13 +51,13 @@ namespace Tangram.Core
         /// <summary>
         /// 每一片在不在待用區。索引就是槽索引。
         ///
-        /// <b>這是「片在不在抽屜裡」的唯一真相</b>（P1-5，待辦清單 A-4）。
+        /// <b>這是「片在不在抽屜裡」的唯一真相</b>。
         /// <c>PieceView</c> 的顯示與否是它的投影，不是第二份狀態。
         /// </summary>
         private readonly bool[] inTray = new bool[BoardState.PieceCount];
 
         /// <summary>
-        /// 這一關的難度值（P2-6）。1200 是基準批次的平均，一個標準差 200 分。
+        /// 這一關的難度值。1200 是基準批次的平均，一個標準差 200 分。
         /// <b>沒有題目的空方框（出題工具）是 0。</b>
         ///
         /// ⭐ <b>這一層不算，由出題的人算好傳進來</b>（2026-09-13 起）。
@@ -70,7 +70,7 @@ namespace Tangram.Core
         public readonly int Difficulty;
 
         /// <summary>
-        /// 這一題是怎麼生出來的（P2-15）。<b>不是出題器生的題目時是 null</b>——回饋場景的題單、練習題、出題工具。
+        /// 這一題是怎麼生出來的。<b>不是出題器生的題目時是 null</b>——回饋場景的題單、練習題、出題工具。
         /// ⚠️ 生成失敗退回大正方形時<b>不是 null</b>，下場是失敗，理由見 <see cref="GenerationRecord"/>。
         /// 每關一份，換關整包換掉，所以不會殘留上一題的。
         /// </summary>
@@ -88,7 +88,7 @@ namespace Tangram.Core
         /// </summary>
         public readonly bool CountsTowardRating;
 
-        // ───────── 提示（2026-09-15，互動設計 §9、待辦清單〈提示〉）─────────
+        // ───────── 提示（2026-09-15，互動設計 §9）─────────
 
         /// <summary>一關最多幾次提示。</summary>
         public const int MaximumHints = 3;
@@ -119,7 +119,7 @@ namespace Tangram.Core
         /// <summary>過關了沒。</summary>
         public bool IsSolved { get; private set; }
 
-        // ───────── 局內統計（P2-13）。ELO 的輸入就是這幾個數字 ─────────
+        // ───────── 局內統計。ELO 的輸入就是這幾個數字 ─────────
 
         /// <summary>
         /// <b>單次拖曳最多算幾秒</b>，超過的部分算進<see cref="ThinkingSeconds">思考時間</see>。
@@ -184,7 +184,7 @@ namespace Tangram.Core
 
         /// <summary>
         /// 玩家按了放棄沒。⚠️ <b>它是 ELO 唯一的「輸」訊號</b>——沒有它實力值只會單調上升。
-        /// <b>扣分是 P2-14 的事，這一層只記旗標。</b>
+        /// <b>扣分是 ELO 結算的事，這一層只記旗標。</b>
         /// </summary>
         public bool IsAbandoned { get; private set; }
 
@@ -200,7 +200,7 @@ namespace Tangram.Core
         public bool IsTiming => dragStartedAt.HasValue || foregroundStartedAt.HasValue;
 
         /// <summary>
-        /// 這一局的 ELO 結算明細（P2-14）。<b>沒有 = 還沒結算</b>。
+        /// 這一局的 ELO 結算明細。<b>沒有 = 還沒結算</b>。
         ///
         /// 放這裡是因為它每關一份、讀者不只一個（兩個彈窗讀方向、之後的監控面板讀全部）。
         /// ⭐ 換關時整包換掉，<b>「還沒結算」就自動重置</b>，不必有人記得清。
@@ -261,7 +261,7 @@ namespace Tangram.Core
         /// <summary>
         /// 現在還能按幾次提示＝ min(3, ⌊前景秒數 ÷ 間隔⌋) − 已用次數。
         ///
-        /// ⭐ <b>沒按的次數會累積</b>（2026-09-15 使用者定）：135 秒都沒按的人可以連按三次。
+        /// ⭐ <b>沒按的次數會累積</b>（2026-09-15 定）：135 秒都沒按的人可以連按三次。
         /// ⭐ <b>放棄鈕的門檻是間隔 × 3</b>，跟第三次提示同時出現——間隔只有一個數字，住在按鈕那邊
         /// （<c>BoardActionButtons</c>），這一層照呼叫端給的算，跟「現在幾點」同一個模式。
         /// </summary>
@@ -397,7 +397,7 @@ namespace Tangram.Core
             }
         }
 
-        // ───────── 局內統計的四件事（P2-13）─────────
+        // ───────── 局內統計的四件事─────────
         //
         // ⚠️ 三條冪等規則，整段最重要的東西：
         //   ① 已經在計時再叫「開始」→ 什麼都不做
@@ -521,7 +521,7 @@ namespace Tangram.Core
         public void MarkSolved() => IsSolved = true;
 
         /// <summary>
-        /// 七片都在盤上就標記過關（P1-10，互動設計 §7）。
+        /// 七片都在盤上就標記過關（互動設計 §7）。
         ///
         /// <b>判定就是 <see cref="BoardState.AllOnBoard"/>，不需要算面積、也不需要比形狀。</b>
         /// ⚠️ 這個等價關係<b>是靠吸附的硬限制撐著的</b>：片只吸得進盒內、而且不能重疊
@@ -546,7 +546,7 @@ namespace Tangram.Core
         {
             if (Puzzle == null) return false;
 
-            // ⚠️ 已經放棄的一局不能再過關（P2-13）。互斥由這一層保證，不是由 UI——
+            // ⚠️ 已經放棄的一局不能再過關。互斥由這一層保證，不是由 UI——
             // 放棄彈窗雖然會蓋住整個畫面，但那要等下一幀 Update 才出現。
             // 不擋的話這一局同時是「放棄」與「過關」，ELO 會算成兩件事
             if (IsAbandoned) return false;
@@ -594,7 +594,7 @@ namespace Tangram.Core
         }
 
         // ─────────────────────────────────────────────────────────────
-        // undo（P1-9）
+        // undo
         //
         // 一步的定義是**只有「放進盤面」算**，清空另外算一步七筆。
         // 旋轉、翻面、暫放、從抽屜拿出來、丟進回收框都不算——它們不動 BoardState。
@@ -631,7 +631,7 @@ namespace Tangram.Core
         /// <summary>
         /// 退一步。<b>模型的部分在這裡做完，畫面的部分不在</b>——
         /// 回傳的那幾筆就是「每一槽該變回什麼樣子」，由控制器套用到 <c>PieceView</c>
-        /// （待辦清單〈畫面同步歸控制器〉）。
+        /// （畫面同步一律歸控制器）。
         ///
         /// 兩條分支看的是<b>動之前在不在盤上</b>：
         /// <list type="bullet">
@@ -705,7 +705,7 @@ namespace Tangram.Core
         /// </param>
         /// <returns>有沒有真的清掉東西。盤面空的時候回 false，而且<b>不會壓進一個空步驟</b>。</returns>
         /// <summary>
-        /// ⚠️ <b>開發用的捷徑（P2-4）</b>：照參考解把片填上去，只留一槽自己拼。
+        /// ⚠️ <b>開發用的捷徑</b>：照參考解把片填上去，只留一槽自己拼。
         ///
         /// <b>為什麼在模型層而不是在除錯工具裡</b>：它會**寫盤面**。
         /// <c>DebugOverlay</c> 的契約是「絕對不碰任何狀態，只讀」，
@@ -900,7 +900,7 @@ namespace Tangram.Core
         public static LevelSession Current { get; set; }
 
         /// <summary>
-        /// 玩家的實力（P2-14）。由 <c>LevelController</c> 在 Awake 讀完設定之後建一次。
+        /// 玩家的實力。由 <c>LevelController</c> 在 Awake 讀完設定之後建一次。
         ///
         /// <b>放外殼上不放 <see cref="LevelData"/></b>：實力跨關延續，而 <see cref="Data"/> 換關時整包換掉。
         /// ⚠️ <b>可能是 null</b>——出題工具場景不給（那裡沒有題目、不結算），設定檔讀不到時也是 null。
@@ -931,7 +931,7 @@ namespace Tangram.Core
         /// </param>
         /// <param name="allowRoll">允不允許 roll 相機。精選題傳 false。</param>
         /// <param name="generation">
-        /// 出題紀錄（P2-15）。<b>選填</b>：只有照難度生的那條路會給，回饋場景、練習題不給，呼叫端一行都不用改。
+        /// 出題紀錄。<b>選填</b>：只有照難度生的那條路會給，回饋場景、練習題不給，呼叫端一行都不用改。
         /// </param>
         /// <param name="countsTowardRating">
         /// 要不要結算實力（2026-10-14）。<b>選填、預設 true</b>，只有掃描題傳 false，見 <see cref="LevelData.CountsTowardRating"/>。

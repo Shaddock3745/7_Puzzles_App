@@ -5,7 +5,7 @@ using Tangram.Data;
 namespace Tangram.Data.Tests
 {
     /// <summary>
-    /// 把一組擺放正規化（P2-3 的前置）。
+    /// 把一組擺放正規化（出題器的前置）。
     ///
     /// <b>這個改動存在的唯一理由</b>：出題器要把題目存成正規化的樣子，
     /// 而<b>參考解必須套一模一樣的變換</b>。原本 <c>PuzzleForm</c> 算得出那個變換卻不回報，

@@ -8,9 +8,9 @@ using Tangram.Data.Tests;
 namespace Tangram.Core.Tests
 {
     /// <summary>
-    /// 監控面板上的字（P5-3，issue #38，2026-10-23）：<see cref="LevelMonitorText"/>。
+    /// 監控面板上的字（issue #38，2026-10-23）：<see cref="LevelMonitorText"/>。
     ///
-    /// ⭐ <b>重點是「公式代進去的是明細裡的數字」</b>：評審是照著面板按計算機驗的，代錯一個數字（例如代了結算之後的實力），
+    /// ⭐ <b>重點是「公式代進去的是明細裡的數字」</b>：面板是讓人照著按計算機驗算的，代錯一個數字（例如代了結算之後的實力），
     /// 算式看起來照樣通順，只是對不上——不報錯。Editor 的視窗與 App 的 overlay 共用這一份，所以驗一次兩邊都算數。
     /// </summary>
     public class MonitorTextTests
@@ -113,7 +113,7 @@ namespace Tangram.Core.Tests
             StringAssert.Contains($"{update.EffectiveKFactor:0.##} × ", formulas[3].Substituted);
             Assert.AreEqual(LevelMonitorText.SignedPoints(update.RatingChange), formulas[3].Result);
 
-            // 一行接起來是「符號　＝　代入　＝　結果」，評審照著按計算機
+            // 一行接起來是「符號　＝　代入　＝　結果」，任何人照著按計算機都驗得出來
             Assert.AreEqual($"{formulas[0].Symbolic}　＝　{formulas[0].Substituted}　＝　{formulas[0].Result}", formulas[0].Equation);
         }
 

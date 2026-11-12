@@ -6,7 +6,7 @@ using UnityEngine;
 namespace Tangram.Tests
 {
     /// <summary>
-    /// 座標與版面層（P1-1）的測試。
+    /// 座標與版面層的測試。
     ///
     /// 這一層的錯誤有個共同特徵：<b>不會當機，只會「位置怪怪的」</b>。
     /// 所以這裡的主力是 round-trip 測試——它不需要知道正確答案是什麼，

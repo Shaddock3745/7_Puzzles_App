@@ -5,15 +5,15 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// ⭐ <b>掃描題的選題畫面</b>（2026-10-21，使用者定「不進關、先選題」）：辨識與逼近跑完之後、進關之前，
+/// ⭐ <b>掃描題的選題畫面</b>（2026-10-21，「不進關、先選題」）：辨識與逼近跑完之後、進關之前，
 /// 顯示那張照片與<b>一個</b>候選題目的剪影，玩家用「上一個／下一個」翻頁、按「拼這一題」才進關；
-/// 不滿意可以重拍（或重選）、或回主畫面。（使用者定：一個版面只貼一份結果，用按鈕翻頁和選擇。）
+/// 不滿意可以重拍（或重選）、或回主畫面。（一個版面只貼一份結果，用按鈕翻頁和選擇。）
 ///
 /// <b>候選從哪來</b>：<see cref="LevelController"/> 用幾個不同的逼近預設各跑一次（第五版、不找特徵、貼邊 ×32……，之前的廢案變成選項），
 /// 合起來去重，見 <c>LevelController.BuildScanCandidates</c>。這支只負責畫與轉達玩家的選擇。
 ///
 /// <b>跟選擇視窗同一個形狀</b>：訂閱 <see cref="LevelController.ScanPickRequested"/> 顯示自己，按「拼／重拍／回主畫面」都<b>先藏自己</b>再轉給 <c>LevelController</c>；
-/// 腳本<b>不能</b>掛在 Panel 上（除錯記錄 004）；整塊登記成擋片區（雖然是不透明的全螢幕，還是不要讓底下的片被抓到）。
+/// 腳本<b>不能</b>掛在 Panel 上（藏起來就再也開不回來）；整塊登記成擋片區（雖然是不透明的全螢幕，還是不要讓底下的片被抓到）。
 ///
 /// <b>誰保管什麼</b>：照片是 <c>LevelController</c> 的（進關時交給照片對照、不進關就釋放），這支只借畫；
 /// 剪影貼圖是這支自己生的（<see cref="PuzzleSilhouette"/>，顯示時一次把所有候選的都生好），藏起來時釋放。
@@ -98,7 +98,7 @@ public class ScanPickPanel : MonoBehaviour
             Debug.LogError("ScanPickPanel 的 panel 欄位沒填：選題畫面不會出現，掃描完會直接拿第 1 個候選進關。", this);
         else if (panel == gameObject)
             Debug.LogError("ScanPickPanel 掛在它自己要開關的 Panel 上了。藏起來之後這支就跟著被停用，" +
-                           "再也開不回來（除錯記錄 004）。請把這支移到另一個物件上。", this);
+                           "再也開不回來。請把這支移到另一個物件上。", this);
         else
             panel.SetActive(false);
 

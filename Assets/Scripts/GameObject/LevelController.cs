@@ -8,12 +8,12 @@ using UnityEngine;
 ///
 /// <b>為什麼模式記在 <see cref="LevelController"/> 身上</b>：因為「下一題要什麼」只有它在回答。
 /// 記在別處的話，結束彈窗那顆「下一題」就得自己判斷要生還是要抽——
-/// 那等於把同一個決定放到兩個地方，而<b>兩個地方各自認定真相就是安靜的 bug</b>（見 <c>CLAUDE.md</c> 的坑）。
+/// 那等於把同一個決定放到兩個地方，而<b>兩個地方各自認定真相就是安靜的 bug</b>（見 <c>文件/開發須知.md</c>〈容易踩的坑〉）。
 /// 現在彈窗照樣只叫 <c>EnterNextLevel()</c>，一行都不用改。
 /// </summary>
 public enum GameMode
 {
-    /// <summary>照玩家實力當場生題（P2-7 ＋ P2-14），這是原本的遊玩迴圈。</summary>
+    /// <summary>照玩家實力當場生題，這是原本的遊玩迴圈。</summary>
     GeneratedByRating,
 
     /// <summary>從題庫隨機抽具象題（貓、船之類），一輪之內不重複。</summary>
@@ -22,7 +22,7 @@ public enum GameMode
     /// <summary>
     /// 拍照或選檔 → 辨識模組取輪廓 → 照輪廓出題（2026-10-14，名稱暫定）。
     /// ⚠️ <b>不結算實力</b>，「下一題」是再跳一次選擇視窗（2026-10-17）。
-    /// 四段都是真的：取得照片（2026-10-17）、協作者的 U2Net 辨識（2026-10-20）、beam search 逼近（2026-10-14）、選題畫面（2026-10-21）。
+    /// 四段都是真的：取得照片（2026-10-17）、U2Net 辨識模組（2026-10-20）、beam search 逼近（2026-10-14）、選題畫面（2026-10-21）。
     /// </summary>
     Scan
 }
@@ -49,7 +49,7 @@ public enum ScanAbortReason
 }
 
 /// <summary>
-/// ⭐ 等待遮罩上要寫哪一個階段（P5-2，2026-10-23）。<see cref="LevelController.WaitingStage"/> 回答，<see cref="ScanWaitingCover"/> 照著換字。
+/// ⭐ 等待遮罩上要寫哪一個階段（2026-10-23）。<see cref="LevelController.WaitingStage"/> 回答，<see cref="ScanWaitingCover"/> 照著換字。
 /// </summary>
 public enum LevelWaitingStage
 {
@@ -126,13 +126,13 @@ public class LevelController : MonoBehaviour
     private TargetedPuzzleGenerator generator;
 
     /// <summary>
-    /// ⭐ <b>挑戰模式的下一題在背景預生</b>（P5-2，issue #37，2026-10-23）。<b>出題器只有它碰</b>——主執行緒不再直接叫
+    /// ⭐ <b>挑戰模式的下一題在背景預生</b>（issue #37，2026-10-23）。<b>出題器只有它碰</b>——主執行緒不再直接叫
     /// <c>generator.Generate</c>，所以「同一時間只有一條執行緒碰出題器」由 <see cref="TargetedPrefetch{T}"/> 一處保證。
     ///
-    /// 什麼時候開始生（中文邏輯 2026-10-23 確認過）：① 主畫面每次出現時（<see cref="PrepareNextChallengeLevel"/>，第一次進關不用等）
+    /// 什麼時候開始生：① 主畫面每次出現時（<see cref="PrepareNextChallengeLevel"/>，第一次進關不用等）
     /// ② 挑戰模式每結算一局（<see cref="SettleIfNeeded"/>，玩家看結果彈窗的那一兩秒就生好了）。
     /// 按「下一題」時目標對得上就直接進關，還沒好就蓋遮罩等（<see cref="TryEnterWaitingChallengeLevel"/>）。
-    /// 💡 取代了 10/4 規劃的「甲：預生 ±200 的小池」——目標在結算那一刻就確定了，不用猜。
+    /// 💡 取代了先前考慮的「預生 ±200 的小池」——目標在結算那一刻就確定了，不用猜。
     /// </summary>
     private TargetedPrefetch<TargetedGenerationResult> challengePrefetch;
 
@@ -152,7 +152,7 @@ public class LevelController : MonoBehaviour
     private bool prepareChallengeAfterStart;
 
     /// <summary>
-    /// ⭐ 第一次進關之後還要量幾幀（P5-2，2026-10-23）：出題搬到背景之後，第一次進關剩下的卡頓就是暖機
+    /// ⭐ 第一次進關之後還要量幾幀（2026-10-23）：出題搬到背景之後，第一次進關剩下的卡頓就是暖機
     /// （片的圖、shader、字型圖集），先量出來，數字大才處理。0 ＝ 不量了。
     /// </summary>
     private int warmupFramesToMeasure;
@@ -195,7 +195,7 @@ public class LevelController : MonoBehaviour
     /// <summary>ELO 設定，Awake 讀一次。讀不到是 null，那時不建實力追蹤、不進任何一關。</summary>
     private SkillRatingSettings ratingSettings;
 
-    // ───────── 進度存檔（P2-8b，2026-10-17）─────────
+    // ───────── 進度存檔（2026-10-17）─────────
 
     /// <summary>
     /// 這一場要不要讀寫進度存檔。<b>預設要</b>；回饋收集場景在 <c>Awake</c> 叫 <see cref="SuppressProgressPersistence"/> 關掉。
@@ -253,7 +253,7 @@ public class LevelController : MonoBehaviour
     private BeamSearchContourPuzzleBuilder[] candidateBuilders;
 
     /// <summary>
-    /// ⭐ <b>掃描回來、候選正在背景逼近</b>（P5-2，2026-10-23）：一個預設一件工作、同時跑。全部做完時
+    /// ⭐ <b>掃描回來、候選正在背景逼近</b>（2026-10-23）：一個預設一件工作、同時跑。全部做完時
     /// <see cref="TryFinishScanComputation"/> 照預設的順序合成候選。<b>沒在算時是 null</b>。
     /// </summary>
     private ScanComputation pendingComputation;
@@ -341,12 +341,12 @@ public class LevelController : MonoBehaviour
     public bool IsScanPending { get; private set; }
 
     /// <summary>
-    /// ⭐ <b>等待中</b>（P5-2，2026-10-23）：掃描等待中，或挑戰模式按了「下一題」、題目還在背景生。
+    /// ⭐ <b>等待中</b>（2026-10-23）：掃描等待中，或挑戰模式按了「下一題」、題目還在背景生。
     /// 等待遮罩看<b>這個</b>決定要不要蓋住盤面（原本只看 <see cref="IsScanPending"/>）。
     /// </summary>
     public bool IsWaitingForLevel => IsScanPending || waitingChallengeTarget.HasValue;
 
-    /// <summary>⭐ 等待遮罩上要寫哪一個階段（P5-2，2026-10-23）。沒在等是 <see cref="LevelWaitingStage.None"/>。</summary>
+    /// <summary>⭐ 等待遮罩上要寫哪一個階段（2026-10-23）。沒在等是 <see cref="LevelWaitingStage.None"/>。</summary>
     public LevelWaitingStage WaitingStage
     {
         get
@@ -358,7 +358,7 @@ public class LevelController : MonoBehaviour
         }
     }
 
-    // ⚠️ 2026-09-13（P2-14）拿掉了 startingTargetDifficulty 與 lastTargetDifficulty。
+    // ⚠️ 2026-09-13 拿掉了 startingTargetDifficulty 與 lastTargetDifficulty。
     // 「下一題要多難」的真相換成玩家的實力（LevelSession.Rating），起始值在 SkillRatingSettings.json。
     // 場景裡 startingTargetDifficulty 的舊值會被 Unity 忽略，不用清。
 
@@ -370,7 +370,7 @@ public class LevelController : MonoBehaviour
         // 測試不會走這條路——它們自己 new 一個 LevelSession
         LevelSession.Current = session;
 
-        // 跨元件的 UI 決定（P1-13）。⚠️ 一定要在這裡指定，不能用惰性單例——
+        // 跨元件的 UI 決定。⚠️ 一定要在這裡指定，不能用惰性單例——
         // 關掉 Domain Reload 的話 static 欄位會跨播放session 存活，
         // 惰性單例會把上一次播放的狀態帶進來，而且完全不報錯
         SharedUiState.Current = new SharedUiState();
@@ -398,16 +398,16 @@ public class LevelController : MonoBehaviour
         difficultyWeights = LoadJsonResource(DifficultyWeightsResourceName, DifficultyWeights.FromJson,
                                              "沒有權重就算不出難度");
 
-        // 實力（P2-14）。設定讀不到就不建 tracker，EnterNextLevel() 看到 null 就不進關——
+        // 實力。設定讀不到就不建 tracker，EnterNextLevel() 看到 null 就不進關——
         // 跟權重同一套規則：沒有預設值，讀不到就吵。
-        // ⚠️ tracker 本身在 Start 才建（P2-8b），理由見 CreateRatingTracker
+        // ⚠️ tracker 本身在 Start 才建，理由見 CreateRatingTracker
         ratingSettings = LoadJsonResource(
             SkillRatingSettingsResourceName, SkillRatingSettings.FromJson, "沒有 ELO 設定就不知道下一題要多難");
         ApplyDemonstrationMultiplierPolicy();
     }
 
     /// <summary>
-    /// 定這一場的出題種子（2026-10-30，使用者定）。原本永遠是固定的 <see cref="generatorSeed"/>，每次開 App 題目順序都一模一樣；
+    /// 定這一場的出題種子（2026-10-30）。原本永遠是固定的 <see cref="generatorSeed"/>，每次開 App 題目順序都一模一樣；
     /// 現在<b>預設用時間</b>，勾 <see cref="useFixedGeneratorSeed"/> 才用固定值。
     ///
     /// ⭐ <b>一定印一行 log</b>：固定種子當初的理由是「看到怪題目重現得出來」——種子印出來，那件事照樣做得到
@@ -430,7 +430,7 @@ public class LevelController : MonoBehaviour
     }
 
     /// <summary>
-    /// ⭐ K 的展示倍率只在展示版用（2026-10-30，使用者定）：設定檔裡的 <c>demonstrationMultiplier</c>（10）
+    /// ⭐ K 的展示倍率只在展示版用（2026-10-30）：設定檔裡的 <c>demonstrationMultiplier</c>（10）
     /// 的意思是「展示版用的倍率」，<b>不是展示版（<see cref="DemonstrationBuild"/>）就改成 1</b>，K 回到正式的基準 20。
     ///
     /// 所以對外文件寫的「展示版 K 是正式設定的 10 倍」跟程式完全一致：正式版真的是 1 倍。
@@ -496,7 +496,7 @@ public class LevelController : MonoBehaviour
     }
 
     /// <summary>
-    /// 讀存檔、建實力追蹤（P2-8b）。設定讀不到時不建，<see cref="EnterNextLevel()"/> 看到 null 就不進關。
+    /// 讀存檔、建實力追蹤。設定讀不到時不建，<see cref="EnterNextLevel()"/> 看到 null 就不進關。
     ///
     /// ⚠️ <b>為什麼在 <c>Start</c> 不在 <c>Awake</c></b>：回饋收集場景要在它自己的 <c>Awake</c> 裡叫
     /// <see cref="SuppressProgressPersistence"/>，而兩支 <c>Awake</c> 誰先跑是未定義的。
@@ -516,7 +516,7 @@ public class LevelController : MonoBehaviour
     }
 
     /// <summary>
-    /// 每幀問一次「這一局要不要結算」（P2-14）。
+    /// 每幀問一次「這一局要不要結算」。
     ///
     /// <b>為什麼每幀問，不讓 <c>TouchInputController</c> 通知</b>：過關與放棄的標記點都在它那裡，
     /// 改成通知就多一條輸入層指向這支的線，而且之後每多一個結束的出口都要記得通知。
@@ -525,7 +525,7 @@ public class LevelController : MonoBehaviour
     /// ⚠️ <b>會晚一幀</b>：<c>Update</c> 之間的先後順序不固定，彈窗可能比結算早一幀出現，
     /// 那一幀方向是空白——彈窗那邊處理「還沒有明細」。
     ///
-    /// ⭐ 2026-10-23（P5-2）起同一格也照顧背景工作：預生換目標、等的那一題好了就進關、掃描的候選算完就跳選題畫面、量暖機。
+    /// ⭐ 2026-10-23 起同一格也照顧背景工作：預生換目標、等的那一題好了就進關、掃描的候選算完就跳選題畫面、量暖機。
     /// </summary>
     private void Update()
     {
@@ -564,7 +564,7 @@ public class LevelController : MonoBehaviour
 
         SaveRating(SkillRating.RoundRating(update.RatingAfter));
 
-        // 完整的算式在監控面板（P2-15，Window → Tangram → 監控面板）。這一行留著給沒開面板、或看 exe 的 log 時用
+        // 完整的算式在監控面板（Window → Tangram → 監控面板）。這一行留著給沒開面板、或看 exe 的 log 時用
         string outcome = update.Outcome == LevelOutcome.Solved ? "過關" : "放棄";
         Debug.Log($"第 {levelIndex} 關結算：{outcome}，難度 {update.Difficulty}，" +
                   $"預期 {update.ExpectedPerformance:F2}、實際 {update.ActualPerformance:F2}" +
@@ -572,20 +572,20 @@ public class LevelController : MonoBehaviour
                   $"實力 {update.RatingBefore:F1} → {update.RatingAfter:F1}（{update.RatingChange:+0.0;-0.0;0.0}），" +
                   $"下一題：{update.Trend}", this);
 
-        // ⭐ 目標在這一刻確定了：馬上在背景生下一題，玩家看結果彈窗的時候就生好了（P5-2）。
+        // ⭐ 目標在這一刻確定了：馬上在背景生下一題，玩家看結果彈窗的時候就生好了。
         // 只在挑戰模式——具象題也會結算，但它的下一題是抽的；它改了實力的話，主畫面再出現時會照新目標重生。
         // ⚠️ 用 ?. 不用 EnsureChallengePrefetch：預生只在有人走過挑戰模式的入口（主畫面、自動進關）之後才建。
         // 回饋收集場景也是這個模式、每題也結算，但它用自己的題單進關——在那裡建的話每題都白白在背景生一題
         if (CurrentMode == GameMode.GeneratedByRating) challengePrefetch?.Want(rating.NextTargetDifficulty);
     }
 
-    // ───────── 進度的讀寫（P2-14 留的接縫，P2-8b 2026-10-17 落檔）─────────
+    // ───────── 進度的讀寫（實力那邊留的接縫，2026-10-17 落檔）─────────
     //
     // ⚠️ 刻意不為這兩支開介面：實作只有一個，接縫是方法名（同 EnterNextLevel 那段的標準）。
     // 檔案怎麼讀寫、壞檔怎麼辦在 Core 的 PlayerProgressFile（有離線測試），這裡只決定「讀到什麼就怎麼做」。
 
     /// <summary>
-    /// 這一場不讀也不寫進度存檔（P2-8b）。<b>回饋收集場景在 <c>Awake</c> 叫這支。</b>
+    /// 這一場不讀也不寫進度存檔。<b>回饋收集場景在 <c>Awake</c> 叫這支。</b>
     ///
     /// ⚠️ <b>為什麼需要</b>：回饋收集場景也有這支，而且每一題照樣結算。不擋的話受試者玩的題會寫進玩家存檔——
     /// 而回饋收集的 exe 跟遊戲是同一個專案、<c>persistentDataPath</c> 是同一個，
@@ -597,7 +597,7 @@ public class LevelController : MonoBehaviour
     public void SuppressProgressPersistence() => persistProgress = false;
 
     /// <summary>
-    /// 讀存檔裡的實力（P2-8b）。
+    /// 讀存檔裡的實力。
     ///
     /// <list type="bullet">
     /// <item><b>沒有存檔</b>：第一次玩，回 null（從起始實力開始），印一行 log</item>
@@ -641,7 +641,7 @@ public class LevelController : MonoBehaviour
     }
 
     /// <summary>
-    /// ⭐ <b>清除紀錄</b>（2026-10-30，展示版主畫面的「清除紀錄」鈕叫這支）：決賽換一位評審時從頭開始。
+    /// ⭐ <b>清除紀錄</b>（2026-10-30，展示版主畫面的「清除紀錄」鈕叫這支）：換一位玩家時從頭開始。
     ///
     /// 只刪檔不夠——Editor 選單那條就是這樣：Play 中刪了，下一局結算又把記憶體裡的實力寫回去。所以四件一起做：
     /// <list type="number">
@@ -652,7 +652,7 @@ public class LevelController : MonoBehaviour
     ///   那一關的資料留在盤面上，下次進關時被整包換掉（<see cref="EnterLevel"/>）</item>
     /// <item><b>背景照新目標重生下一題</b>（<see cref="PrepareNextChallengeLevel"/>），按挑戰模式不用等</item>
     /// </list>
-    /// 不做確認：這顆鈕只在展示版出現，按到的結果也只是「從頭開始」（使用者 2026-10-30 定）。
+    /// 不做確認：這顆鈕只在展示版出現，按到的結果也只是「從頭開始」。
     /// </summary>
     /// <returns>清除之後的實力（四捨五入）；ELO 設定讀不到、根本沒有實力可清時是 null。</returns>
     public int? ResetProgress()
@@ -712,7 +712,7 @@ public class LevelController : MonoBehaviour
     }
 
     /// <summary>
-    /// 把實力寫進存檔（P2-8b）。<b>每結算一局叫一次</b>——實力只在結算時變，所以切背景、關 App 時不另外寫。
+    /// 把實力寫進存檔。<b>每結算一局叫一次</b>——實力只在結算時變，所以切背景、關 App 時不另外寫。
     ///
     /// 傳進來的是<b>四捨五入後的整數</b>，記憶體裡的實力照樣留小數繼續算——
     /// 所以重開 App 最多少掉 0.5 分，但玩同一場的時候不會累積誤差（2026-09-13 定）。
@@ -747,21 +747,21 @@ public class LevelController : MonoBehaviour
     /// 呼叫端（<see cref="LevelResultPanels"/>、<c>Start</c>）該表達的是
     /// 「玩家要進下一關」這個**意圖**，不是「載入哪一題」這個**當下的實作**。
     ///
-    /// 名字裡寫死題目的話，P2 接上題庫時<b>呼叫端也得跟著改</b>，
+    /// 名字裡寫死題目的話，之後接上題庫時<b>呼叫端也得跟著改</b>，
     /// 而且方法名本身會過期（叫 <c>EnterClassicSquare</c> 卻載入別的題目更糟）。
     /// 現在挑題的決定只住在這支裡面，換掉時**外面一行都不用動**。
     ///
     /// 💡 <b>不需要為此開一個介面。</b>實作只有一個、呼叫端也只有兩個，
     /// 介面只會多一層轉接——接縫是「語意穩定的方法名」，不一定要是型別。
-    /// （同一條標準讓 P1-6 決定不實作 <c>IInputSource</c>。）
+    /// （同一條標準也是不實作 <c>IInputSource</c> 的理由。）
     ///
-    /// <b>目前的實作</b>：照玩家的實力現生一題（P2-7 出題器 ＋ P2-14 實力）。
+    /// <b>目前的實作</b>：照玩家的實力現生一題（出題器 ＋ 實力）。
     ///
     /// ⭐ <b>第一步先補結算</b>：正常情況下每幀的 <c>Update</c> 已經結算過了，這一行是保險——
     /// 萬一哪天結算搬到別的時機，玩家在彈窗上直接按下一關也不會丟掉剛打完的那一局。
     /// 重複叫是安全的（一局只結算一次由 <c>LevelData</c> 保證）。
     ///
-    /// ⚠️ <b>刻意不讀題庫檔</b>：讀檔得先做序列化、先決定存檔字串，那是 P2-8b 的工作。
+    /// ⚠️ <b>刻意不讀題庫檔</b>：讀檔得先做序列化、先決定存檔字串，那是另一件工作。
     /// </summary>
     public void EnterNextLevel()
     {
@@ -809,10 +809,10 @@ public class LevelController : MonoBehaviour
         EnterNextLevel();
     }
 
-    // ───────── 中途離開（2026-10-23，待辦清單〈中途離開〉的丙）─────────
+    // ───────── 中途離開（2026-10-23）─────────
     //
     // 不結算、不換題：離開＝暫停（沒代價，回來還是它），放棄＝認輸（有代價），兩件事分開。
-    // ⚠️ 只在同一次執行裡成立：關掉 App 那一局就沒了（使用者 2026-10-23 定這次不存）——沒結算，所以也不扣分。
+    // ⚠️ 只在同一次執行裡成立：關掉 App 那一局就沒了（2026-10-23 決定這次不存）——沒結算，所以也不扣分。
 
     /// <summary>
     /// 暫停中的那一關是哪個模式的。<b>沒有暫停中的關是 null。</b>
@@ -985,7 +985,7 @@ public class LevelController : MonoBehaviour
             return;
         }
 
-        // 上一次的候選還在背景算（P5-2）也算「還沒回來」：兩批結果會搶同一個待選
+        // 上一次的候選還在背景算也算「還沒回來」：兩批結果會搶同一個待選
         if (cameraScanner?.IsScanning == true || galleryScanner.IsScanning || pendingComputation != null) return;
 
         IContourScanner scanner = source == ScanPhotoSource.Camera ? cameraScanner : galleryScanner;
@@ -1048,7 +1048,7 @@ public class LevelController : MonoBehaviour
             return;
         }
 
-        // ⭐ 2026-10-23（P5-2）起逼近在背景、一個預設一件同時跑，畫面不再凍住（以前三個預設輪流跑，Xperia 上約 10 秒）。
+        // ⭐ 2026-10-23 起逼近在背景、一個預設一件同時跑，畫面不再凍住（以前三個預設輪流跑，Xperia 上約 10 秒）。
         // 全部做完時 Update 裡的 TryFinishScanComputation 接手，遮罩這段寫「出題中」
         var jobs = new BackgroundJob<IReadOnlyList<ContourApproximation>>[candidateBuilders.Length];
         for (int i = 0; i < candidateBuilders.Length; i++)
@@ -1064,7 +1064,7 @@ public class LevelController : MonoBehaviour
     }
 
     /// <summary>
-    /// 掃描的候選全部算完了的話：合成候選、跳選題畫面（P5-2，2026-10-23；原本在 <see cref="OnScanFinished"/> 裡同步做）。
+    /// 掃描的候選全部算完了的話：合成候選、跳選題畫面（2026-10-23；原本在 <see cref="OnScanFinished"/> 裡同步做）。
     /// <b>每幀問一次</b>，還有一件沒做完就什麼都不做。
     /// </summary>
     private void TryFinishScanComputation()
@@ -1099,7 +1099,7 @@ public class LevelController : MonoBehaviour
 
         PendingScan = new ScanCandidateSet(computation.Photo, contour, candidates);
 
-        // ⭐ 不進關、先選題（2026-10-21 使用者定）。沒有選題畫面的場景直接拿第 1 個，行為跟之前一樣
+        // ⭐ 不進關、先選題（2026-10-21）。沒有選題畫面的場景直接拿第 1 個，行為跟之前一樣
         if (ScanPickRequested == null)
         {
             Debug.Log("場景裡沒有 ScanPickPanel 在聽（ScanPickRequested 沒人訂閱），直接拿第 1 個候選進關。", this);
@@ -1114,7 +1114,7 @@ public class LevelController : MonoBehaviour
     /// 每個預設取前 <see cref="candidatesPerPreset"/> 名，同一個形狀（<c>Puzzle.Key</c>）只留第一次出現的，最多 <see cref="maximumCandidates"/> 個。
     /// 某個預設丟例外就跳過它（log 完整印出來）——輸入是使用者的照片，不賭。
     ///
-    /// ⭐ 2026-10-23（P5-2）起逼近改在背景同時跑，這裡只合成。<b>規則與順序跟同步那一版一模一樣，所以候選也一模一樣</b>——
+    /// ⭐ 2026-10-23 起逼近改在背景同時跑，這裡只合成。<b>規則與順序跟同步那一版一模一樣，所以候選也一模一樣</b>——
     /// 唯一的差別是額滿之後的預設以前不跑、現在照樣跑完（同時跑，不多花牆上的時間）。
     /// </summary>
     /// <param name="computation">全部做完的那一次計算。</param>
@@ -1283,7 +1283,7 @@ public class LevelController : MonoBehaviour
     {
         DiscardPendingScan();
 
-        // 還在背景算的候選（P5-2）：工作停不下來，只能不要它的結果——照片現在就釋放，算完時 TryFinishScanComputation 看到 null 就什麼都不做
+        // 還在背景算的候選：工作停不下來，只能不要它的結果——照片現在就釋放，算完時 TryFinishScanComputation 看到 null 就什麼都不做
         if (pendingComputation != null)
         {
             DiscardPhoto(pendingComputation.Photo);
@@ -1329,11 +1329,11 @@ public class LevelController : MonoBehaviour
     }
 
     /// <summary>
-    /// 進下一關，<b>指定目標難度</b>（P2-7）。
+    /// 進下一關，<b>指定目標難度</b>。
     ///
     /// 遊玩迴圈從無參數那支進來（目標是玩家的實力）；直接叫這支是給工具與除錯用：指定一個難度看出題器生什麼。
     ///
-    /// ⭐ <b>2026-10-23（P5-2）起不是當場進關</b>：題目在背景生（多半已經預生好了，見 <see cref="challengePrefetch"/>）。
+    /// ⭐ <b>2026-10-23 起不是當場進關</b>：題目在背景生（多半已經預生好了，見 <see cref="challengePrefetch"/>）。
     /// 好了的話這一格就進關；還沒好就蓋上等待遮罩（<see cref="IsWaitingForLevel"/>），好了 <see cref="Update"/> 會接著進關。
     ///
     /// <b>三種下場都要處理</b>：
@@ -1352,7 +1352,7 @@ public class LevelController : MonoBehaviour
         TargetedPrefetch<TargetedGenerationResult> prefetch = EnsureChallengePrefetch();
         if (prefetch == null) return;
 
-        // ⭐ 不在這裡生（P5-2）：出題器只有背景碰。好了的話這一格就進關，還沒好就蓋遮罩等，Update 每幀再問。
+        // ⭐ 不在這裡生：出題器只有背景碰。好了的話這一格就進關，還沒好就蓋遮罩等，Update 每幀再問。
         // 已經在等的時候又按一次（遮罩擋住了，理論上按不到）：換成新的目標，計時不重來
         waitingChallengeTarget = targetDifficulty;
         if (waitingClock == null || !waitingClock.IsRunning) waitingClock = System.Diagnostics.Stopwatch.StartNew();
@@ -1361,7 +1361,7 @@ public class LevelController : MonoBehaviour
     }
 
     /// <summary>
-    /// ⭐ 先在背景把挑戰模式的下一題準備好（P5-2，2026-10-23）。<b>主畫面每次出現時叫</b>——第一次進關（主要卡的那一次）
+    /// ⭐ 先在背景把挑戰模式的下一題準備好（2026-10-23）。<b>主畫面每次出現時叫</b>——第一次進關（主要卡的那一次）
     /// 就不用等；中間去玩了具象題、實力變了的話，這裡照新目標重生。
     /// 實力還沒讀進來（主畫面的 <c>Start</c> 比這支早）就記下來，<see cref="Start"/> 補做。
     /// </summary>
@@ -1393,7 +1393,7 @@ public class LevelController : MonoBehaviour
     }
 
     /// <summary>
-    /// 在等的那一題好了就進關（P5-2）。<see cref="EnterNextLevel(int)"/> 當下問一次，之後 <see cref="Update"/> 每幀問。
+    /// 在等的那一題好了就進關。<see cref="EnterNextLevel(int)"/> 當下問一次，之後 <see cref="Update"/> 每幀問。
     /// </summary>
     private void TryEnterWaitingChallengeLevel()
     {
@@ -1434,7 +1434,7 @@ public class LevelController : MonoBehaviour
                 $"第 {levelIndex} 關：目標 {result.TargetDifficulty} 叫了 {result.AttemptCount} 次" +
                 $"都沒生出題目，退回經典大正方形。審美門檻可能收太緊了。（{timing}）", this);
 
-            // ⚠️ 出題紀錄照樣帶進去（P2-15），下場是失敗——不標出來的話，
+            // ⚠️ 出題紀錄照樣帶進去，下場是失敗——不標出來的話，
             // 走勢上那一跳會看起來像 ELO 壞了
             EnterClassicSquare(GenerationRecord.From(result));
             return;
@@ -1449,14 +1449,14 @@ public class LevelController : MonoBehaviour
                   $"{hit}，叫了 {result.AttemptCount} 次（{timing}）", this);
 
         // ⚠️ allowRoll 傳 false：生成題要看的是「存進去的那個角度好不好看」，
-        // 讓相機轉會看不到真實情況。P2-8 接上題庫時這條要重新決定。
+        // 讓相機轉會看不到真實情況。之後接上題庫時這條要重新決定。
         // ⭐ 難度直接用出題器算好的那個，不重算——同一題只算一次，見 LevelData.Difficulty
         EnterLevel(result.Puzzle, result.ReferenceSolution, result.Difficulty, allowRoll: false,
                    generation: GenerationRecord.From(result));
     }
 
     /// <summary>
-    /// 退路：經典大正方形。出題器失敗，或出題時丟了例外（P5-2 起拿得到了）才走這裡。
+    /// 退路：經典大正方形。出題器失敗，或出題時丟了例外（改到背景出題之後拿得到了）才走這裡。
     /// </summary>
     /// <param name="generation">出題紀錄；丟例外的話沒有紀錄，傳 null。</param>
     private void EnterClassicSquare(GenerationRecord? generation)
@@ -1478,10 +1478,10 @@ public class LevelController : MonoBehaviour
     /// <param name="difficulty">這一題的難度值，由出題的人算好（見 <c>LevelData.Difficulty</c>）。</param>
     /// <param name="allowRoll">
     /// 允不允許 roll 相機。精選題傳 false（互動設計 §2.6）。
-    /// 目前 <c>Puzzle</c> 還沒有「是不是精選題」的欄位，所以由呼叫端決定，等 P3 題庫做好再改。
+    /// 目前 <c>Puzzle</c> 還沒有「是不是精選題」的欄位，所以由呼叫端決定，等題庫做好再改。
     /// </param>
     /// <param name="generation">
-    /// 出題紀錄（P2-15），給監控面板看。<b>選填</b>：只有 <see cref="EnterNextLevel(int)"/> 會給，
+    /// 出題紀錄，給監控面板看。<b>選填</b>：只有 <see cref="EnterNextLevel(int)"/> 會給，
     /// 回饋收集場景的題單與練習題不給。
     /// </param>
     /// <param name="countsTowardRating">
@@ -1491,7 +1491,7 @@ public class LevelController : MonoBehaviour
                            GenerationRecord? generation = null, bool countsTowardRating = true)
     {
         // 0. 掃描的等待到此為止（2026-10-17）。不判模式：掃描等到一半換成別的模式進關，遮罩也該收掉。
-        //    挑戰模式的等待同一個道理（P5-2）：等到一半從別的路進關的話，那一題好了也不該再進一次
+        //    挑戰模式的等待同一個道理：等到一半從別的路進關的話，那一題好了也不該再進一次
         IsScanPending = false;
         waitingChallengeTarget = null;
         pausedMode = null;      // 中途離開（2026-10-23）：暫停的那一關被換掉了，那一局作廢
@@ -1516,7 +1516,7 @@ public class LevelController : MonoBehaviour
         // 3. 畫盒子
         if (boxView != null) boxView.Redraw(level.BoxRegion, level.ReferenceSolution);
 
-        // 4. 七片重置姿態（P1-5）。**必須排在第 2 步之後**——抽屜的版面要用
+        // 4. 七片重置姿態。**必須排在第 2 步之後**——抽屜的版面要用
         //    相機算出來的「一個模型單位佔幾像素」。
         //
         //    位置不用管：七片這時候全在抽屜裡（看不到），而「七片回到待用區」
@@ -1529,12 +1529,12 @@ public class LevelController : MonoBehaviour
         //    它同時會把輸入層歸零（清選取、放掉鎖定的那根手指）
         if (dragController != null) dragController.CancelInteraction();
 
-        // 6. 開始計前景時間（P2-13）。⚠️ 一定要排在第 5 步**之後**——
+        // 6. 開始計前景時間。⚠️ 一定要排在第 5 步**之後**——
         //    CancelInteraction 會叫 StopDragTiming，而那一支對「新的這一關」來說
         //    本來就沒在計時，所以無害；但順序反過來讀起來像是「開始了又停掉」
         level.StartForegroundTiming(GameClock.NowSeconds);
 
-        // 7. 第一次進關：開始量暖機（P5-2）。出題已經不在這段了，剩下的卡頓就是片的圖、shader、字型圖集
+        // 7. 第一次進關：開始量暖機。出題已經不在這段了，剩下的卡頓就是片的圖、shader、字型圖集
         enteredLevelCount++;
         if (enteredLevelCount == 1)
         {
@@ -1548,8 +1548,8 @@ public class LevelController : MonoBehaviour
     private const int WarmupFrameCount = 5;
 
     /// <summary>
-    /// ⭐ 量第一次進關的暖機（P5-2，2026-10-23）：進關之後幾幀裡最長的一幀，加上進關本身花的時間，印一行。
-    /// 在 T20 上看這一行決定暖機要不要另外處理（10/4 規劃的 B②）。
+    /// ⭐ 量第一次進關的暖機（2026-10-23）：進關之後幾幀裡最長的一幀，加上進關本身花的時間，印一行。
+    /// 在 T20 上看這一行決定暖機要不要另外處理。
     /// 💡 用 <c>unscaledDeltaTime</c>：進關那一幀的工作會算進「下一幀拿到的間隔」裡，所以從下一幀開始量剛好涵蓋到。
     /// </summary>
     private void MeasureWarmup()
@@ -1565,7 +1565,7 @@ public class LevelController : MonoBehaviour
                   $"{longestWarmupFrame:0.000} 秒（出題不在這裡面，在背景）", this);
     }
 
-    // ───────── App 進出前景（P2-13）─────────
+    // ───────── App 進出前景 ─────────
     //
     // ⚠️ 兩個回呼都接，因為兩邊在不同平台上的行為不一樣：
     // Android 進背景給的是 OnApplicationPause(true)，桌機切視窗給的是 OnApplicationFocus(false)。

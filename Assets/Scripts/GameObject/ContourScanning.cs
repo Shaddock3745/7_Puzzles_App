@@ -6,13 +6,13 @@ using UnityEngine;
 // ⭐ 掃描模式的前兩段（2026-10-14）：取得照片 → 辨識模組 → 輪廓 JSON。
 //
 //   主畫面「掃描模式」→ 選擇視窗 → IContourScanner ┬ IPhotoSource（拍照或選檔，PhotoSources.cs）
-//                                                  └ IContourRecognizer（照片 → JSON，協作者的洞）
+//                                                  └ IContourRecognizer（照片 → JSON，辨識模組）
 //                    → RecognizedContour（讀 JSON）→ IContourPuzzleBuilder（出題）→ 進關
 //
 // 後兩段在 Data 層（RecognizedContour.cs、ContourPuzzleBuilder.cs），測得到；這兩段碰到相機與照片，只能在 Unity 裡跑。
 //
-// ⭐ 分工（2026-10-17 使用者定）：協作者只補 IContourRecognizer 這一個洞（給照片、回 JSON），
-// 相機與選檔由我們做。原本留著的「他自帶相機元件、整個 IContourScanner 交給他」那條路不走了。
+// ⭐ 分工（2026-10-17 定）：辨識模組只實作 IContourRecognizer 這一個介面（給照片、回 JSON），
+// 相機與選檔在 App 這一側（IPhotoSource）。辨識模組不自帶相機元件，也不實作整個 IContourScanner。
 
 /// <summary>掃描的下場。</summary>
 public enum ContourScanStatus
@@ -90,7 +90,7 @@ public readonly struct ContourScanResult
 
     /// <param name="reason">失敗的原因（技術的，只進 log）。</param>
     /// <param name="stage">
-    /// 發生在哪一段。<b>預設是辨識</b>：辨識模組（協作者的程式）只會碰到這一段，不用知道有這個參數；
+    /// 發生在哪一段。<b>預設是辨識</b>：辨識模組只會碰到這一段，不用知道有這個參數；
     /// 拿照片那段由 <see cref="PhotoContourScanner"/> 明確傳 <see cref="ContourScanFailureStage.Photo"/>。
     /// </param>
     /// <returns>失敗的結果。</returns>
@@ -100,7 +100,7 @@ public readonly struct ContourScanResult
 }
 
 /// <summary>
-/// ⭐ <b>辨識模組的接口</b>：給一張照片，回一份輪廓 JSON。<b>這就是協作者要補的洞</b>（2026-10-17 定）。
+/// ⭐ <b>辨識模組的接口</b>：給一張照片，回一份輪廓 JSON。<b>辨識模組只需要實作這一個介面</b>（2026-10-17 定）。
 ///
 /// <b>為什麼是非同步（回呼）</b>：手機上推論可能要好幾秒，做成同步的話換成真的那天整個畫面會凍住。
 ///
@@ -146,7 +146,7 @@ public interface IContourScanner
 }
 
 /// <summary>
-/// ⚠️ <b>假的辨識模組</b>：不看照片，永遠回同一份 JSON（<c>Resources/ScanSamples/</c> 裡協作者交的樣本）。
+/// ⚠️ <b>假的辨識模組</b>：不看照片，永遠回同一份 JSON（<c>Resources/ScanSamples/</c> 裡辨識模組產出的樣本）。
 ///
 /// <b>下一幀才回</b>，照 <see cref="IContourRecognizer"/> 的約定——所以它需要一個 <c>MonoBehaviour</c> 幫它跑協程。
 ///
@@ -236,7 +236,7 @@ public sealed class PhotoContourScanner : IContourScanner
             {
                 if (recognized.Status == ContourScanStatus.Succeeded)
                 {
-                    // 照片用我們這張，不用辨識模組附的（約定裡它不用附）
+                    // 照片用 App 這一側拿到的這張，不用辨識模組附的（約定裡它不用附）
                     Finish(onFinished, ContourScanResult.Succeeded(recognized.ContourJson, photo));
                     return;
                 }
@@ -249,7 +249,7 @@ public sealed class PhotoContourScanner : IContourScanner
         }
         catch (Exception exception)
         {
-            // 協作者的程式第一次接上來時最可能出事的地方。接住，才不會讓掃描永遠停在「還在跑」
+            // 辨識模組第一次接上來時最可能出事的地方。接住，才不會讓掃描永遠停在「還在跑」
             UnityEngine.Object.Destroy(photo);
             Finish(onFinished, ContourScanResult.Failed($"辨識模組丟了例外：{exception}"));
         }

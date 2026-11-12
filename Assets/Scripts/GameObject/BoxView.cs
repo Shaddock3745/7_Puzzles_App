@@ -19,14 +19,14 @@ using UnityEngine;
 [RequireComponent(typeof(MeshRenderer))]
 public class BoxView : MonoBehaviour
 {
-    [Tooltip("盒子內部的底色。P1 先用不透明的深色，與半透明片的混色暫不處理。")]
+    [Tooltip("盒子內部的底色。目前用不透明的深色，與半透明片的混色暫不處理。")]
     [SerializeField] private Color fillColor = new Color(0.16f, 0.17f, 0.20f, 1f);
 
     [Tooltip("輪廓顏色。")]
     [SerializeField] private Color outlineColor = new Color(0.85f, 0.87f, 0.90f, 1f);
 
     [Tooltip("輪廓寬度，模型單位（固定世界寬度）。只往盒子外面畫，不會吃到內部空間。" +
-             "相機拉遠時看起來會變細，P1 先這樣。")]
+             "相機拉遠時看起來會變細，目前先這樣。")]
     [SerializeField] private float outlineWidth = 0.08f;
 
     [Tooltip("留空的話會用 Sprites/Default 自己建一個。指定的材質要吃頂點顏色。")]
@@ -101,17 +101,17 @@ public class BoxView : MonoBehaviour
         colors.Clear();
         triangles.Clear();
 
-        // ⚠️ 順序是刻意的：先描邊、後填色，讓填色蓋住「越界畫進材料裡」的描邊（除錯記錄 010）。
+        // ⚠️ 順序是刻意的：先描邊、後填色，讓填色蓋住「越界畫進材料裡」的描邊。
         // 同一個 mesh、同一個材質，三角形照送進去的順序畫，後面的蓋前面的。
         //
-        // 描邊照設計只該畫在材料外面（除錯記錄 002），但有兩種地方它會畫進材料：
+        // 描邊照設計只該畫在材料外面，但有兩種地方它會畫進材料：
         //   · 捏點：空楔形的兩條邊在環上不相鄰，帶子沒被接起來、也沒互相裁掉，衝過尖端進到對面的材料
         //   · 45° 的材料尖角：miter 伸到 2.6 倍線寬，附近有別段材料就伸過去
         // 填色 = 七片的聯集 = 材料本身，所以蓋掉的只有越界的部分，該留的描邊一點都不會少。
         //
         // ⚠️ 這是「遮起來」不是「畫對」。那些越界的幾何還在，只是被蓋住了：
         // 填色改成半透明、或 referenceSolution 傳 null（沒有填色）時，刺會跑回來。
-        // 根治的做法（接角改用幾何上相鄰的邊）記在待辦清單
+        // 根治的做法是接角改用幾何上相鄰的邊（還沒做）
         if (boxRegion != null) AppendOutline(boxRegion);
         if (referenceSolution != null) AppendFill(referenceSolution);
 
@@ -154,7 +154,7 @@ public class BoxView : MonoBehaviour
     ///
     /// <b>⚠️ 只往「外」畫，不跨過邊界線。</b>置中畫的話會往內吃掉半個線寬，
     /// 片吸到邊上時就會看起來差一截——而那個誤差跟吸附完全無關，
-    /// 純粹是畫出來的東西佔了位置（見 `除錯記錄.md` 002）。
+    /// 純粹是畫出來的東西佔了位置。
     ///
     /// 「外」的方向可以統一算：<see cref="Region"/> 的外環是 CCW、洞環是 CW，
     /// <b>所以區域內部永遠在有向邊的左側</b>——右側就是外，兩種環都適用。
@@ -165,7 +165,7 @@ public class BoxView : MonoBehaviour
     /// <b>第一版錯在哪</b>：每條邊兩端各多伸「一個線寬」讓相鄰兩條重疊。
     /// 那個長度<b>只在 90° 轉角剛好正確</b>——兩條垂直的帶子各伸一個線寬，
     /// 剛好補滿角落那個 w×w 的正方形。💡 所以經典大正方形永遠不會露餡（四個角全是 90°），
-    /// 這個 bug 要到 P2-4 第一次看到生成的題目才出現。
+    /// 這個 bug 要到第一次看到生成的題目才出現。
     ///
     /// <b>第二版也錯</b>：改成「邊不延長，只在凸角補三角形」。
     /// ⚠️ 那個版本假設<b>凹角不用處理，因為兩條帶子本來就重疊</b>——
@@ -221,7 +221,7 @@ public class BoxView : MonoBehaviour
     /// <b>原本這裡寫「模型的邊最短是 2，差了 25 倍」，那是錯的</b>——2 是片的原型邊長，
     /// 但輪廓在每個交點都被切斷、共線段只在度數 2 才合併，實測最短的輪廓邊只有 <b>0.343</b>（6 − 4√2）。
     /// 線寬 0.08 時最糟的一條被兩端吃掉 66%，還沒打結；線寬調到 0.16 就會打結（800 題中 1 題）。
-    /// <b>想把線調粗之前，先給 miter 加長度上限</b>（除錯記錄 010）。
+    /// <b>想把線調粗之前，先給 miter 加長度上限</b>。
     /// </summary>
     /// <param name="ring">頂點環。</param>
     /// <param name="cornerIndex">要算哪一個頂點。</param>

@@ -1,7 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// 局內統計要用的時刻來源（P2-13）。**只有一行，但那一行的理由要有個家。**
+/// 局內統計要用的時刻來源。**只有一行，但那一行的理由要有個家。**
 ///
 /// <b>四個候選裡選 <c>Time.realtimeSinceStartup</c></b>：
 ///
@@ -9,7 +9,7 @@ using UnityEngine;
 /// |---|---|
 /// | <c>Time.time</c> | ⚠️ 受 <c>timeScale</c> 影響。之後做暫停選單設 0 的話，計時會整個停住 |
 /// | <c>Time.unscaledTime</c> | 逐幀推進，語意上可以，但下面那個更直接 |
-/// | <c>DateTime.UtcNow</c> | ⚠️ <b>使用者改系統時間會跳</b>，而跳成負的會污染累積 |
+/// | <c>DateTime.UtcNow</c> | ⚠️ <b>玩家改系統時間會跳</b>，而跳成負的會污染累積 |
 /// | ⭐ <c>Time.realtimeSinceStartup</c> | <b>選它</b>：不受 <c>timeScale</c> 影響，也不受改系統時間影響 |
 ///
 /// ⚠️ 它有兩個已知怪癖——「Editor 暫停時仍在走」「App 在背景時仍在走」——

@@ -3,13 +3,13 @@ using Tangram.Data;
 using UnityEngine;
 
 /// <summary>
-/// 提示的覆蓋片（2026-09-15，待辦清單〈提示〉、互動設計 §9）：在參考解的位置蓋一片<b>半透明、一直閃</b>的片。
+/// 提示的覆蓋片（2026-09-15，互動設計 §9）：在參考解的位置蓋一片<b>半透明、一直閃</b>的片。
 ///
 /// <b>它只畫，不記任何東西。</b>提示過哪幾片的真相在 <c>LevelData.HintedReferenceSlots</c>，
 /// 這裡每幀照它畫——跟 undo 鈕、放棄鈕同一個做法，<b>不訂閱任何東西</b>：
 /// 換關時清單整包換掉、覆蓋片自己就消失，不必有人記得通知它。
 ///
-/// <b>每一個提示畫不畫</b>（2026-09-15 使用者定「乙」）：
+/// <b>每一個提示畫不畫</b>（2026-09-15 定）：
 /// <list type="bullet">
 /// <item>那一片<b>已經擺對</b>（<c>LevelData.IsReferenceSlotSatisfied</c>：同片種、頂點集合一樣，不綁槽）→ 不畫</item>
 /// <item>被拿走 → 又出現。「畫不畫」是盤面的函數，所以這件事免費成立</item>
@@ -20,7 +20,7 @@ using UnityEngine;
 /// <list type="number">
 /// <item><b>sorting layer 一定要是 <c>Piece</c>、order 用 <c>PieceSorting.HintSortingOrder</c></b>：
 ///   夾在「未吸附」與「拖曳中」之間，所以拖著的片會蓋在提示上面。
-///   沒設層會留在 <c>Default</c>，被盒子和片蓋住——症狀是「按了提示什麼都沒出現」（除錯記錄 005）</item>
+///   沒設層會留在 <c>Default</c>，被盒子和片蓋住——症狀是「按了提示什麼都沒出現」</item>
 /// <item><b>不能有 collider、不能登記成擋片區</b>：覆蓋片常常蓋在玩家的片上面，擋住的話那片就點不到了</item>
 /// <item><b>這個物件不能有縮放</b>：覆蓋片的位置與角度是直接寫世界座標，但大小會吃父物件的縮放，
 ///   症狀是「提示比片大一圈」。<c>Awake</c> 會檢查並拉回來</item>
@@ -108,7 +108,7 @@ public class HintOverlayView : MonoBehaviour
             Placement placement = level.ReferenceSolution[referenceSlot];
 
             // 跟 PieceView 同一套換算：圖的軸心是原型原點，所以位置＝平移量；
-            // 模型的翻面是對 X 軸鏡射＝flipY（不能用負縮放，見 CLAUDE.md〈背面剔除吃掉翻面的平行四邊形〉）
+            // 模型的翻面是對 X 軸鏡射＝flipY（不能用負縮放，見 文件/開發須知.md〈背面剔除吃掉翻面的平行四邊形〉）
             overlay.sprite = library.SpriteFor(placement.Kind);
             overlay.flipY = placement.IsFlipped;
             overlay.transform.SetPositionAndRotation(

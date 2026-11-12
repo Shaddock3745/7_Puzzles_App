@@ -7,7 +7,7 @@ using Tangram.Data.Tests;
 namespace Tangram.Core.Tests
 {
     /// <summary>
-    /// 監控面板的資料那半（P2-15，issue #32）：難度拆解、出題紀錄、結算明細的輸入、走勢、監控報告。
+    /// 監控面板的資料那半（issue #32）：難度拆解、出題紀錄、結算明細的輸入、走勢、監控報告。
     ///
     /// ⚠️ <b>視窗本身不在這裡</b>——它在 Editor 資料夾，<c>dotnet</c> 編不到。
     /// 所以「會算錯的東西」全放在資料那半，這裡驗完，視窗只剩排版。
@@ -156,7 +156,7 @@ namespace Tangram.Core.Tests
             }
         }
 
-        /// <summary>權重 0 的特徵照樣列出來、分數 0——「有量但不算分」本身就是評審可能問的事。</summary>
+        /// <summary>權重 0 的特徵照樣列出來、分數 0——「有量但不算分」本身就是看面板的人可能問的事。</summary>
         [Test]
         public void 拆解_權重0的特徵照樣列出來而且不算分()
         {

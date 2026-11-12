@@ -6,18 +6,18 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// 指標輸入（P1-6，互動設計 §4）。按下挑一片 → 每幀問吸附器 → 放手才交給盤面。
+/// 指標輸入（互動設計 §4）。按下挑一片 → 每幀問吸附器 → 放手才交給盤面。
 ///
 /// <b>一次按下有兩種結局</b>（§4「點選與拖曳的分界」，2026-09-07 加）：
 /// 手指離按下點超過 <see cref="moveThresholdDp"/> 就是**拖曳**，沒超過就是**點選**。
-/// <b>點選完全不碰盤面，也不碰位置</b>——P1-8 的「選一片起來轉」會掛在那條路上。
+/// <b>點選完全不碰盤面，也不碰位置</b>——「選一片起來轉」就掛在那條路上。
 ///
 /// <b>刻意不實作 <c>IInputSource</c></b>（2026-09-04 定案）。那個介面的約定是
-/// 「這個來源**維護**一個盤面」，但 P1-3 之後盤面的家是 <c>LevelSession.Data.Board</c>，
+/// 「這個來源**維護**一個盤面」，但盤面的家是 <c>LevelSession.Data.Board</c>，
 /// 觸控是**往別人的盤面寫**，不是維護自己的。硬套會讓介面語意變質，
 /// 換來的只是多一個實作者而已。
 ///
-/// <b>也沒有拆成「純邏輯 + Unity 驅動」</b>，跟 P1-1、P1-3 不一樣。
+/// <b>也沒有拆成「純邏輯 + Unity 驅動」</b>，跟座標與版面層、<c>LevelSession</c> 不一樣。
 /// 因為這裡的數學早就被抽走了——候選、遲滯、盒內限制、重疊全在 <see cref="SnapSolver"/>
 /// （純 C#、可離線測）。剩下的是讀指標、命中測試、把結果寫回 <c>PieceView</c>，
 /// 全部是 Unity 相依，拆出去的那一半會是空的。
@@ -120,13 +120,13 @@ public class TouchInputController : MonoBehaviour
     /// ⚠️ 場景沒有 <c>TrayView</c> 時要回 <c>false</c>，不是 true——
     /// 沒有抽屜的話按鈕本來就不該被壓制。
     ///
-    /// ⚠️ <b>2026-09-12 從 private 改成 public</b>（P2-13 的放棄鈕要它）。
+    /// ⚠️ <b>2026-09-12 從 private 改成 public</b>（放棄鈕要它）。
     /// 不算破封裝：<c>TrayView.IsOpen</c> 本來就是公開的，這裡只是省掉每個按鈕自己去問抽屜。
     /// </summary>
     public bool IsTrayDrawerOpen => trayView != null && trayView.IsOpen;
 
     /// <summary>
-    /// 這一關結束了沒（P1-10）。<b>過關之後盤面整個鎖住</b>——完成彈窗會蓋滿畫面，
+    /// 這一關結束了沒。<b>過關之後盤面整個鎖住</b>——完成彈窗會蓋滿畫面，
     /// 玩家只剩「退出」與「下一關」兩個出口。
     ///
     /// 四個顯示條件（旋轉／翻面、undo、清空、抽屜箭頭）都要 AND 這一項。
@@ -145,7 +145,7 @@ public class TouchInputController : MonoBehaviour
         }
     }
 
-    /// <summary>玩家按了放棄沒（P2-13）。放棄彈窗靠它決定要不要顯示。</summary>
+    /// <summary>玩家按了放棄沒。放棄彈窗靠它決定要不要顯示。</summary>
     public bool IsLevelAbandoned
     {
         get
@@ -200,13 +200,13 @@ public class TouchInputController : MonoBehaviour
     }
 
     /// <summary>
-    /// 放棄這一關（P2-13）。接在放棄鈕的 <c>onClick</c> 上。
+    /// 放棄這一關。接在放棄鈕的 <c>onClick</c> 上。
     ///
     /// ⚠️ <b>盤面刻意不動</b>：片留在原地——讓玩家看著自己的殘局按「下一題」比空盤面合理，
     /// 而且換關時 <c>LevelData</c> 整包換掉本來就會重置。
     /// 放棄彈窗是滿版擋片區，所以這時候他動不了那些片。
     ///
-    /// ⚠️ <b>扣分不在這裡</b>——這一層只記旗標，算輸與扣實力值是 P2-14 的事。
+    /// ⚠️ <b>扣分不在這裡</b>——這一層只記旗標，算輸與扣實力值是 <c>SkillRatingTracker</c> 的事。
     /// </summary>
     public void AbandonLevel()
     {
@@ -225,12 +225,12 @@ public class TouchInputController : MonoBehaviour
     /// <summary>
     /// 按鈕現在能作用在哪一片，不能作用時是 <c>null</c>。
     ///
-    /// 條件是互動設計 §5 的兩條加上 P1-5 的一條：
+    /// 條件是互動設計 §5 的兩條加上抽屜的一條：
     /// <b>有選取</b> ＋ <b>那片沒在被拖</b> ＋ <b>抽屜沒開著</b>。
     /// 按鈕拿它決定要不要顯示，這裡也拿它當保險——
     /// <b>顯示條件與作用條件是同一個算式，不會分岔</b>。
     ///
-    /// ⚠️ 第三條在今天<b>其實是多餘的</b>：打開抽屜的當下會清掉選取（決定 17，
+    /// ⚠️ 第三條在今天<b>其實是多餘的</b>：打開抽屜的當下會清掉選取（
     /// 做在 <see cref="BeginPress"/> 的箭頭分支裡），所以抽屜開著時本來就沒有選取。
     /// 寫出來是因為那條不變式<b>由另一段程式維護</b>——之後多一條打開抽屜的路徑
     ///（快捷鍵、換關預設開著）而忘了清選取的話，按鈕就會浮在抽屜上面，
@@ -454,7 +454,7 @@ public class TouchInputController : MonoBehaviour
 
     private void OnEnable()
     {
-        // P1-1 刻意留的洞就是這裡補上的：版面重算會重排暫放區的片，
+        // 座標與版面層（BoardView）刻意留的洞就是這裡補上的：版面重算會重排暫放區的片，
         // 手指底下那片會瞬間移位、抓取偏移歪掉，所以直接取消這次拖曳
         if (boardView != null) boardView.LayoutRecomputed += OnLayoutRecomputed;
     }
@@ -484,7 +484,7 @@ public class TouchInputController : MonoBehaviour
     /// <summary>
     /// 暫放的片的<b>視覺中心</b>超出可放區、或落在按鈕排裡，就推開（2026-09-15，互動設計 §4〈暫放的片不會跑出畫面〉）。
     ///
-    /// <b>推中心不推整片</b>（使用者定：整片推開移動量太大、看起來怪）。視覺中心就是旋轉的軸心，
+    /// <b>推中心不推整片</b>（整片推開移動量太大、看起來怪）。視覺中心就是旋轉的軸心，
     /// 凸多邊形的頂點平均一定在片裡面，所以它露出來就點得到那片；片最多可以一半在外面。
     ///
     /// <b>只推暫放的片</b>：看得到、不在盤上、不在待用區、沒吸住、沒在被拖。吸住的片位置是精確座標，一定在盒子裡，碰了反而會漂成浮點。
@@ -531,7 +531,7 @@ public class TouchInputController : MonoBehaviour
 
         if (pressedPiece == null)
         {
-            // 只有「這一幀剛落下」的指標才會被鎖定（待辦清單決定 12）。
+            // 只有「這一幀剛落下」的指標才會被鎖定。
             // 換關那一瞬間還按著的手指因此自動不合格，不需要另外維護排除清單
             if (TryAcquirePointer(out Vector2 pressPoint) && !BeginPress(level, pressPoint))
                 activePointerId = NoPointerId;   // 這一下沒有變成互動（按鈕、抽屜、空白）
@@ -552,7 +552,7 @@ public class TouchInputController : MonoBehaviour
 
             default:
                 // 被系統取消（來電、下拉通知）或那根手指整個不見了。
-                // ⚠️ 走還原，**不是結算**（待辦清單決定 13）——玩家並沒有真的放手，
+                // ⚠️ 走還原，**不是結算**——玩家並沒有真的放手，
                 // 結算的話他回到遊戲會發現片自己被放進盒子了
                 CancelInteraction();
                 return;
@@ -560,7 +560,7 @@ public class TouchInputController : MonoBehaviour
     }
 
     // ─────────────────────────────────────────────────────────────
-    // 指標：滑鼠與觸控統一成一層（待辦清單決定 14）
+    // 指標：滑鼠與觸控統一成一層
     //
     // ⚠️ 不能只讀 Pointer.current。它在手機上反映的是**主要觸控**（第一根手指），
     // 第二根之後完全看不見——症狀是「手掌先碰到螢幕，真正要用的手指就完全沒反應」，
@@ -673,7 +673,7 @@ public class TouchInputController : MonoBehaviour
     }
 
     /// <summary>
-    /// 按下：先問「打到什麼」，再照類別分派（待辦清單〈分類與偏移的定案〉）。
+    /// 按下：先問「打到什麼」，再照類別分派。
     ///
     /// <b>分層命中測試取代了原本的「先擋 → 抓片」。</b>舊的擋法把兩件事綁成一件——
     /// 「不要做命中測試」與「不要開始拖曳」。按鈕要兩者都成立，
@@ -706,7 +706,7 @@ public class TouchInputController : MonoBehaviour
                     // 控制器的 ClearSelection——那是抽屜認識控制器的三條邊之一。
                     // 決定要開抽屜的本來就是這裡，順手把選取清掉才是對的歸屬。
                     //
-                    // 為什麼開抽屜要清選取（決定 17）：抽屜整個蓋住盤面，
+                    // 為什麼開抽屜要清選取：抽屜整個蓋住盤面，
                     // 留著選取的話旋轉／翻面鈕會被蓋在底下，變成「看得到但按不到」
                     trayView.Toggle();
                     if (trayView.IsOpen) SetSelection(null);
@@ -743,7 +743,7 @@ public class TouchInputController : MonoBehaviour
     /// 記下一次互動的狀態。<b>這裡還不知道是點選還是拖曳</b>，所以什麼都不動——
     /// 連 <c>IsBeingDragged</c> 都還不打開（打開的話點一下就會看到那片閃到最上層一下）。
     ///
-    /// <b>從抽屜來的片這時候還隱藏著</b>，要到跨過門檻才召喚（決定 18）。
+    /// <b>從抽屜來的片這時候還隱藏著</b>，要到跨過門檻才召喚。
     /// 所以它的抓取偏移也要等到那時候才算得出來——在那之前它根本沒有位置。
     /// 規則是「<b>片有位置的那一刻就算偏移</b>」，兩條路只是時刻不同，公式只有一份。
     /// </summary>
@@ -763,7 +763,7 @@ public class TouchInputController : MonoBehaviour
         movedPastThreshold = false;
         positionBeforeDrag = piece.Position;
 
-        // 局內統計（P2-13）。⚠️ **按下就開始計，不看移動門檻**——點選也算，
+        // 局內統計。⚠️ **按下就開始計，不看移動門檻**——點選也算，
         // 這樣規則只有一條。每次約 0.1 秒，怎麼算都不影響大局，但規則得寫死才測得了
         level.StartDragTiming(GameClock.NowSeconds);
 
@@ -791,7 +791,7 @@ public class TouchInputController : MonoBehaviour
     /// <summary>
     /// 把片從抽屜裡拿出來，放到手指底下。<b>只有跨過門檻那一幀會叫一次。</b>
     ///
-    /// <b>為什麼延到跨門檻</b>（決定 18）：按下就召喚的話，玩家點一下不動就放開，
+    /// <b>為什麼延到跨門檻</b>：按下就召喚的話，玩家點一下不動就放開，
     /// 片會留在畫面上——那破壞了「<b>門檻內畫面完全靜止</b>」那條規則，
     /// 而那條是有代價換來的（它同時修掉了「點一下把片從盤面拿掉」那個 bug）。
     /// 代價只是按下到片出現有門檻那 10 像素的空窗，而手指本來就在動。
@@ -834,12 +834,12 @@ public class TouchInputController : MonoBehaviour
 
             movedPastThreshold = true;
 
-            // 從抽屜來的片到這一刻才真的被拿出來（決定 18）。
+            // 從抽屜來的片到這一刻才真的被拿出來。
             // ⚠️ 一定要排在下面那些之前——片還隱藏著的時候，
             // 打開 IsBeingDragged 或選取它都是在對一片看不見的東西動手
             if (locationBeforeDrag == PieceLocation.Tray) SummonFromTray(level, worldPoint);
 
-            // 抽屜自動收折（決定 19）。⚠️ **這一步 2026-09-09 才搬回這裡**——
+            // 抽屜自動收折。⚠️ **這一步 2026-09-09 才搬回這裡**——
             // 原本是 TrayView.Update 每幀看到「有在拖」就 Close()，也就是把一個
             // **一次性動作**寫成了「每幀重複執行的冪等操作」，而且那是抽屜認識控制器的
             // 三條邊之一。互動設計 §15.4 一直寫著「跨過門檻那一刻同時發生五件事」，
@@ -859,7 +859,7 @@ public class TouchInputController : MonoBehaviour
 
             // ⚠️ 抓取偏移**不**在這裡重算，所以這一幀片會往前補上門檻那一段距離
             // （10 螢幕像素，手機上約 0.5 mm）。重算的話沒有這個跳動，
-            // 但片會永遠落後抓取點那一段。兩種都是手感，留到 P1-13 玩過再定
+            // 但片會永遠落後抓取點那一段。兩種都是手感，留到調手感時玩過再定
         }
 
         Vector2 freePosition = worldPoint + grabOffset;
@@ -902,7 +902,7 @@ public class TouchInputController : MonoBehaviour
     /// <param name="screenPoint">放手時的螢幕座標。回收框的判定要用它。</param>
     private void EndPress(LevelData level, Vector2 screenPoint)
     {
-        // 局內統計（P2-13）：⚠️ **一定要排在過關判定之前**，
+        // 局內統計：⚠️ **一定要排在過關判定之前**，
         // 這樣最後那一段拖曳才算得進去。
         // 💡 這裡與 CancelInteraction 是拖曳的兩個出口，兩邊都要叫——
         // 冪等規則②（沒在計時就什麼都不做）讓「兩邊都叫」變成安全的
@@ -910,7 +910,7 @@ public class TouchInputController : MonoBehaviour
 
         if (movedPastThreshold)
         {
-            // 回收**優先於吸附**（決定 22）：兩者同時成立時，
+            // 回收**優先於吸附**：兩者同時成立時，
             // 玩家把手指移進框裡的意圖比「這裡剛好是合法位置」明確得多。
             // 判定用**手指**的位置不是片的，這樣「看到的框」跟「判定的區域」是同一個
             if (trayView != null && trayView.IsOverRecycleArea(screenPoint)) RecycleDrag(level);
@@ -923,7 +923,7 @@ public class TouchInputController : MonoBehaviour
             // 回收掉的、吸上盤面的都會被那支自己的條件擋掉，所以這裡不用分支
             KeepInsideFloatingArea(level, pressedPiece);
 
-            // 過關判定（P1-10）。**鬆手這一格是唯一需要問的時機**：
+            // 過關判定。**鬆手這一格是唯一需要問的時機**：
             // CommitDrag 是全專案唯一會讓片進盤面的地方，而 undo 與回收只會讓片變少
             // 或原地不動——所以「還沒過關 → 過關」這個轉換只可能發生在這裡。
             // 不必每幀檢查，也不必訂閱 Board.Changed。
@@ -939,7 +939,7 @@ public class TouchInputController : MonoBehaviour
             }
         }
 
-        // §4 的高亮規則，加上 P1-5 之後收成一句：
+        // §4 的高亮規則，加上抽屜之後收成一句：
         // **片要看得到、而且不在盤上，才可能被選取。**
         //
         // ⚠️ 「在待用區」這個條件不能省。從抽屜按下但沒跨過門檻時，
@@ -987,7 +987,7 @@ public class TouchInputController : MonoBehaviour
     {
         if (lastResult.Snapped)
         {
-            // ⚠️ undo 的**唯一**推入點（P1-9）。一定要在 Place 之前取，
+            // ⚠️ undo 的**唯一**推入點。一定要在 Place 之前取，
             // 記的是「動之前那一槽長什麼樣」——動之後才取的話記到的是新的位置，
             // 按 undo 會退到原地，看起來像「undo 沒反應」
             level.PushUndoStep(level.Board[pressedPiece.SlotIndex]);
@@ -1024,7 +1024,7 @@ public class TouchInputController : MonoBehaviour
     {
         SetSelection(null);
 
-        // ⚠️ 局內統計（P2-13）：**這裡是拖曳的第二個出口**。
+        // ⚠️ 局內統計：**這裡是拖曳的第二個出口**。
         // 它接在 BoardView.LayoutRecomputed 上，所以**螢幕尺寸一變就會走到這裡**，
         // 而那條路不經過 EndPress。只把「停止」寫在 EndPress 裡的話，
         // 轉一次螢幕方向計時器就再也停不下來，那一局的拖曳時間會一路累加到過關，
@@ -1067,14 +1067,14 @@ public class TouchInputController : MonoBehaviour
     // 之後真的有第二個外部觸發點（快捷鍵之類）再開回來。
 
     // ─────────────────────────────────────────────────────────────
-    // undo（P1-9）
+    // undo
     //
     // 模型那半在 LevelData.TryUndo，這裡只做**畫面同步**那半。
     // 分成兩半是因為 BoardState.Changed 沒有任何訂閱者，而且它也不帶
     // 「哪一槽變了」——所以「片要跟著動回去」沒有人會自動做。
     //
     // 放這支而不是新開一個投影者：寫 PieceView 的仍然只有控制器一個
-    // （跟 P1-5 的結論一致，也是除錯記錄 003 那個坑的直接教訓）。
+    // （跟抽屜的結論一致：多一個寫 PieceView 的地方，就可能多出第二份真相）。
     // ─────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -1163,7 +1163,7 @@ public class TouchInputController : MonoBehaviour
     ///
     /// <c>IsVisible</c> 寫在這裡只是為了<b>不閃一幀</b>——<c>TrayView</c> 下一幀也會
     /// 從 <c>LevelData</c> 投影出同樣的答案。兩邊不會打架，因為真相只有一份，
-    /// 而這裡是在改完真相的同一刻順手同步，不是第二個真相（對照除錯記錄 003）。
+    /// 而這裡是在改完真相的同一刻順手同步，不是第二個真相。
     /// </summary>
     /// <param name="slotIndex">槽索引。</param>
     private void HidePieceToTray(int slotIndex)
@@ -1208,7 +1208,7 @@ public class TouchInputController : MonoBehaviour
         LevelData level = LevelSession.Current.Data;
         if (!level.TryClearBoardToTray(out IReadOnlyList<PieceObservation> cleared)) return;
 
-        // 局內統計（P2-13）。⚠️ 要在真的清成功之後才記——上面那個 return 是
+        // 局內統計。⚠️ 要在真的清成功之後才記——上面那個 return 是
         // 「盤面本來就空的」，那不算一次清空
         level.RecordClear();
 
@@ -1220,7 +1220,7 @@ public class TouchInputController : MonoBehaviour
     }
 
     /// <summary>
-    /// ⚠️ <b>開發用的捷徑（P2-4）</b>：照參考解填六片，留大三角自己拼。
+    /// ⚠️ <b>開發用的捷徑</b>：照參考解填六片，留大三角自己拼。
     ///
     /// <b>為什麼留大三角</b>：它面積最大、資訊量最大，留下來還驗得到吸附與旋轉的手感；
     /// 留小三角的話幾乎是「按一下就過關」，什麼都測不到。
@@ -1310,7 +1310,7 @@ public class TouchInputController : MonoBehaviour
         {
             if (area == null || !area.gameObject.activeInHierarchy) continue;
 
-            // ⚠️ 不用 RectangleContainsScreenPoint 配畫布的相機（2026-09-15，除錯記錄 012）：
+            // ⚠️ 不用 RectangleContainsScreenPoint 配畫布的相機（2026-09-15）：
             // 畫布是 Screen Space - Camera，相機剛被改過的那一幀畫布還沒跟上，換算會錯。
             // 盒子區躲按鈕排也是同一份換算，兩邊不能各走各的
             if (UiScreenRect.TryGet(area, out Rect areaScreenRect) && areaScreenRect.Contains(screenPoint))

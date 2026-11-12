@@ -7,7 +7,7 @@ using Tangram.Data.Tests;
 namespace Tangram.Core.Tests
 {
     /// <summary>
-    /// 進度存檔（P2-8b，issue #39，2026-10-17）：內容合不合法（<see cref="PlayerProgress"/>）與
+    /// 進度存檔（issue #39，2026-10-17）：內容合不合法（<see cref="PlayerProgress"/>）與
     /// 檔案的讀、寫、壞檔處理（<see cref="PlayerProgressFile"/>）。
     ///
     /// ⭐ <b>壞檔那幾條是這一批的重點</b>：實機上很難製造「寫到一半被殺掉」或「鍵名拼錯」的檔案，

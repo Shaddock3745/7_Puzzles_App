@@ -191,7 +191,7 @@ public class PuzzleEntryToolController : MonoBehaviour
         }
 
         // 3. 畫框。⚠️ 參考解傳 null：工具沒有解可以拿來三角化，所以只會畫出輪廓、內部留空。
-        //    副作用是那幾根「越界畫進材料裡」的描邊刺沒有填色蓋住（除錯記錄 010），工具上無所謂
+        //    副作用是那幾根「越界畫進材料裡」的描邊刺沒有填色蓋住，工具上無所謂
         if (boxView != null) boxView.Redraw(workArea, null);
 
         // 4. 七片重置姿態，全部在抽屜裡
@@ -641,13 +641,13 @@ public class PuzzleEntryToolController : MonoBehaviour
     }
 
     /// <summary>
-    /// 輸出檔要放哪個資料夾：<b>專案（或 exe）旁邊的 <c>Tools/PuzzleEntries/</c></b>（2026-09-12，P2-8a）。
+    /// 輸出檔要放哪個資料夾：<b>專案（或 exe）旁邊的 <c>Tools/PuzzleEntries/</c></b>（2026-09-12）。
     ///
     /// standalone 的 <c>Application.dataPath</c> 是「exe 資料夾/專案名_Data」，
     /// 所以它的上一層就是 exe 所在的地方。在 Editor 裡 <c>dataPath</c> 是
     /// 「專案/Assets」，上一層剛好是專案資料夾——兩邊都是打開就看得到檔案的位置。
     ///
-    /// ⚠️ <b>為什麼是 <c>Tools/</c> 底下，不是直接丟專案根目錄</b>（P2-8a 定）：
+    /// ⚠️ <b>為什麼是 <c>Tools/</c> 底下，不是直接丟專案根目錄</b>：
     /// <list type="number">
     /// <item><b>這是工作檔，不是出貨檔。</b>工作檔是 JSON Lines、逐題追加（當掉只掉最後一題、
     /// 兩個人的檔案好合併）；遊戲讀的出貨檔是 <c>Assets/Resources/</c> 底下的單一 JSON，

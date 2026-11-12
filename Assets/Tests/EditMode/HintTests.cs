@@ -5,7 +5,7 @@ using Tangram.Data;
 namespace Tangram.Core.Tests
 {
     /// <summary>
-    /// 提示的模型層（2026-09-15，待辦清單〈提示〉、互動設計 §9）：幾次能按、挑哪一片、算不算擺對。
+    /// 提示的模型層（2026-09-15，互動設計 §9）：幾次能按、挑哪一片、算不算擺對。
     /// 畫面那半（覆蓋片怎麼閃）在 <c>HintOverlayView</c>，這裡測不到。
     /// </summary>
     public class HintTests
@@ -270,7 +270,7 @@ namespace Tangram.Core.Tests
         }
 
         /// <summary>
-        /// 提示片跟七片同一層：<b>蓋在所有沒在拖的片上面、拖著的片下面</b>（2026-09-15 使用者要求拖曳中的片壓得過提示）。
+        /// 提示片跟七片同一層：<b>蓋在所有沒在拖的片上面、拖著的片下面</b>（2026-09-15 起拖曳中的片要壓得過提示）。
         /// 有人改了 <c>TierStride</c> 或面積階數而擠壞這個夾縫時會紅。
         /// </summary>
         [Test]

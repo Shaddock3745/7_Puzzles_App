@@ -6,7 +6,7 @@ using UnityEngine;
 // ⭐ 掃描模式的第一段：取得照片（2026-10-17）。
 //
 //   選擇視窗 ─┬ 新拍一張   → CameraCaptureView（自己做的拍照畫面，WebCamTexture）─┐
-//            └ 從檔案選擇 → GalleryPhotoSource（NativeGallery 外掛）            ─┴→ 照片 → 辨識模組（協作者的洞）
+//            └ 從檔案選擇 → GalleryPhotoSource（NativeGallery 外掛）            ─┴→ 照片 → 辨識模組
 //
 // 兩種來源交出來的照片守同一份約定（見 IPhotoSource），所以辨識模組不用知道照片是哪來的。
 

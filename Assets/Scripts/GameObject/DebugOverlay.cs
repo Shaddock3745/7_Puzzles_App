@@ -5,24 +5,24 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// ⭐ <b>App 裡的監控面板</b>（P5-3，issue #38，2026-10-23）：左上角一個把手，按一下展開、再按收起，展開後上面一排分頁。
+/// ⭐ <b>App 裡的監控面板</b>（issue #38，2026-10-23）：左上角一個把手，按一下展開、再按收起，展開後上面一排分頁。
 /// 跟 Editor 的監控面板（<c>MonitorWindow</c>）<b>同一份資料、同一份字</b>——報告是 <see cref="LevelMonitor"/> 組的，
 /// 每一個字是 <see cref="LevelMonitorText"/> 組的，這支只負責「畫在哪、按哪裡換頁」。
 ///
-/// <b>名字沿用 <c>DebugOverlay</c></b>（2026-10-23 取代原本 P1-12 的除錯 overlay）：改名的話場景裡的元件要重接，跟 <c>ScanWaitingCover</c> 同一個理由。
-/// 原本那幾行除錯資訊（盤面、拖曳、選取不變式、相機與吸附的像素、手指位置）<b>留著但預設不顯示</b>（使用者定）——
+/// <b>名字沿用 <c>DebugOverlay</c></b>（2026-10-23 取代原本的除錯 overlay）：改名的話場景裡的元件要重接，跟 <c>ScanWaitingCover</c> 同一個理由。
+/// 原本那幾行除錯資訊（盤面、拖曳、選取不變式、相機與吸附的像素、手指位置）<b>留著但預設不顯示</b>——
 /// 勾 <see cref="showDebugPage"/> 就多一個「除錯」分頁，在 T20 上調手感時用得到。
 ///
-/// <b>什麼時候出現</b>（使用者 2026-10-23 選乙）：<b>展示版</b>（<see cref="DemonstrationBuild"/>）——Editor、Development Build，或 <b>Player Settings 的 Scripting Define Symbols 有 <c>TANGRADE_MONITOR</c></b>。
-/// 選乙的理由：Development Build 會連作弊鈕（<c>DebugTools</c> 的「填 6 片」）與浮水印一起帶出來，而決賽的 build 要給評審看面板、不能有作弊鈕。
-/// 其他 build 直接關掉自己（不靠人記得刪，同 P1-12 的原則）。
+/// <b>什麼時候出現</b>（2026-10-23 定）：<b>展示版</b>（<see cref="DemonstrationBuild"/>）——Editor、Development Build，或 <b>Player Settings 的 Scripting Define Symbols 有 <c>TANGRADE_MONITOR</c></b>。
+/// 不只認 Development Build 的理由：它會連作弊鈕（<c>DebugTools</c> 的「填 6 片」）與浮水印一起帶出來，而展示用的 build 要看得到面板、不能有作弊鈕。
+/// 其他 build 直接關掉自己（不靠人記得刪，跟原本的除錯 overlay 同一個原則）。
 ///
 /// <b>它絕對不碰任何狀態，只讀。</b> 除錯工具一旦會改東西，它自己就變成 bug 來源。
 ///
 /// <b>為什麼用 <c>OnGUI</c> 而不是 Canvas</b>：零接線，掛上去就有字。<b>按哪裡</b>用 <c>Pointer.current</c> 自己比矩形，不用 GUI 的按鈕——
 /// 跟原本的把手同一套，手機上不用賭 IMGUI 收不收得到觸控。<b>為什麼分頁不捲動</b>：IMGUI 的捲動在手機上用手指拖不動。
 ///
-/// ⚠️ <b>擋片區只登記把手與分頁那一排</b>，字的那一塊不擋——面板開著也要能拼（評審看著算式玩），點在字上就是點在盤面上。
+/// ⚠️ <b>擋片區只登記把手與分頁那一排</b>，字的那一塊不擋——面板開著也要能拼（看著算式玩），點在字上就是點在盤面上。
 /// ⭐ 但 <b>UI 按鈕整塊都擋</b>（2026-10-30）：OnGUI 擋不住 UI 事件，原本點分頁會順便按到底下的放棄／提示／返回，
 /// 所以另外蓋一塊透明的 UI 擋板跟著面板走（<see cref="EnsureButtonBlocker"/>）。拖片與按鈕是兩套命中測試，這裡刻意一套擋、一套不擋。
 /// </summary>
@@ -102,11 +102,11 @@ public class DebugOverlay : MonoBehaviour
     private GUIStyle tabStyle;
     private readonly StringBuilder builder = new StringBuilder();
 
-    // ───────── 擋按鈕（2026-10-30，使用者 Xperia 實測發現）─────────
+    // ───────── 擋按鈕（2026-10-30，Xperia 實機測試發現）─────────
     //
     // OnGUI 畫的東西 Unity 的 UI 事件系統看不到：點在面板上會穿過去按到下面的按鈕（右上角的放棄／提示／返回正好在分頁那一排底下）。
     // 所以在最上層自己蓋一塊透明的 UI 擋板，範圍每幀跟著面板走。
-    // ⚠️ 它<b>只擋 UI 按鈕、不擋拖片</b>（使用者選甲）：拖片那邊看的是 TouchInputController 自己的擋片區（上面 BlockingScreenRect，字那塊刻意不擋），
+    // ⚠️ 它<b>只擋 UI 按鈕、不擋拖片</b>：拖片那邊看的是 TouchInputController 自己的擋片區（上面 BlockingScreenRect，字那塊刻意不擋），
     // 擋板沒有登記進去——面板開著照樣能看著算式拼。
 
     /// <summary>擋板的根物件（自己一個 Screen Space - Overlay 的 Canvas，排在所有 UI 最上面）。第一次 <c>OnEnable</c> 才建。</summary>
@@ -129,7 +129,7 @@ public class DebugOverlay : MonoBehaviour
         isExpanded = startExpanded;
 
         // 不該出現的 build 直接關掉自己。**這樣就不必在交出去之前記得刪**——
-        // 「記得拿掉」是靠人的規定，跟這個專案踩過的兩個坑同一類（除錯記錄 001、002）。
+        // 「記得拿掉」是靠人的規定，跟這個專案踩過的兩個坑同一類。
         // 什麼叫展示版只在 DemonstrationBuild 定義一次（2026-10-30，清除紀錄鈕與 K 倍率也問它）
         if (!DemonstrationBuild.IsActive) enabled = false;
     }
@@ -385,7 +385,7 @@ public class DebugOverlay : MonoBehaviour
         }
     }
 
-    // ───────── 除錯頁（P1-12 原本的 overlay，2026-10-23 起預設不顯示）─────────
+    // ───────── 除錯頁（原本的除錯 overlay，2026-10-23 起預設不顯示）─────────
 
     /// <returns>除錯頁的字。</returns>
     private string BuildDebugText()

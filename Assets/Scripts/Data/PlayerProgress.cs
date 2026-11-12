@@ -4,7 +4,7 @@ using UnityEngine;
 namespace Tangram.Data
 {
     /// <summary>
-    /// 玩家進度存檔 <c>PlayerProgress.json</c> 的內容（P2-8b，issue #39，2026-10-17）。
+    /// 玩家進度存檔 <c>PlayerProgress.json</c> 的內容（issue #39，2026-10-17）。
     ///
     /// <b>只存「關掉 App 再開回來要接得上」的東西</b>：實力與累計局數，加兩個除錯用的欄位。
     /// 刻意不存的（2026-10-17 定）：
@@ -16,7 +16,7 @@ namespace Tangram.Data
     /// <item><b>小數的實力</b>：存四捨五入後的整數，記憶體裡照樣留小數（2026-09-13 定）</item>
     /// </list>
     ///
-    /// ⚠️ <b>欄位名就是 JSON 的鍵，也是儲存契約</b>（<c>CLAUDE.md</c>〈儲存契約〉第二條）。
+    /// ⚠️ <b>欄位名就是 JSON 的鍵，也是儲存契約</b>（<c>文件/開發須知.md</c>〈儲存契約〉第二條）。
     /// 玩家手上已經有檔案之後改名，<c>JsonUtility</c> 會不吭聲地把舊鍵讀成預設值——
     /// <see cref="formatVersion"/> 與 <see cref="skillRating"/> 讀成 0 會被 <see cref="ThrowIfInvalid"/> 攔下，
     /// 其他三個不會。
@@ -28,7 +28,7 @@ namespace Tangram.Data
     public class PlayerProgress
     {
         /// <summary>
-        /// 現在的格式版本。<b>之後加「中途離開的那一局」時要升版</b>（`待辦清單.md`〈中途離開〉）。
+        /// 現在的格式版本。<b>之後加「中途離開的那一局」時要升版</b>。
         /// </summary>
         public const int CurrentFormatVersion = 1;
 
@@ -54,7 +54,7 @@ namespace Tangram.Data
         /// <summary>
         /// 存檔那時用的難度權重的指紋（<see cref="DifficultyWeights.Fingerprint"/>）。
         ///
-        /// <b>為什麼要存</b>：權重一改，同一個實力數字的意思就跟著移動（`待辦清單.md` P2-14 那條）。
+        /// <b>為什麼要存</b>：權重一改，同一個實力數字的意思就跟著移動。
         /// ⭐ <b>讀到不一樣時照用、只寫警告</b>（2026-10-17 定）：重算工具會把尺拉回 1200 ± 200，
         /// 實力的意思大致還在；直接重設的話玩家會莫名其妙掉回起始實力。
         /// 可以是空的（沒有權重的場景不會結算，所以正常不會寫出空的），空的也只是警告。

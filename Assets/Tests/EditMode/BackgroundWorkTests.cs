@@ -6,7 +6,7 @@ using NUnit.Framework;
 namespace Tangram.Core.Tests
 {
     /// <summary>
-    /// 背景工作與預生（P5-2，issue #37，2026-10-23）：<see cref="BackgroundJob{T}"/> 與 <see cref="TargetedPrefetch{T}"/>。
+    /// 背景工作與預生（issue #37，2026-10-23）：<see cref="BackgroundJob{T}"/> 與 <see cref="TargetedPrefetch{T}"/>。
     ///
     /// ⭐ <b>重點是「同一時間最多一件」</b>：出題器整場只有一個，兩條執行緒同時碰它的症狀是偶爾生出重複的題、或去重表壞掉，
     /// 不報錯、而且實機上幾乎重現不出來。所以那一條用閘門卡住工作、數同時在跑的有幾件，不靠時間碰運氣。

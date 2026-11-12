@@ -17,7 +17,7 @@ namespace Tangram.Data.Tests
         /// </summary>
         public const string DifficultyWeightsRelativePath = "Assets/Resources/DifficultyWeights.json";
 
-        /// <summary>ELO 設定檔在 repo 裡的相對路徑（P2-14）。跟權重檔同一套規則：唯一的源頭。</summary>
+        /// <summary>ELO 設定檔在 repo 裡的相對路徑。跟權重檔同一套規則：唯一的源頭。</summary>
         public const string SkillRatingSettingsRelativePath = "Assets/Resources/SkillRatingSettings.json";
 
         /// <summary>從目前目錄與執行檔目錄往上找 repo 裡的檔案。找不到就讓測試失敗。</summary>

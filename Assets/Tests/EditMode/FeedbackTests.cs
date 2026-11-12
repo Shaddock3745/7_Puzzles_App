@@ -237,7 +237,7 @@ namespace Tangram.Core.Tests
         // ─────────────────────────────────────────────────────────────
 
         /// <summary>
-        /// 英文名字整理：去前後空白、中間連續空白縮成一個，<b>大小寫照打的樣子</b>（使用者要求不要全轉大寫）。
+        /// 英文名字整理：去前後空白、中間連續空白縮成一個，<b>大小寫照打的樣子</b>（刻意不全轉大寫）。
         /// </summary>
         [TestCase("Amy", "Amy")]
         [TestCase("  amy ", "amy")]
@@ -263,7 +263,7 @@ namespace Tangram.Core.Tests
         [TestCase("Amy_2")]
         [TestCase("Ａｍｙ")]
         [TestCase("小明")]
-        // ⚠️ 下面四個是 2026-09-14 使用者抓到「說明跟程式不一致」之後補的：
+        // ⚠️ 下面四個是 2026-09-14 發現「說明跟程式不一致」之後補的：
         // 原本用 string.Trim()，頭尾的全形空白、換行會被刪掉而通過；Tab 被當成空白收進去
         [TestCase("Amy　")]
         [TestCase("　Amy")]
@@ -644,7 +644,7 @@ namespace Tangram.Core.Tests
 
         /// <summary>
         /// 「形狀方向一樣」比的是頂點集合，不是姿態欄位：正方形轉 0 與轉 2 佔位一樣，
-        /// 平行四邊形翻不翻面不一樣（CLAUDE.md〈Placement.Equals 是姿態相等，不是形狀相等〉）。
+        /// 平行四邊形翻不翻面不一樣（文件/開發須知.md〈容易踩的坑〉的「Placement.Equals 是姿態相等，不是形狀相等」）。
         /// </summary>
         [Test]
         public void 練習題_形狀比較不看姿態欄位只看佔位()

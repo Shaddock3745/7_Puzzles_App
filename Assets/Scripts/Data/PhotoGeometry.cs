@@ -10,7 +10,7 @@ namespace Tangram.Data
     /// 把像素怎麼搬的那半抽出來，就能用 int 陣列在 <c>dotnet test</c> 裡逐格驗。
     ///
     /// <b>像素的排法跟 Unity 貼圖一樣</b>：一整排連續、<b>第 0 列是最下面</b>（y 朝上），
-    /// 第 (x, y) 個像素在 <c>y × 寬 + x</c>。協作者的 JSON 也是 y 朝上，所以這三者是同一套座標。
+    /// 第 (x, y) 個像素在 <c>y × 寬 + x</c>。辨識模組輸出的 JSON 也是 y 朝上，所以這三者是同一套座標。
     /// </summary>
     public static class PhotoGeometry
     {

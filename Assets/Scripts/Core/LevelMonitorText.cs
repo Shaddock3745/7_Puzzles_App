@@ -24,7 +24,7 @@ namespace Tangram.Core
     }
 
     /// <summary>
-    /// 一條公式的三段：符號 → 代入數字 → 結果。評審照著按計算機就驗得出來。
+    /// 一條公式的三段：符號 → 代入數字 → 結果。任何人照著按計算機都驗得出來。
     /// </summary>
     public readonly struct MonitorFormula
     {
@@ -73,7 +73,7 @@ namespace Tangram.Core
     }
 
     /// <summary>
-    /// ⭐ <b>監控面板上的每一個字</b>（P5-3，issue #38，2026-10-23）：<see cref="LevelMonitorReport"/> → 要顯示的字串。
+    /// ⭐ <b>監控面板上的每一個字</b>（issue #38，2026-10-23）：<see cref="LevelMonitorReport"/> → 要顯示的字串。
     ///
     /// <b>為什麼搬進 Core</b>：監控面板現在有兩個殼——Editor 的視窗（<c>MonitorWindow</c>，表格排版）與 App 裡的 overlay
     /// （<c>DebugOverlay</c>，純文字分頁）。公式代進哪幾個數、特徵叫什麼名字、出題紀錄怎麼講，<b>兩邊各寫一份就會分家</b>，
@@ -365,7 +365,7 @@ namespace Tangram.Core
         /// <returns>展示倍率不是 1 時的警語；是 1 時是 null。</returns>
         public static string DemonstrationWarning(LevelMonitorReport report) =>
             report.IsDemonstrationMultiplierActive
-                ? $"展示版：K 是正式設定的 {report.Settings.demonstrationMultiplier:0.##} 倍。系統概述文件與影片必須寫明。"
+                ? $"展示版：K 是正式設定的 {report.Settings.demonstrationMultiplier:0.##} 倍，引用數字時須一併註明。"
                 : null;
 
         // ───────── 整頁（App 裡的 overlay 用）─────────

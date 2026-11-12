@@ -76,7 +76,7 @@ public class BoardView : MonoBehaviour
     /// 要重進 Play（或轉一次螢幕方向）才看得到。
     ///
     /// 2026-09-09 曾經為了「拉滑桿調手感」改成每次讀都現算，
-    /// 調完 P1-13 的數值之後改回來——那個需求是一次性的，
+    /// 手感數值調完之後改回來——那個需求是一次性的，
     /// 而現算會讓「dp → 像素」每幀跑很多次。**數值已經定了（12 / 18），不再需要即時調。**
     /// </remarks>
     public SnapSolver.Settings SnapSettings { get; private set; }
@@ -84,12 +84,12 @@ public class BoardView : MonoBehaviour
     /// <summary>
     /// 版面重算完、而且已經推送給 <c>Camera</c> 之後觸發。
     ///
-    /// <b>⚠️ P1-1 階段這個事件沒有訂閱者，這不是漏了，是刻意的。</b>
+    /// <b>⚠️ 座標與版面層剛做好時這個事件沒有訂閱者，那不是漏了，是刻意的。</b>
     /// 互動設計 §2.8 第四項決定「重算版面時取消進行中的拖曳」——真正會出事的是
     /// 重算會重排暫放區的七片，手指底下那片會瞬間移位、抓取偏移歪掉。
-    /// 但「取消拖曳」需要拖曳控制器，而它是 P1-6 才存在的東西。
+    /// 但「取消拖曳」需要拖曳控制器，而它是之後才做的。
     ///
-    /// <b>P1-6 要做的事</b>：<c>TouchInputController</c> 訂閱這個事件，
+    /// <b>拖曳控制器要做的事</b>：<c>TouchInputController</c> 訂閱這個事件，
     /// 收到就把拖曳中那片放回抓起前的狀態。沒接的話症狀是「轉螢幕方向或拉 Game 視窗時，
     /// 正在拖的片會突然黏歪」，而且不會有任何錯誤訊息。
     /// </summary>
@@ -118,7 +118,7 @@ public class BoardView : MonoBehaviour
     ///
     /// <b>每幀都算</b>，所以轉螢幕方向、改解析度、Canvas 縮放變了都會自己跟上，不必有人通知。
     ///
-    /// ⚠️ <b>按鈕排的螢幕位置一定要走 <see cref="UiScreenRect"/>，不能用畫布的相機換算</b>（除錯記錄 012）：
+    /// ⚠️ <b>按鈕排的螢幕位置一定要走 <see cref="UiScreenRect"/>，不能用畫布的相機換算</b>：
     /// 畫布是 Screen Space - Camera，要等到畫面要畫之前才跟上相機；而這裡算出來的規則會改相機——
     /// 用相機換算的話「讀錯 → 改相機 → 又讀錯」，實測盒子連抖十幀，每次重算還會把正在拖的片放回原位。
     /// </summary>
@@ -174,7 +174,7 @@ public class BoardView : MonoBehaviour
     /// <returns>量得出來而且合理才是 true。</returns>
     private bool TryGetAvoidedButtonRect(RectTransform area, out Rect screenRect)
     {
-        // ⚠️ 不能用畫布的相機換算，除錯記錄 012
+        // ⚠️ 不能用畫布的相機換算（理由見上）
         if (!UiScreenRect.TryGet(area, out screenRect)) return false;
         if (screenRect.width > 0f && screenRect.height > 0f) return true;
 
@@ -200,7 +200,7 @@ public class BoardView : MonoBehaviour
     /// <item>按鈕排：Inspector 上那份清單（跟盒子區同一份），各自外擴 <see cref="buttonAreaMarginDp"/>。停用的跳過</item>
     /// </list>
     ///
-    /// ⭐ <b>為什麼要躲按鈕排</b>（使用者 2026-09-15 指出）：手指會蓋住自己要點的地方，觸控目標要大約 48 dp 才點得穩，
+    /// ⭐ <b>為什麼要躲按鈕排</b>（2026-09-15 實機測試發現）：手指會蓋住自己要點的地方，觸控目標要大約 48 dp 才點得穩，
     /// 所以片被按鈕蓋住大半、只露出一小條，在手機上就等於救不回來（滑鼠點得到，所以在 Editor 看不出來）。
     /// ⭐ <b>看按鈕排的父物件，不看個別按鈕顯示了沒</b>：提示鈕、放棄鈕是玩到一半才冒出來的，
     /// 看顯示中的按鈕的話，片暫放在那裡之後按鈕出現就把它蓋住了；而且選取時旋轉鈕出現也不會讓片突然被推走。
@@ -287,7 +287,7 @@ public class BoardView : MonoBehaviour
     /// 螢幕尺寸變了就重算並推送，沒變就什麼都不做（兩個 int 比較，可以隨便呼叫）。
     ///
     /// <c>Update()</c> 每幀會呼叫一次，但 <c>MonoBehaviour</c> 之間的 <c>Update</c> 順序
-    /// 是未定義的。<b>P1-6 的拖曳控制器在讀座標之前應該先呼叫這一句</b>，
+    /// 是未定義的。<b>拖曳控制器在讀座標之前應該先呼叫這一句</b>，
     /// 才不會在「螢幕剛變、BoardView 還沒輪到」的那一幀拿到舊的解。
     /// </summary>
     public void EnsureCurrent()

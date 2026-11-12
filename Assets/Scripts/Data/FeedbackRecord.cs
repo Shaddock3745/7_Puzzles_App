@@ -11,7 +11,7 @@ namespace Tangram.Data
     /// 重算拿到的反而是新定義的值（鐵則三：只存相對編碼，需要時重算）。
     ///
     /// ⚠️ <b>欄位名就是檔案裡的鍵</b>，開始收資料之後就不要改名——改了舊的那幾行會被讀成預設值，不報錯
-    /// （跟 CLAUDE.md〈儲存契約〉第 2 條同一件事）。
+    /// （跟 文件/開發須知.md〈儲存契約〉第 2 條同一件事）。
     /// </summary>
     [Serializable]
     public class FeedbackRecord

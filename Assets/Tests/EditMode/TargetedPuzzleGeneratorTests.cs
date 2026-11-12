@@ -6,7 +6,7 @@ using Tangram.Data;
 namespace Tangram.Data.Tests
 {
     /// <summary>
-    /// 出題器 第二版：照難度生（P2-7，issue #28）。
+    /// 出題器 第二版：照難度生（issue #28）。
     ///
     /// <b>這裡釘住的是三條路都走得通</b>——正中、將就、失敗。
     /// 前兩條靠固定種子（同一個種子必須生出同一串題目），
@@ -197,12 +197,12 @@ namespace Tangram.Data.Tests
         ///
         /// ⚠️ <b>掛 [Explicit] 是刻意的</b>：十個目標各一百題，最慢那幾格要跑好幾分鐘，
         /// 不進日常的 Run All（跟 <c>PuzzleBatchStatisticsTests</c> 同一個處理）。
-        /// 要跑：<c>dotnet test Tools/DotnetTests -- "NUnit.Where=name == GenerationTimeTable"</c>（⚠️ 不能用 <c>--filter</c>，見 <c>CLAUDE.md</c>〈怎麼跑測試〉）
+        /// 要跑：<c>dotnet test Tools/DotnetTests -- "NUnit.Where=name == GenerationTimeTable"</c>（⚠️ 不能用 <c>--filter</c>，見 <c>文件/開發須知.md</c>〈怎麼跑測試〉）
         ///
         /// ⚠️ <b>用 <c>dotnet test</c> 跑出來的是 Debug 建置的數字</b>，那是 Unity Editor 的<b>下界</b>
         /// ——Editor 跑 Mono，通常還要再慢 2 ～ 3 倍。實機接近 Release 建置。
         /// </summary>
-        [Test, Explicit("P2-7 生成時間：十幾個目標各一百題要跑好幾分鐘，不進日常的 Run All")]
+        [Test, Explicit("指定難度生成時間：十幾個目標各一百題要跑好幾分鐘，不進日常的 Run All")]
         public void 生成時間_幾個目標各生一百題()
         {
             const int PuzzlesPerTarget = 100;
@@ -214,7 +214,7 @@ namespace Tangram.Data.Tests
             TargetDifficultyRange range = RepositoryFiles.LoadDifficultyWeights().TargetRange;
             int[] targets = { range.Minimum, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, range.Maximum };
 
-            TestContext.WriteLine("══════ P2-7 生成時間 ══════");
+            TestContext.WriteLine("══════ 指定難度生成時間 ══════");
             TestContext.WriteLine($"容許範圍 ±{TargetedPuzzleGenerator.DefaultTolerance}　"
                                   + $"預算 {TargetedPuzzleGenerator.DefaultAttemptBudget} 次　"
                                   + $"每個目標 {PuzzlesPerTarget} 題");

@@ -39,7 +39,7 @@ public class PieceView : MonoBehaviour
     /// 被選取時往白色提亮多少。
     ///
     /// ⚠️ <b>這是佔位用的表現</b>——描邊、外框、發光之後再說。
-    /// 換掉它不會動到任何資料流，所以先用最省事的方式讓選取看得見（P1-8）。
+    /// 換掉它不會動到任何資料流，所以先用最省事的方式讓選取看得見。
     /// </summary>
     private const float SelectedBrightenAmount = 0.45f;
 
@@ -64,7 +64,7 @@ public class PieceView : MonoBehaviour
     private bool isBeingDragged;
     private bool isSelected;
 
-    // 預設看得到。P1-5 的 TrayView 會在第一幀把七片推成「在抽屜裡」，
+    // 預設看得到。TrayView 會在第一幀把七片推成「在抽屜裡」，
     // 但**沒有 TrayView 的場景照樣能用**（例如只想看拖曳的除錯場景）
     private bool isVisible = true;
 
@@ -113,7 +113,7 @@ public class PieceView : MonoBehaviour
     /// 旋轉格數 0~7，每格 45°。設進來的值會先取模，傳 −1 或 9 都安全。
     ///
     /// <b>這一定要是欄位，不能從 transform 反推</b>（見類別說明）。
-    /// P1-8 的旋轉鈕要照片種的循環長度取餘數
+    /// 旋轉鈕要照片種的循環長度取餘數
     /// （<c>SnapSolver.RotationCycleLength</c>：三角 8 / 正方形 2 / 平行四邊形 4），
     /// 否則玩家會看到「按了沒反應」。
     /// </summary>
@@ -257,7 +257,7 @@ public class PieceView : MonoBehaviour
     }
 
     /// <summary>
-    /// 看得到嗎（P1-5）。<c>false</c> = 收在待用區的抽屜裡：<b>看不到，也點不到</b>。
+    /// 看得到嗎。<c>false</c> = 收在待用區的抽屜裡：<b>看不到，也點不到</b>。
     ///
     /// ⚠️ <b>這不是真相，是投影。</b>真相是 <c>LevelData.IsInTray(slot)</c>，
     /// 由 <c>TrayView</c> 每幀推過來——跟 <see cref="IsSnapped"/>、<see cref="IsSelected"/>
@@ -331,7 +331,7 @@ public class PieceView : MonoBehaviour
     /// <summary>
     /// 目前姿態下，<b>視覺中心相對 transform 原點</b>的位移。
     ///
-    /// 用途有三：§5 旋轉的軸心補償（內部用）、P1-5 從抽屜召喚時
+    /// 用途有三：§5 旋轉的軸心補償（內部用）、從抽屜召喚時
     /// 「把片的中心對到手指」——後者要的位置是<c>手指座標 − 這個值</c>——
     /// 以及 2026-09-15 暫放的片推回可放區時推的那一點（<c>位置 ＋ 這個值</c>，一定在片裡面，露出來就點得到）。
     ///

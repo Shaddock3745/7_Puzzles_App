@@ -4,8 +4,8 @@ using UnityEngine;
 /// <summary>
 /// ⭐ <b>掃描的等待遮罩</b>（2026-10-17）：掃描等待中就整個螢幕蓋住，不讓空的（或上一關的）盤面露出來。
 ///
-/// ⭐ <b>2026-10-23（P5-2）起不只掃描</b>：挑戰模式按了「下一題」、題目還在背景生的時候也蓋（看 <see cref="LevelController.IsWaitingForLevel"/>）。
-/// 名字刻意沒改：改了場景要重接（使用者 2026-10-23 定）。
+/// ⭐ <b>2026-10-23 起不只掃描</b>：挑戰模式按了「下一題」、題目還在背景生的時候也蓋（看 <see cref="LevelController.IsWaitingForLevel"/>）。
+/// 名字刻意沒改：改了場景要重接（2026-10-23 定）。
 /// <b>字會動</b>：有填 <see cref="label"/> 的話，照 <see cref="LevelController.WaitingStage"/> 寫「辨識中／出題中／處理中」，
 /// 後面的點每 <see cref="dotInterval"/> 秒多一個——不是為了好看，是讓人看得出沒有當掉（出題搬到背景之後畫面不再凍住，這行字才動得起來）。
 /// 沒填的話場景裡的字原樣不動，跟 10/17 那一版一樣。
@@ -29,7 +29,7 @@ using UnityEngine;
 /// <item>在 Canvas 底下建一個<b>整個螢幕大小、不透明</b>的 Panel，上面放一個 TMP_Text 打「處理中…」（字由場景決定，程式不管）</item>
 /// <item>⚠️ <b>Canvas 裡從底到頂的順序</b>：結果彈窗 → 主畫面 → <b>這張遮罩</b> → 選擇視窗 → 拍照畫面。
 ///   選擇視窗與拍照畫面要蓋在遮罩上面；遮罩要蓋住結果彈窗（「再來一題」時彈窗還開著）</item>
-/// <item>⚠️ <b>這支腳本掛在另一個物件上，不能掛在 Panel 身上</b>（除錯記錄 004）</item>
+/// <item>⚠️ <b>這支腳本掛在另一個物件上，不能掛在 Panel 身上</b>（停用的物件不跑 <c>LateUpdate</c>，藏起來之後就開不回來）</item>
 /// <item>把 Panel 的 <c>GameObject</c> 填進 <see cref="panel"/></item>
 /// <item>⭐（2026-10-23，選填）把那行 TMP_Text 填進 <see cref="label"/>，字才會跟著階段換、點才會動</item>
 /// </list>
@@ -76,7 +76,7 @@ public class ScanWaitingCover : MonoBehaviour
         else if (panel == gameObject)
         {
             Debug.LogError("ScanWaitingCover 掛在它自己要開關的 Panel 上了。藏起來之後這支就跟著被停用，" +
-                           "再也開不回來（除錯記錄 004）。請把這支移到另一個物件上。", this);
+                           "再也開不回來。請把這支移到另一個物件上。", this);
             panel = null;       // 不然 LateUpdate 第一次藏起它，就再也沒有 LateUpdate 了
         }
 

@@ -2,7 +2,7 @@ using Tangram.Core;
 using UnityEngine;
 
 /// <summary>
-/// 盤面層按鈕的顯示與轉接：**undo** 與 **清空**（P1-9，互動設計 §6）。
+/// 盤面層按鈕的顯示與轉接：**undo** 與 **清空**（互動設計 §6）。
 ///
 /// <b>跟 <see cref="PieceActionButtons"/> 是一對</b>，分界線是**作用對象**：
 /// <list type="bullet">
@@ -53,7 +53,7 @@ public class BoardActionButtons : MonoBehaviour
     [Tooltip("清空鈕的 GameObject。它的 Button.onClick 要接到這支的 OnClearPressed。")]
     [SerializeField] private GameObject clearButton;
 
-    [Tooltip("放棄鈕的 GameObject（P2-13）。onClick 接到這支的 OnAbandonPressed。"
+    [Tooltip("放棄鈕的 GameObject。onClick 接到這支的 OnAbandonPressed。"
              + "⚠️ 它跟另外兩顆不一樣：卡夠久才會出現，見下面那個門檻。")]
     [SerializeField] private GameObject abandonButton;
 
@@ -75,14 +75,14 @@ public class BoardActionButtons : MonoBehaviour
 
     [Tooltip("⭐ 提示與放棄共用的唯一門檻（秒）：每隔這麼久多開放一次提示，最多 3 次；"
              + "放棄鈕跟第三次提示同時出現（＝ 這個數字 × 3）。"
-             + "⚠️ 評審現場只玩 2~3 局，demo 時調小（例如 5 → 5／10／15 秒）。")]
+             + "⚠️ 展示時一位玩家只玩 2~3 局，展示版調小（例如 5 → 5／10／15 秒）。")]
     [Min(1f)]
     [SerializeField] private float hintIntervalSeconds = 45f;
 
     /// <summary>
-    /// 放棄鈕的門檻＝提示間隔 × 3，<b>不另外設</b>（2026-09-15 使用者定）。
+    /// 放棄鈕的門檻＝提示間隔 × 3，<b>不另外設</b>（2026-09-15 定）。
     /// ⚠️ 原本放棄門檻是自己一個 Inspector 數字——兩個數字的話 demo 時漏改一個，
-    /// 玩家就會<b>先看到「投降」才看到「幫忙」</b>，那正是待辦清單〈放棄〉第 7 點要避免的順序。
+    /// 玩家就會<b>先看到「投降」才看到「幫忙」</b>，那正是設計上要避免的順序。
     /// </summary>
     private float StuckSecondsBeforeAbandon => hintIntervalSeconds * LevelData.MaximumHints;
 
@@ -228,7 +228,7 @@ public class BoardActionButtons : MonoBehaviour
         && inputController.CanUseHint(hintIntervalSeconds);
 
     /// <summary>
-    /// 放棄鈕該不該出現（P2-13）：<b>卡夠久，而且這一關還沒結束</b>。
+    /// 放棄鈕該不該出現：<b>卡夠久，而且這一關還沒結束</b>。
     ///
     /// ⭐ <b>「卡夠久才出現」一次解掉兩個問題</b>：
     /// ① 按鈕已經很擠（旋轉／翻面、undo／清空、抽屜箭頭、回收框），而它前
@@ -279,7 +279,7 @@ public class BoardActionButtons : MonoBehaviour
     }
 
     /// <summary>
-    /// 放棄鈕被按下（P2-13）。接在 Unity <c>Button.onClick</c> 上。
+    /// 放棄鈕被按下。接在 Unity <c>Button.onClick</c> 上。
     ///
     /// ⭐ 2026-10-29 起<b>只打開確認小窗</b>，真的放棄要在小窗裡再按一次（理由見 <see cref="CanAbandon"/>）。
     /// 小窗沒接的話照舊直接放棄——放棄鈕不能因為少接一個物件就壞掉。

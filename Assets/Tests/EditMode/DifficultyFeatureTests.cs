@@ -6,7 +6,7 @@ using Tangram.Data;
 namespace Tangram.Data.Tests
 {
     /// <summary>
-    /// 難度特徵函數（P2-2，issue #23）。
+    /// 難度特徵函數（issue #23）。
     ///
     /// <b>最重要的是〈對十六種整體變換全部不變〉那一條</b>——它驗的不是某個函數對不對，
     /// 而是 <b>ELO 的前提成不成立</b>：同一題必須永遠得到同一個難度值，
@@ -64,7 +64,7 @@ namespace Tangram.Data.Tests
                 Assert.AreEqual(original.PinchPointCount, actual.PinchPointCount, $"{label} 捏點數");
                 Assert.AreEqual(original.HoleCount, actual.HoleCount, $"{label} 洞數");
 
-                // 2026-09-12 加的三個（P2-6）。凸包與逼出來的片數都跟座標有關，
+                // 2026-09-12 加的三個。凸包與逼出來的片數都跟座標有關，
                 // 是這條測試裡最可能被鏡射寫錯咬到的
                 Assert.AreEqual(original.CornerCount, actual.CornerCount, $"{label} 轉角數");
                 Assert.AreEqual(original.ConvexHullDoubleArea, actual.ConvexHullDoubleArea, $"{label} 凸包面積");
@@ -191,7 +191,7 @@ namespace Tangram.Data.Tests
         }
 
         // ─────────────────────────────────────────────────────────────
-        // 二之二、被外框逼出來的片（P2-6）
+        // 二之二、被外框逼出來的片
         // ─────────────────────────────────────────────────────────────
 
         /// <summary>

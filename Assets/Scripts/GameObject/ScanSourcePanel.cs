@@ -4,7 +4,7 @@ using UnityEngine;
 /// ⭐ <b>掃描模式的選擇視窗</b>（2026-10-17）：照片從哪來——「新拍一張」「從檔案選擇」「取消」。
 ///
 /// <b>什麼時候出現</b>：<see cref="LevelController.ScanSourceRequested"/> 發出時。也就是
-/// 主畫面按「掃描模式」，以及掃描題結果彈窗按「再來一題」（使用者定：每一題都問一次，不沿用上一次的來源）。
+/// 主畫面按「掃描模式」，以及掃描題結果彈窗按「再來一題」（每一題都問一次，不沿用上一次的來源）。
 ///
 /// <b>跟 <see cref="MainMenuPanel"/> 同一個形狀</b>：不做事，只負責「什麼時候顯示」與「把按下轉給別人」。
 /// <b>按任何一顆都先藏起自己</b>，再轉給 <see cref="LevelController"/>——之後的拍照畫面、相簿都要整個螢幕，
@@ -18,7 +18,7 @@ using UnityEngine;
 ///   拍照畫面的前面——不然會被遮罩或結果彈窗蓋住</item>
 /// <item>三顆的 <c>onClick</c> 分別接到 <see cref="OnTakePhotoPressed"/> / <see cref="OnPickFromFilePressed"/> /
 ///   <see cref="OnCancelPressed"/></item>
-/// <item>⚠️ <b>這支腳本掛在另一個物件上，不能掛在 Panel 身上</b>（除錯記錄 004）</item>
+/// <item>⚠️ <b>這支腳本掛在另一個物件上，不能掛在 Panel 身上</b>（藏起來就再也開不回來）</item>
 /// <item>把 Panel 的 <c>GameObject</c> 填進 <see cref="panel"/>。一開始開著或關著都可以，<see cref="Awake"/> 會把它關掉</item>
 /// </list>
 /// </summary>
@@ -46,7 +46,7 @@ public class ScanSourcePanel : MonoBehaviour
             Debug.LogError("ScanSourcePanel 的 panel 欄位沒填：選擇視窗不會出現，掃描模式按了只會閃一下回主畫面。", this);
         else if (panel == gameObject)
             Debug.LogError("ScanSourcePanel 掛在它自己要開關的 Panel 上了。藏起來之後這支就跟著被停用，" +
-                           "再也開不回來（除錯記錄 004）。請把這支移到另一個物件上。", this);
+                           "再也開不回來。請把這支移到另一個物件上。", this);
         else
             panel.SetActive(false);
 

@@ -26,7 +26,7 @@ namespace Tangram.Data.Tests
     /// </summary>
     public sealed class BaselineBatch
     {
-        /// <summary>固定種子，跟 P2-5 批次統計同一個。</summary>
+        /// <summary>固定種子，跟批次統計同一個。</summary>
         public const int Seed = 20260910;
 
         /// <summary>要拿滿幾個拼得起來的形狀（未篩選池的大小）。</summary>

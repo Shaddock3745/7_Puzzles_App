@@ -6,7 +6,7 @@ using Tangram.Data;
 namespace Tangram.Core
 {
     /// <summary>
-    /// 走勢裡的一筆：<b>一局結算了什麼</b>（P2-15，issue #32）。
+    /// 走勢裡的一筆：<b>一局結算了什麼</b>（issue #32）。
     /// </summary>
     public readonly struct SettlementRecord
     {
@@ -35,7 +35,7 @@ namespace Tangram.Core
     }
 
     /// <summary>
-    /// <b>持有玩家目前的實力</b>，並負責「這一關要不要結算、結算完記下來」（P2-14，issue #31）。
+    /// <b>持有玩家目前的實力</b>，並負責「這一關要不要結算、結算完記下來」（issue #31）。
     ///
     /// <b>為什麼不放在 <c>LevelController</c></b>（2026-09-13 定）：
     /// ① 目前實力的讀者不只一個——<c>LevelController</c> 拿它出下一題，之後的監控面板與除錯 overlay 要顯示它。
@@ -85,7 +85,7 @@ namespace Tangram.Core
         public readonly double StartingRating;
 
         /// <summary>
-        /// ⭐ <b>這一場的走勢</b>：每結算一局加一筆，只往後加（P2-15）。
+        /// ⭐ <b>這一場的走勢</b>：每結算一局加一筆，只往後加。
         ///
         /// <b>為什麼放這裡，不讓監控面板自己記</b>（2026-09-14 定）：面板只能每隔一段時間去<b>看</b>
         /// <c>LevelData.Settlement</c>，它不在結算的現場——晚開視窗、中途關掉再開、換關太快

@@ -3,7 +3,7 @@ using Tangram.Data;
 using UnityEngine;
 
 /// <summary>
-/// 待用區「抽屜」（P1-5，待辦清單 B 區的 P1-5 設計討論）。
+/// 待用區「抽屜」。
 ///
 /// <b>它做三件事，而只有第三件跟輸入有關</b>：
 /// <list type="number">
@@ -18,21 +18,21 @@ using UnityEngine;
 /// ⚠️ 這裡原本寫「兩邊的欄位完全不重疊」——<b>那是錯的</b>（2026-09-09 更正）：
 /// 控制器也寫 <c>IsVisible</c>（召喚、回收、undo 與清空的收尾）。
 /// <b>真正的差別是真相在哪</b>：這支的真相是 <c>LevelData.IsInTray</c>，它只是每幀投影；
-/// <c>PiecePreview</c> 的真相是它自己的 Inspector 滑桿，那才是第二份真相（除錯記錄 003）。
+/// <c>PiecePreview</c> 的真相是它自己的 Inspector 滑桿，那才是第二份真相。
 ///
 /// <b>它不認識 <c>TouchInputController</c></b>（2026-09-09）。原本有三條邊
 ///（拖曳中沒、過關沒、清選取），現在前兩個收進 <see cref="SharedUiState"/> 的三態、
 /// 第三個歸控制器自己做，所以那個雙向依賴斷成單向了。
 ///
-/// <b>取代了 <c>PiecePreview</c></b>（P1-5 做好就刪，2026-09-08 執行）。
+/// <b>取代了 <c>PiecePreview</c></b>（抽屜做好就刪，2026-09-08 執行）。
 ///
 /// <b>接線</b>：場景裡建一個空物件掛上這支就好，其餘欄位留空會自己找。
-/// 視覺是程序生成的灰白方塊，**是佔位用的**——美術往後放（CLAUDE.md 的協作規則）。
+/// 視覺是程序生成的灰白方塊，**是佔位用的**——美術往後放，先把邏輯做完。
 /// </summary>
 [DisallowMultipleComponent]
 public class TrayView : MonoBehaviour
 {
-    /// <summary>命中測試的答案（待辦清單「分類與偏移的定案」那張表的抽屜部分）。</summary>
+    /// <summary>命中測試的答案（抽屜的部分）。</summary>
     public enum Hit
     {
         /// <summary>沒打到抽屜的任何東西。</summary>
@@ -347,7 +347,7 @@ public class TrayView : MonoBehaviour
 
     // ─────────────────────────────────────────────────────────────
     // 螢幕上的三塊矩形。每幀從 Screen 重算，不快取——
-    // 快取的話轉螢幕方向就要有人記得失效，而那是 P1-1 早就決定不做的事
+    // 快取的話轉螢幕方向就要有人記得失效，而那是座標與版面層早就決定不做的事
     //（BoardLayout 的「持有輸入而不是算好的係數」同一個理由）
     // ─────────────────────────────────────────────────────────────
 
@@ -357,7 +357,7 @@ public class TrayView : MonoBehaviour
     /// <summary>
     /// 箭頭（也是回收框）在螢幕上的矩形。
     ///
-    /// 兩者<b>共用同一塊</b>是刻意的（決定 21）：平時是箭頭，拖曳中是回收框，
+    /// 兩者<b>共用同一塊</b>是刻意的：平時是箭頭，拖曳中是回收框，
     /// <b>永遠只有一個在</b>。分時互斥，玩家不會搞混，也不會有兩個功能搶同一塊像素。
     /// </summary>
     private Rect ArrowRect
@@ -377,7 +377,7 @@ public class TrayView : MonoBehaviour
 
     /// <summary>
     /// 這個螢幕座標打到抽屜的什麼。<b>只回答，不做任何事</b>——
-    /// 要怎麼反應由 <see cref="TouchInputController"/> 決定（決定 3）。
+    /// 要怎麼反應由 <see cref="TouchInputController"/> 決定。
     /// </summary>
     /// <param name="screenPoint">按下的螢幕座標，原點左下。</param>
     /// <param name="slotIndex">
@@ -389,7 +389,7 @@ public class TrayView : MonoBehaviour
         slotIndex = -1;
 
         // 拖曳中箭頭是隱藏的（那時候那塊是回收框），過關之後也是（整個盤面鎖住，
-        // P1-10）。隱藏的東西不該擋——跟按鈕「隱藏中就不擋」是同一條規則
+        // 見過關判定）。隱藏的東西不該擋——跟按鈕「隱藏中就不擋」是同一條規則
         //（互動設計 §5），不然那塊區域會變成永遠點不到片的死角
         if (CornerRole == TrayCornerRole.Arrow && ArrowRect.Contains(screenPoint)) return Hit.Arrow;
 
@@ -415,7 +415,7 @@ public class TrayView : MonoBehaviour
     ///
     /// ⚠️ <b>2026-09-09 之前這是兩個平行布林</b>（箭頭顯不顯示、回收框顯不顯示），
     /// 而且各自去問控制器 <c>IsDragging</c> / <c>IsLevelComplete</c>。
-    /// 那有兩個問題：兩個布林表達三個互斥狀態（違反決定 9），
+    /// 那有兩個問題：兩個布林表達三個互斥狀態，
     /// 而且它是<b>抽屜認識控制器</b>的來源。現在規則住在 <see cref="SharedUiState"/>，
     /// 這支只讀答案。
     ///
@@ -437,7 +437,7 @@ public class TrayView : MonoBehaviour
     /// <summary>
     /// 開或關抽屜。控制器在分類到 <see cref="Hit.Arrow"/> 時叫這裡。
     ///
-    /// <b>打開的當下清掉選取</b>（決定 17）：抽屜整個蓋住盤面，
+    /// <b>打開的當下清掉選取</b>：抽屜整個蓋住盤面，
     /// 留著選取的話旋轉／翻面鈕會被蓋在抽屜底下，變成「看得到但按不到」。
     /// </summary>
     public void Toggle()
@@ -451,7 +451,7 @@ public class TrayView : MonoBehaviour
     public void Close() => IsOpen = false;
 
     /// <summary>
-    /// 把七片的姿態重設成開局值（決定 7：關卡開始時旋轉 0、沒翻面）。
+    /// 把七片的姿態重設成開局值（關卡開始時旋轉 0、沒翻面）。
     /// <c>LevelController.EnterLevel</c> 第 4 步叫這裡。
     ///
     /// <b>位置不用管</b>——七片這時候全在抽屜裡（看不到），
@@ -605,7 +605,7 @@ public class TrayView : MonoBehaviour
             thumbnail.enabled = IsOpen && inTray;
             if (!thumbnail.enabled) continue;
 
-            // 縮圖反映片目前的姿態（決定 7 的「角度記憶」要看得見，
+            // 縮圖反映片目前的姿態（「角度記憶」要看得見，
             // 不然玩家拖出來才發現它是斜的）
             thumbnail.color = library.ColorFor(slotIndex);
             thumbnail.flipY = piece.IsFlipped;
@@ -691,12 +691,12 @@ public class TrayView : MonoBehaviour
     ///
     /// ⚠️ <b>片掛在有旋轉或縮放的父物件底下，<c>transform.position</c> 就不再是
     /// 寫進去的那個值</b>（互動設計 §13.2）——round-trip 失真，吸附會慢慢對不準。
-    /// 待辦清單的「<c>PieceView</c> 要不要檢查父物件」那條待決定的是
-    /// 「把七片統一掛在一個鎖死的父元件底下，一個物件保證七片，比七個各自驗划算」，
+    /// 與其讓每個 <c>PieceView</c> 各自檢查父物件，
+    /// 不如把七片統一掛在一個鎖死的父元件底下：一個物件保證七片，比七個各自驗划算。
     /// 這裡就是那個父元件。
     ///
     /// 照 <c>BoxView</c> 的作法自己拉回來並警告，而不是只寫在註解裡——
-    /// 寫在註解的要求等於沒有保護（除錯記錄 001 的教訓）。
+    /// 寫在註解的要求等於沒有保護。
     /// </summary>
     private void EnforcePieceRootIdentity()
     {

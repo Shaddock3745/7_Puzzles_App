@@ -10,10 +10,10 @@ using Tangram.Data;
 namespace Tangram.Data.Tests
 {
     /// <summary>
-    /// 權重與尺度（P2-6，issue #27）：原始特徵 → 以 1200 為中心的難度值。
+    /// 權重與尺度（issue #27）：原始特徵 → 以 1200 為中心的難度值。
     ///
     /// <b>這裡驗的是 issue 的完成定義</b>：
-    /// ① 同題同值 ② 難度有高有低 ③（排序與拼法數量同方向移到 P2-11，要有求解器才算得出來）
+    /// ① 同題同值 ② 難度有高有低 ③（排序與拼法數量同方向延後，要有求解器才算得出來）
     /// ④ 不宣稱等於玩家感受——所以這份測試<b>刻意沒有</b>「難度值應該是多少」這種斷言。
     ///
     /// ⚠️ 最關鍵的仍然是不變性：<see cref="SolutionFeatures"/> 的三個數字要對
@@ -124,7 +124,7 @@ namespace Tangram.Data.Tests
         ///
         /// ⚠️ <b>刻意不斷言「應該多難」</b>——那要有真人玩家資料才說得準（完成定義第 ④ 條）。
         /// 這裡只驗尺度有沒有張開：全部擠在一起的話，難度值等於沒有資訊，
-        /// 而 P2-7「照難度生」與 P2-14 的 ELO 都是建在它有鑑別度這個假設上。
+        /// 而出題器的「照難度生」與 ELO 都是建在它有鑑別度這個假設上。
         ///
         /// 門檻抓得很鬆（跨度 200 分 = 一個標準差），因為要的是「沒垮掉」的守衛，不是重現某個數字。
         /// </summary>
@@ -348,7 +348,7 @@ namespace Tangram.Data.Tests
         /// ⭐ <b>權重沒改的時候跑，應該算回檔案裡那個值</b>。那個值原本是對照牆的 JS 算的，
         /// C# 算出一樣的數字就證明兩邊的定義一致。
         ///
-        /// 要跑：<c>dotnet test Tools/DotnetTests -- "NUnit.Where=name == RescaleDifficultyWeights"</c>（⚠️ 不能用 <c>--filter</c>，它選不到 <c>[Explicit]</c>，見 <c>CLAUDE.md</c>〈怎麼跑測試〉）
+        /// 要跑：<c>dotnet test Tools/DotnetTests -- "NUnit.Where=name == RescaleDifficultyWeights"</c>（⚠️ 不能用 <c>--filter</c>，它選不到 <c>[Explicit]</c>，見 <c>文件/開發須知.md</c>〈怎麼跑測試〉）
         /// </summary>
         [Test, Explicit("重算工具：生基準批次要數十秒，而且會寫權重檔")]
         public void 尺度_權重改過之後重算換算倍率()

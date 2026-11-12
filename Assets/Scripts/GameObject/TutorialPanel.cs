@@ -7,7 +7,7 @@ using UnityEngine.UI;
 /// ⭐ <b>新手教學</b>（2026-10-30，第二輪回饋 A 的「新手教學？」）：主畫面上一顆「教學」鈕，點進去是幾頁「一張圖＋一句話」，
 /// 上一頁／下一頁翻、最底下一顆「退出」回主畫面。
 ///
-/// <b>使用者定的範圍</b>：
+/// <b>範圍</b>：
 /// <list type="bullet">
 /// <item><b>只從主畫面進</b>，不在第一次開 App 時自動跳</item>
 /// <item><b>不記有沒有看過</b>（不寫 <c>PlayerPrefs</c>、不動進度存檔）</item>
@@ -23,7 +23,7 @@ using UnityEngine.UI;
 /// <item>Canvas 底下建一個<b>全螢幕不透明</b> Panel，排在主畫面<b>之後</b>（sibling index 比較大，才蓋得住主畫面）</item>
 /// <item>裡面放：一個 Image 放圖（建議勾 Preserve Aspect）、一行 TMP 文字放說明、一行 TMP 文字放頁數（選填）、
 ///   三顆 Button：上一頁／下一頁／最底下的退出</item>
-/// <item>另一個物件掛這支（⚠️ <b>不能</b>掛在 Panel 上，藏起來就開不回來，除錯記錄 004），填好欄位；
+/// <item>另一個物件掛這支（⚠️ <b>不能</b>掛在 Panel 上，藏起來就開不回來），填好欄位；
 ///   三顆 Button 的 <c>onClick</c> 分別接 <see cref="OnPreviousPressed"/>／<see cref="OnNextPressed"/>／<see cref="OnExitPressed"/></item>
 /// <item>主畫面加一顆「教學」Button，<c>onClick</c> 接這支的 <see cref="Show"/></item>
 /// </list>
@@ -80,7 +80,7 @@ public class TutorialPanel : MonoBehaviour
             Debug.LogError("TutorialPanel 的 panel 欄位沒填：按教學鈕不會有任何反應。", this);
         else if (panel == gameObject)
             Debug.LogError("TutorialPanel 掛在它自己要開關的 Panel 上了。藏起來之後這支就跟著被停用，" +
-                           "再也開不回來（除錯記錄 004）。請把這支移到另一個物件上。", this);
+                           "再也開不回來。請把這支移到另一個物件上。", this);
         else
             panel.SetActive(false);
 
@@ -110,7 +110,7 @@ public class TutorialPanel : MonoBehaviour
         if (pages != null && currentIndex < pages.Length - 1) ShowPage(currentIndex + 1);
     }
 
-    /// <summary>「退出」：收起教學，底下的主畫面還在。不記有沒有看過（使用者定）。</summary>
+    /// <summary>「退出」：收起教學，底下的主畫面還在。不記有沒有看過。</summary>
     public void OnExitPressed()
     {
         if (panel != null && panel != gameObject) panel.SetActive(false);

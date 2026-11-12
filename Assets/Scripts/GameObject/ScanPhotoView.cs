@@ -5,7 +5,7 @@ using UnityEngine.UI;
 /// <summary>
 /// ⭐ <b>掃描題的照片對照</b>（2026-10-14）：把拍到的照片半透明疊在盤面上，讓玩家對照「我拍的」跟「拼出來的」。
 ///
-/// <b>什麼時候看得到</b>（使用者定）：只有掃描題有照片按鈕，<b>按一下顯示、再按一下隱藏</b>（開關）；
+/// <b>什麼時候看得到</b>：只有掃描題有照片按鈕，<b>按一下顯示、再按一下隱藏</b>（開關）；
 /// <b>過關後自動顯示</b>。照片正立、不畫輪廓線，蓋在片上面、在抽屜與按鈕下面（<see cref="PieceSorting.ScanPhotoSortingLayer"/>）。
 ///
 /// <b>它記住「這張照片屬於哪一關」</b>（<c>LevelData</c> 的參照），每幀拿目前這一關跟它比：
@@ -23,7 +23,7 @@ using UnityEngine.UI;
 /// <item>Tag Manager → Sorting Layers：在 <c>Piece</c> 與 <c>GameUI</c> 中間加一層 <c>ScanPhoto</c></item>
 /// <item>建一個空物件掛這支（會自動加 MeshFilter／MeshRenderer），<b>放在原點、不轉不縮放</b>（會檢查）</item>
 /// <item>在一個按鈕排裡加一顆「照片」Button，<c>onClick</c> 接到 <see cref="OnPhotoTogglePressed"/>，
-///   再把那顆按鈕拖進 <see cref="photoToggleButton"/>。⚠️ 這支腳本<b>不能</b>掛在那顆按鈕上（除錯記錄 004）</item>
+///   再把那顆按鈕拖進 <see cref="photoToggleButton"/>。⚠️ 這支腳本<b>不能</b>掛在那顆按鈕上（停用的物件不跑 Update）</item>
 /// </list>
 /// </summary>
 [DisallowMultipleComponent]
@@ -83,7 +83,7 @@ public class ScanPhotoView : MonoBehaviour
         meshRenderer.sharedMaterial = material;
         meshRenderer.enabled = false;
 
-        // ⚠️ 層不存在時 Unity 不報錯，會默默掉回 Default、被盒子蓋住（除錯記錄 005）。所以自己檢查
+        // ⚠️ 層不存在時 Unity 不報錯，會默默掉回 Default、被盒子蓋住。所以自己檢查
         if (!SortingLayer.IsValid(SortingLayer.NameToID(PieceSorting.ScanPhotoSortingLayer)))
             Debug.LogError($"Sorting layer「{PieceSorting.ScanPhotoSortingLayer}」不存在：照片會被畫在 Default 層、" +
                            "被盒子蓋住而看不到。請在 Tag Manager 的 Sorting Layers 裡，於 Piece 與 GameUI 中間加這一層。", this);
@@ -183,7 +183,7 @@ public class ScanPhotoView : MonoBehaviour
     }
 
     /// <summary>
-    /// 開關的狀態畫在按鈕上：關著是灰的、開著是亮的（2026-10-17，使用者選的乙）。
+    /// 開關的狀態畫在按鈕上：關著是灰的、開著是亮的（2026-10-17 定）。
     ///
     /// ⚠️ <b>不用 <c>Button.interactable</c></b>：那會連點擊一起擋掉，關著的時候就再也打不開了。
     /// 改的是按鈕的<b>目標圖</b>（<c>Button.targetGraphic</c>，通常是按鈕底圖）的顏色——Button 的 Color Tint

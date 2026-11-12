@@ -13,7 +13,7 @@ namespace Tangram.Data
     }
 
     /// <summary>
-    /// 下一題大概會比這一題難還是簡單。<b>玩家端只看得到這個，看不到分數</b>（2026-09-13 定，A 案）。
+    /// 下一題大概會比這一題難還是簡單。<b>玩家端只看得到這個，看不到分數</b>（2026-09-13 定）。
     /// </summary>
     public enum NextPuzzleTrend
     {
@@ -28,7 +28,7 @@ namespace Tangram.Data
     }
 
     /// <summary>
-    /// 一局的結算明細。<b>每一個中間值都留著</b>——P2-15 的監控面板要回答「為什麼 +13」，靠的就是這一份。
+    /// 一局的結算明細。<b>每一個中間值都留著</b>——監控面板要回答「為什麼 +13」，靠的就是這一份。
     /// </summary>
     public readonly struct RatingUpdate
     {
@@ -59,7 +59,7 @@ namespace Tangram.Data
         /// <summary>實力變化 ΔR = K × (S − E)。<b>小數，不化整</b>。</summary>
         public readonly double RatingChange;
 
-        // ───────── 結算的輸入（P2-15 加）─────────
+        // ───────── 結算的輸入（為監控面板加的）─────────
         //
         // ⭐ 原本只記了時間代價 C，沒記 C 是怎麼算出來的。正在玩的這一關那三個數字還在 LevelData 上，
         // 但走勢裡的舊局 LevelData 已經換掉了——「第 2 局的 C 為什麼是 42 秒」答不出來。
@@ -142,7 +142,7 @@ namespace Tangram.Data
     }
 
     /// <summary>
-    /// ELO 換算（P2-14，issue #31）。<b>只做算術，沒有狀態</b>——誰持有實力、什麼時候結算，是
+    /// ELO 換算（issue #31）。<b>只做算術，沒有狀態</b>——誰持有實力、什麼時候結算，是
     /// <c>SkillRatingTracker</c> 與 <c>LevelController</c> 的事。
     ///
     /// <code>
@@ -183,7 +183,7 @@ namespace Tangram.Data
         /// <returns>結算明細。</returns>
         /// <exception cref="ArgumentNullException">沒有給參數或範圍。</exception>
         /// <exception cref="ArgumentException">
-        /// 秒數或提示次數是負的，或<b>拖曳比前景長</b>——那違反 P2-13 的不變式（背景時不可能拖曳），
+        /// 秒數或提示次數是負的，或<b>拖曳比前景長</b>——那違反局內計時的不變式（背景時不可能拖曳），
         /// 代表某個計時的呼叫點接錯了。不擋的話時間代價會變成負的、實際表現超過 1，<b>實力安靜地虛漲</b>。
         /// </exception>
         public static RatingUpdate Settle(double ratingBefore, int difficulty, LevelOutcome outcome,
@@ -198,7 +198,7 @@ namespace Tangram.Data
             if (dragSeconds > foregroundSeconds)
                 throw new ArgumentException(
                     $"SkillRating.Settle：拖曳 {dragSeconds} 秒比前景 {foregroundSeconds} 秒還長——" +
-                    "拖曳 ≤ 前景是 P2-13 的不變式，一定是某個計時的呼叫點接錯了");
+                    "拖曳 ≤ 前景是局內計時的不變式，一定是某個計時的呼叫點接錯了");
 
             double expected = ExpectedPerformance(ratingBefore, difficulty, settings.ratingScale);
 

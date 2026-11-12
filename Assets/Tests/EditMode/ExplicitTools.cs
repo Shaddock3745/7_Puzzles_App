@@ -25,12 +25,12 @@ namespace Tangram.Data.Tests
         [Test, Explicit("重算工具：會寫權重檔")]
         public void RescaleDifficultyWeights() => new DifficultyEvaluatorTests().尺度_權重改過之後重算換算倍率();
 
-        /// <summary>P2-7 生成時間表：權重檔的兩端、800、900 ～ 1600 各一百題。Debug 建置十幾分鐘。</summary>
-        [Test, Explicit("P2-7 生成時間：要跑十幾分鐘")]
+        /// <summary>照難度出題的生成時間表：權重檔的兩端、800、900 ～ 1600 各一百題。Debug 建置十幾分鐘。</summary>
+        [Test, Explicit("指定難度生成時間：要跑十幾分鐘")]
         public void GenerationTimeTable() => new TargetedPuzzleGeneratorTests().生成時間_幾個目標各生一百題();
 
-        /// <summary>P2-5 批次統計：一千題的特徵分布。約 20 秒。</summary>
-        [Test, Explicit("P2-5 批次統計：要數十秒")]
+        /// <summary>批次統計：一千題的特徵分布。約 20 秒。</summary>
+        [Test, Explicit("批次統計：要數十秒")]
         public void BatchStatistics() => new PuzzleBatchStatisticsTests().批次統計_一千題的特徵分布量得出來();
 
         /// <summary>縮圖牆（對照牆）的資料與網頁匯出，寫到系統暫存資料夾。約 35 秒。</summary>

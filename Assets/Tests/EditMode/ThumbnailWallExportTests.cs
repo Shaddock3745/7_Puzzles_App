@@ -21,7 +21,7 @@ namespace Tangram.Data.Tests
     /// 不再在 JS 裡另寫一份——那是權重的第三份拷貝。
     ///
     /// ⚠️ <b>掛 [Explicit]</b>：跑 2000 個形狀要數十秒，不進日常的 Run All。要跑：
-    /// <c>dotnet test Tools/DotnetTests -- "NUnit.Where=name == ExportThumbnailWall"</c>（⚠️ 不能用 <c>--filter</c>，見 <c>CLAUDE.md</c>〈怎麼跑測試〉）。
+    /// <c>dotnet test Tools/DotnetTests -- "NUnit.Where=name == ExportThumbnailWall"</c>（⚠️ 不能用 <c>--filter</c>，見 <c>文件/開發須知.md</c>〈怎麼跑測試〉）。
     /// </summary>
     public class ThumbnailWallExportTests
     {
@@ -31,7 +31,7 @@ namespace Tangram.Data.Tests
         /// <summary>
         /// 生 2000 個形狀，寫成縮圖牆要的 JSON。
         ///
-        /// ⚠️ <b>寫檔失敗要讓測試變紅</b>（跟 P2-5 批次統計的 CSV 相反）。這個檔就是這支測試存在的全部理由；
+        /// ⚠️ <b>寫檔失敗要讓測試變紅</b>（跟批次統計的 CSV 相反）。這個檔就是這支測試存在的全部理由；
         /// 而且 2026-09-11 才撞過一次「CSV 被鎖住、只印一行警告、之後拿到的一直是舊檔」。
         /// 寫完還會回頭比對檔案大小，證明真的寫進去了。
         /// </summary>
@@ -49,8 +49,8 @@ namespace Tangram.Data.Tests
             WriteChecked(path, json);
 
             // 順便把資料塞進頁面範本，產出可以直接發布的網頁。
-            // ⚠️ 原本這一步是一支 PowerShell 腳本，但使用者的電腦執行原則不允許跑 .ps1——
-            // 那是對方的安全設定，不該由工具繞過；而且換一台電腦照步驟做一樣會卡住。
+            // ⚠️ 原本這一步是一支 PowerShell 腳本，但有些電腦的執行原則不允許跑 .ps1——
+            // 那是電腦主人的安全設定，不該由工具繞過；而且換一台電腦照步驟做一樣會卡住。
             // 併進這裡之後，整個流程就只剩「跑這支測試」一步
             string pagePath = Path.Combine(Path.GetTempPath(), PageFileName);
             WriteChecked(pagePath, BuildPage(json));
@@ -190,7 +190,7 @@ namespace Tangram.Data.Tests
                 text.Append(forcedIndex == 0 ? "" : ",").Append('"').Append(forcedPieces[forcedIndex].Kind).Append('"');
             text.Append(']');
 
-            // 正式的難度值（P2-6 的權重檔）。牆上那個可調權重的「暫定難度」是探索用的，兩者刻意並存：
+            // 正式的難度值（照正式權重檔算）。牆上那個可調權重的「暫定難度」是探索用的，兩者刻意並存：
             // 調權重要看得到「改成這樣會排成什麼樣子」，而這一欄是「現在真的會給玩家的數字」
             text.Append(",\"difficulty\":").Append(DifficultyEvaluator.Score(
                 features, forcedPieces.Count, solution, weights));
@@ -250,7 +250,7 @@ namespace Tangram.Data.Tests
         }
 
         /// <summary>
-        /// 輪廓上長度剛好是 4√2 的邊有幾條。<b>探索用</b>（2026-09-11 使用者提議「特殊邊長」）。
+        /// 輪廓上長度剛好是 4√2 的邊有幾條。<b>探索用</b>（2026-09-11 提出的「特殊邊長」）。
         ///
         /// 單片的邊裡只有大三角的斜邊是 4√2，所以它通常是「大三角放這裡」的提示。
         /// ⚠️ 但它也可能是兩片接起來的（例如小三角斜邊 2√2 + 平行四邊形長邊 2√2），那時就不是提示而是陷阱。
@@ -269,7 +269,7 @@ namespace Tangram.Data.Tests
         }
 
         /// <summary>
-        /// 輪廓上最長的一條直邊。<b>探索用</b>（2026-09-11 使用者提議「最大邊長」）。
+        /// 輪廓上最長的一條直邊。<b>探索用</b>（2026-09-11 提出的「最大邊長」）。
         ///
         /// 單片最長的邊是大三角的斜邊 4√2，所以<b>比 4√2 還長的邊一定是兩片以上接起來的</b>。
         /// 剛好 4 或 4√2 的邊可能是一片、也可能是兩片，那兩種不確定。
@@ -312,7 +312,7 @@ namespace Tangram.Data.Tests
         private const string NoSwap = "None";
 
         /// <summary>
-        /// 參考解裡兩個小三角有沒有剛好拼成另一片的形狀。<b>探索用</b>（2026-09-11 使用者提議「等價交換」）。
+        /// 參考解裡兩個小三角有沒有剛好拼成另一片的形狀。<b>探索用</b>（2026-09-11 提出的「等價交換」）。
         ///
         /// 兩個小三角共用一整條邊時，拼出來的必定是正方形、中三角或平行四邊形之一——
         /// 那一片本身也能被兩個小三角填滿，所以<b>把這一對跟那一片對調就是另一種合法的解</b>。

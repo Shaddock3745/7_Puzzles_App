@@ -1,6 +1,6 @@
 ﻿# 巧級的 App icon：海報／簡介上那個標誌（七片拼成正方形、綠色小三角掀起來）＋粉彩七色斜條、波浪邊的背景。
 # 需要 Pillow 與 numpy。
-#   py make_icon.py "<repo>\Assets\Icon" final   → 2026-11-04 使用者選定的那組（微扭），覆蓋 Assets/Icon 的四張：
+#   py make_icon.py "<repo>\Assets\Icon" final   → 定案的那組（微扭），覆蓋 Assets/Icon 的四張：
 #       Tangrade_icon.png                 一般 icon（1024，不透明；Player Settings 的 Default Icon、Android Legacy）
 #       Tangrade_icon_round.png           圓形 icon（Android Round，API 25）
 #       Tangrade_adaptive_background.png  自適應 icon 的背景（432）
@@ -156,7 +156,7 @@ def confetti(size):
 
 
 def final():
-    """使用者 11/4 選的：粉彩七色斜條、微扭。輸出 Unity 要的四張。"""
+    """定案版：粉彩七色斜條、微扭。輸出 Unity 要的四張。"""
     background = wavy_stripes(.035, .75)
     icon = Image.alpha_composite(background(1024), draw_mark(1024, .74, None, "#FFFFFF"))
     icon.convert("RGB").save(OUT / "Tangrade_icon.png")                 # iOS 的 icon 不能有透明，存成 RGB

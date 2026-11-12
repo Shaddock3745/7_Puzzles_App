@@ -5,7 +5,7 @@ using UnityEngine;
 ///
 /// <b>為什麼需要它</b>：擋片區是「按在這塊矩形上就不抓片」，而抽屜的縮圖就排在按鈕底下。
 /// 按鈕沒退場的話，被它蓋住的那塊縮圖<b>按下去沒有反應</b>——而且不報錯。
-/// 實際踩到的是作弊鈕壓住大三角縮圖的下半（除錯記錄 013）。
+/// 實際踩到的是作弊鈕壓住大三角縮圖的下半。
 ///
 /// <b>為什麼不是每顆按鈕自己判斷</b>：<see cref="BoardActionButtons"/> 那幾顆本來就有
 /// <c>!IsTrayDrawerOpen</c> 的條件，但那是「每顆各自記得」——<see cref="DebugTools"/> 的作弊鈕
@@ -25,7 +25,7 @@ using UnityEngine;
 /// <b>場景要做的事</b>：
 /// <list type="number">
 /// <item>把這支掛在一個<b>獨立物件</b>上（例如 <c>ButtonController</c>）</item>
-/// <item>⚠️ <b>不能掛在任何一排按鈕底下</b>——它會把自己一起關掉，然後再也開不回來（除錯記錄 004）</item>
+/// <item>⚠️ <b>不能掛在任何一排按鈕底下</b>——它會把自己一起關掉，然後再也開不回來</item>
 /// <item>把要一起藏的那幾排（<c>PieceButtonGroup</c> / <c>BoardButtonGroup</c> / <c>ProcessButtonGroup</c>）
 /// 填進 <see cref="buttonGroups"/>，跟 <c>BoardView</c> 的「要躲開的按鈕排」填同一份</item>
 /// </list>
@@ -50,7 +50,7 @@ public class ButtonGroupVisibility : MonoBehaviour
             return;
         }
 
-        // ⚠️ 掛在自己要關的東西上，第一次隱藏之後就沒有下一次 Update 了（除錯記錄 004）
+        // ⚠️ 掛在自己要關的東西上，第一次隱藏之後就沒有下一次 Update 了
         foreach (GameObject group in buttonGroups)
             if (group == gameObject)
                 Debug.LogError("ButtonGroupVisibility 掛在它自己要開關的按鈕排上了。" +

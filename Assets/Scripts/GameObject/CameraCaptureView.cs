@@ -11,8 +11,8 @@ using UnityEngine.Android;
 /// <summary>
 /// ⭐ <b>新拍一張</b>：App 裡自己做的拍照畫面（2026-10-17）。整個螢幕的相機預覽，加快門與取消兩顆按鈕。
 ///
-/// <b>為什麼不叫系統相機 App</b>（使用者定，甲案）：那要裝 NativeCamera 外掛，而且會切出 Unity——
-/// 決賽用的 T20 只有 4 GB RAM，Unity 的 Activity 在背景被系統收掉的話，拍完回來 App 是重開的。
+/// <b>為什麼不叫系統相機 App</b>：那要裝 NativeCamera 外掛，而且會切出 Unity——
+/// 目標裝置 T20 只有 4 GB RAM，Unity 的 Activity 在背景被系統收掉的話，拍完回來 App 是重開的。
 /// 自己做還多一個好處：之後可以在預覽上畫取景框，提示「物體放框裡、背景要乾淨」，對辨識模組也有利。
 ///
 /// <b>一次拍照的生命週期</b>：
@@ -33,7 +33,7 @@ using UnityEngine.Android;
 /// <item>Panel 底下放一個 <c>RawImage</c> 當預覽（位置大小不用調，每幀由這支算），再放「拍照」「取消」兩顆 Button，
 ///   <b>按鈕要排在 RawImage 後面</b>，不然會被預覽蓋住</item>
 /// <item>兩顆的 <c>onClick</c> 分別接到 <see cref="OnShutterPressed"/> / <see cref="OnCancelPressed"/></item>
-/// <item>⚠️ <b>這支腳本掛在另一個物件上，不能掛在 Panel 身上</b>（除錯記錄 004：藏起來就再也開不回來）</item>
+/// <item>⚠️ <b>這支腳本掛在另一個物件上，不能掛在 Panel 身上</b>（藏起來就再也開不回來）</item>
 /// <item>把 Panel、RawImage、拍照鈕拖進對應欄位，再把這支拖進 <c>LevelController</c> 的「拍照畫面」欄位</item>
 /// <item>Panel 一開始關著或開著都可以，<see cref="Awake"/> 會把它關掉</item>
 /// </list>
@@ -82,7 +82,7 @@ public class CameraCaptureView : MonoBehaviour, IPhotoSource
             Debug.LogError("CameraCaptureView 的 panel 欄位沒填：「新拍一張」每次都會失敗。", this);
         else if (panel == gameObject)
             Debug.LogError("CameraCaptureView 掛在它自己要開關的 Panel 上了。藏起來之後這支就跟著被停用，" +
-                           "再也開不回來（除錯記錄 004）。請把這支移到另一個物件上。", this);
+                           "再也開不回來。請把這支移到另一個物件上。", this);
         if (preview == null)
             Debug.LogError("CameraCaptureView 的 preview 欄位沒填：「新拍一張」每次都會失敗。", this);
 

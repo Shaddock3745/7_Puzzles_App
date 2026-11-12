@@ -3,7 +3,7 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// 進度存檔的兩個 Editor 選單（P2-8b，issue #39，2026-10-17）：清除、打開所在的資料夾。
+/// 進度存檔的兩個 Editor 選單（issue #39，2026-10-17）：清除、打開所在的資料夾。
 ///
 /// ⭐ <b>為什麼需要清除</b>：錄影是改 <c>SkillRatingSettings.initialRating</c> 分段錄的（2026-09-22 定），
 /// 而<b>有存檔之後改它不會生效</b>——錄出來的起點是上次玩到的實力，不報錯。開場的 log 會說實力從哪裡來。
@@ -11,7 +11,7 @@ using UnityEngine;
 /// ⚠️ <b>Windows 上 Editor 跟 exe 是同一個檔</b>（<c>Application.persistentDataPath</c> 照公司名與產品名決定），
 /// 在這裡清除，這台電腦上 exe 的進度也一起沒了。
 ///
-/// App 裡的重置鈕（決賽讓評審從頭玩）牽涉 UI，等決賽腳本再定，見 `待辦清單.md`〈進度存檔〉。
+/// App 裡的重置鈕（換一位玩家時從頭開始）牽涉 UI，不在這兩個 Editor 選單的範圍。
 /// </summary>
 public static class PlayerProgressMenu
 {

@@ -28,13 +28,13 @@ namespace Tangram.Data.Tests
         /// <summary>
         /// 把一個題目的外框變成輪廓——拿已知答案的形狀當目標用。
         ///
-        /// 💡 走的是 <see cref="RecognizedContour.FromJson"/> 那條真的路：協作者的 JSON 是 y 朝上（2026-10-17 更正），跟模型同方向，所以外框頂點直接當像素座標，
-        /// 照協作者的格式組成 JSON。像素座標是負的也沒關係，讀檔那邊不檢查範圍（之後反正要移重心、縮放）。
+        /// 💡 走的是 <see cref="RecognizedContour.FromJson"/> 那條真的路：辨識模組的 JSON 是 y 朝上（2026-10-17 更正），跟模型同方向，所以外框頂點直接當像素座標，
+        /// 照辨識模組的格式組成 JSON。像素座標是負的也沒關係，讀檔那邊不檢查範圍（之後反正要移重心、縮放）。
         /// 洞不管（目前的逼近本來就只看外框）。
         ///
-        /// ⚠️ <b>有好幾個外環時在捏點接成一條</b>（2026-10-20，除錯記錄 016）。外框在捏點（兩塊只碰一個點）會斷成好幾個外環，
+        /// ⚠️ <b>有好幾個外環時在捏點接成一條</b>（2026-10-20）。外框在捏點（兩塊只碰一個點）會斷成好幾個外環，
         /// 25 個具象題裡有 11 個是這樣（四隻貓全部：頭、身體、尾巴各一個環）。原本「取面積最大的那個」，目標就只剩軀幹，
-        /// <b>而且軀幹還被放大到面積 32</b>——那 11 個的成績一直是對著錯的目標量的，不報錯，是使用者看圖發現「貓都只有軀幹」。
+        /// <b>而且軀幹還被放大到面積 32</b>——那 11 個的成績一直是對著錯的目標量的，不報錯，是看圖才發現「貓都只有軀幹」。
         /// </summary>
         internal static RecognizedContour OutlineOf(Puzzle puzzle)
         {
@@ -305,7 +305,7 @@ namespace Tangram.Data.Tests
         }
 
         /// <summary>
-        /// ⭐ <b>驗收工具的目標一定是整個形狀</b>（2026-10-20，除錯記錄 016）：每個具象題轉成輪廓之後，面積都是 32，
+        /// ⭐ <b>驗收工具的目標一定是整個形狀</b>（2026-10-20）：每個具象題轉成輪廓之後，面積都是 32，
         /// 不是只有最大的那一塊。外框頂點直接當像素座標，所以像素面積就是模型面積。
         /// 同時確認這一條真的有測到捏點：至少要有一個具象題的外框斷成好幾個環（貓都是）。
         /// </summary>
@@ -470,23 +470,23 @@ namespace Tangram.Data.Tests
         // ───────── [Explicit] 驗收工具 ─────────
 
         /// <summary>
-        /// ⭐ <b>驗收：25 個具象題逼不逼得回來，加上協作者那隻貓</b>（2026-10-14）。英文入口 <c>ExplicitTools.ApproximatorTable</c>。
+        /// ⭐ <b>驗收：25 個具象題逼不逼得回來，加上掃描樣本那隻貓</b>（2026-10-14）。英文入口 <c>ExplicitTools.ApproximatorTable</c>。
         ///
         /// <b>兩組參數並排</b>：⭐ 2026-10-21 起對照組＝第四版（不獎勵貼邊）、實驗組＝預設參數（貼邊 ×16）。
-        /// （2026-10-20 是「不找特徵」對「找特徵」、第二版到第三版期間是「不微調」對「微調」，數字留在 <c>開發進度.md</c>〈逼近搜尋〉。）
+        /// （2026-10-20 是「不找特徵」對「找特徵」、第二版到第三版期間是「不微調」對「微調」。）
         /// 每個具象題印兩組的 IoU、突出蓋到幾成、缺口被填幾成、⭐ 外露周長、捏點數、轉角數（審美的三個數，<see cref="DifficultyFeatures.Measure(Puzzle)"/> 算的）、
         /// 第 1 名是不是原本的形狀、前幾名有沒有、花了幾秒。
         /// 另外匯出網頁 <c>%TEMP%\tangram_approximation.html</c>：每個形狀一格、左右兩張圖（左對照、右實驗），
         /// 紅線是目標輪廓、色塊是第 1 名；橘色格子是找到的突出部位、藍色是缺口（半徑照預設參數）。
         ///
         /// ⚠️ 具象題是有已知答案的七片形狀，「逼回數」量的是搜尋找不找得回那個解，<b>不是</b>生活物品像不像——
-        /// 像不像的基準是生活物品的真實剪影（MPEG-7、Caltech-101 經 U2Net），那些在 scratchpad 的工具跑，數字在 <c>開發進度.md</c>〈換了尺之後〉。
-        /// ⚠️ 時間是 Debug 的（約比 Release 慢 13 倍，見 <c>CLAUDE.md</c>〈怎麼跑測試〉），只能拿來比相對快慢。
+        /// 像不像的基準是生活物品的真實剪影（MPEG-7、Caltech-101 經 U2Net），那些另外用專案外的工具量，不在這支測試裡。
+        /// ⚠️ 時間是 Debug 的（約比 Release 慢 13 倍，見 <c>文件/開發須知.md</c>〈怎麼跑測試〉），只能拿來比相對快慢。
         /// </summary>
         [Test, Explicit("逼近搜尋驗收：要跑好幾分鐘")]
         public void 逼近_具象題與掃描樣本的成績表()
         {
-            // 2026-10-21 起：對照＝第四版（不獎勵貼邊）、實驗＝預設（貼邊 ×16）。之前各版的比較見 開發進度.md〈逼近搜尋〉
+            // 2026-10-21 起：對照＝第四版（不獎勵貼邊）、實驗＝預設（貼邊 ×16）
             ContourApproximationSettings experiment = ContourApproximationSettings.Default;
             ContourApproximationSettings control = experiment.WithoutEdgeContactBonus();
             var builders = new[] { new BeamSearchContourPuzzleBuilder(control), new BeamSearchContourPuzzleBuilder(experiment) };
@@ -557,7 +557,7 @@ namespace Tangram.Data.Tests
                                       $"外露周長 {sumExposedPerimeter[arm] / figurative.Count:0.0}、捏點 {sumPinchPoints[arm] / figurative.Count:0.0}、轉角 {sumCorners[arm] / figurative.Count:0.0}，" +
                                       $"第 1 名就是原形狀 {recoveredFirst[arm]} 個，前幾名有 {recoveredAny[arm]} 個，合計 {totalSeconds[arm]:0.0} 秒");
 
-            // 協作者那隻貓：沒有標準答案，只看 IoU 與圖
+            // 掃描樣本那隻貓：沒有標準答案，只看 IoU 與圖
             RecognizedContour cat = RecognizedContour.FromJson(File.ReadAllText(RepositoryFiles.Find(ScanSampleRelativePath)));
             var catBest = new ContourApproximation[2];
             var catAesthetics = new (double exposedPerimeter, int pinchPoints, int corners)[2];

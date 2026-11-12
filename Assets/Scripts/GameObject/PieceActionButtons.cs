@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// 旋轉／翻面鈕的顯示與轉接（P1-8，互動設計 §5）。
+/// 旋轉／翻面鈕的顯示與轉接（互動設計 §5）。
 ///
 /// <b>這支不做事，它只負責兩件：什麼時候顯示（與能不能按），以及把按下轉給控制器。</b>
 /// 轉一格的規則住在 <see cref="TouchInputController.RotateSelected"/>——
@@ -16,7 +16,7 @@ using UnityEngine.UI;
 /// 「能不能按」要用 <c>Button.interactable</c>，它同時擋掉 <c>onClick</c> 又套上 Disabled Color，
 /// 自己做一套的話等於重寫 Button。按鈕上沒有 <c>Button</c> 元件時就只是不會變灰，不會壞。
 ///
-/// <b>場景要做的事</b>（P1-8 的接線）：
+/// <b>場景要做的事</b>：
 /// <list type="number">
 /// <item>建三顆 UI Button（Unity 會自動補上 Canvas 與 EventSystem），擺右下角</item>
 /// <item>三顆的 <c>onClick</c> 分別接到這支的 <c>OnRotatePressed</c>（逆時針）/

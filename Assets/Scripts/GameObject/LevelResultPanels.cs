@@ -4,7 +4,7 @@ using TMPro;
 using UnityEngine;
 
 /// <summary>
-/// 這一關結束之後的兩個彈窗：<b>過關</b>與<b>放棄</b>（P1-10 + P2-13，互動設計 §7）。
+/// 這一關結束之後的兩個彈窗：<b>過關</b>與<b>放棄</b>（互動設計 §7）。
 ///
 /// ⚠️ <b>2026-09-12 從 LevelCompletePanel 改名並改成一支管兩個</b>。
 /// 兩個彈窗是同一類東西（都是「這一關結束了」）、機制一模一樣（滿版擋片區、每幀問條件、
@@ -36,20 +36,20 @@ using UnityEngine;
 /// <item>⚠️ <b>這支腳本掛在另一個物件上，不能掛在 Panel 身上</b>（理由見下）</item>
 /// <item>把 Panel 的 <c>GameObject</c> 填進 <see cref="completePanel"/></item>
 /// <item>兩個對話框上各放一個 <c>TMP_Text</c>，拖進 <see cref="completeTrendText"/> /
-/// <see cref="abandonedTrendText"/>。那是「下一題會難一點／差不多／簡單一點」（P2-14）</item>
+/// <see cref="abandonedTrendText"/>。那是「下一題會難一點／差不多／簡單一點」</item>
 /// </list>
 ///
-/// ⭐ <b>P2-14 起下一題的難度跟著實力走</b>，P2-7 那個臨時輸入框整段拿掉了。
-/// <b>玩家只看得到方向，看不到分數</b>（2026-09-13 定，A 案）：公式允許「解完了但比 T 慢」也扣分，
+/// ⭐ <b>下一題的難度跟著實力走</b>，原本手動輸入目標難度的臨時輸入框整段拿掉了。
+/// <b>玩家只看得到方向，看不到分數</b>（2026-09-13 定）：公式允許「解完了但比 T 慢」也扣分，
 /// 那是數學上對的，但對小孩顯示負號很傷。⚠️ <b>不能只藏負號</b>——正的有數字、負的沒有，玩家馬上推得出來。
-/// 完整的 E、S、ΔR 留給 P2-15 監控面板。
+/// 完整的 E、S、ΔR 留給監控面板。
 ///
 /// ⚠️ <b>Panel 的 <c>RectTransform</c> 一定要滿版</b>，因為擋片區擋的就是它那塊矩形。
 /// 只做成中間一個小對話框的話，<b>對話框外面的盤面還是抓得到片</b>。
 ///
 /// ⚠️ <b>為什麼腳本不能掛在 Panel 上</b>：隱藏是用 <c>SetActive(false)</c> 做的，
 /// 而被停用的物件不會再跑 <c>Update</c>——一關開始還沒過關 → 第一幀就把自己關掉
-/// → 從此再也開不回來，<b>而且不報錯</b>（除錯記錄 004 踩過一次）。
+/// → 從此再也開不回來，<b>而且不報錯</b>（實際踩過一次）。
 /// </summary>
 [DisallowMultipleComponent]
 public class LevelResultPanels : MonoBehaviour
@@ -66,16 +66,16 @@ public class LevelResultPanels : MonoBehaviour
     [Tooltip("整個彈窗的根物件。⚠️ 它的 RectTransform 要滿版，擋片區擋的就是它。")]
     [SerializeField] private GameObject completePanel;
 
-    [Tooltip("放棄彈窗的根物件（P2-13）。⚠️ 它的 RectTransform 也要滿版。")]
+    [Tooltip("放棄彈窗的根物件。⚠️ 它的 RectTransform 也要滿版。")]
     [SerializeField] private GameObject abandonedPanel;
 
-    [Tooltip("過關彈窗上的「下一題會難一點／差不多／簡單一點」（P2-14）。沒填也能跑，只是不顯示。")]
+    [Tooltip("過關彈窗上的「下一題會難一點／差不多／簡單一點」。沒填也能跑，只是不顯示。")]
     [SerializeField] private TMP_Text completeTrendText;
 
-    [Tooltip("放棄彈窗上的同一行（P2-14）。沒填也能跑，只是不顯示。")]
+    [Tooltip("放棄彈窗上的同一行。沒填也能跑，只是不顯示。")]
     [SerializeField] private TMP_Text abandonedTrendText;
 
-    // ⚠️ 2026-09-13（P2-14）拿掉了 P2-7 的 targetDifficultyField。場景裡那個輸入框物件要手動刪掉，
+    // ⚠️ 2026-09-13 改成難度跟著實力走，拿掉了原本的 targetDifficultyField。場景裡那個輸入框物件要手動刪掉，
     // 不刪的話它還會顯示在彈窗上、打了數字也沒有作用
 
     private void Awake()
@@ -236,7 +236,7 @@ public class LevelResultPanels : MonoBehaviour
     /// <summary>
     /// 「下一關」被按下。接在 Unity <c>Button.onClick</c> 上。
     ///
-    /// <b>下一關的難度跟著玩家的實力走</b>（P2-14）——這裡不決定，<see cref="LevelController.EnterNextLevel()"/> 去問實力。
+    /// <b>下一關的難度跟著玩家的實力走</b>——這裡不決定，<see cref="LevelController.EnterNextLevel()"/> 去問實力。
     /// 換關本身走的還是那條已經實測過的五步順序。
     ///
     /// ⚠️ <b>按下去會凍住畫面零點幾到一點多秒</b>（Editor 裡目標 1500 約 1.2 ～ 1.7 秒）。
@@ -249,7 +249,7 @@ public class LevelResultPanels : MonoBehaviour
     }
 
     /// <summary>
-    /// 放棄彈窗的「下一題」被按下（P2-13）。接在 Unity <c>Button.onClick</c> 上。
+    /// 放棄彈窗的「下一題」被按下。接在 Unity <c>Button.onClick</c> 上。
     ///
     /// <b>難度跟著實力走</b>，跟過關彈窗那顆是同一條路。
     /// ⭐ 這不是「送他一題簡單的」：放棄已經扣過分了（−K × E），

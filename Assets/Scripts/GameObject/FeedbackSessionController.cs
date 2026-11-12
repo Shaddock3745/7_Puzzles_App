@@ -9,7 +9,7 @@ using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 /// <summary>
-/// 回饋收集場景的流程（2026-09-13，`待辦清單.md`〈權重要找其他人對〉）。
+/// 回饋收集場景的流程（2026-09-13）。
 ///
 /// <b>為什麼要有這個場景</b>：現在的難度權重是開發者一個人在對照牆上看出來的，而開發者看過幾千個形狀，
 /// 很可能比目標使用者（6 歲起的小孩）強太多。這裡收<b>同一個人、同一題的三個數字</b>：
@@ -35,15 +35,15 @@ using UnityEngine.UI;
 /// <item><c>LevelResultPanels</c> <b>拿掉</b>，由這裡的面板取代</item>
 /// <item>⚠️ <b><c>DebugOverlay</c> 與 <c>DebugTools</c> 拿掉</b>——overlay 會顯示這一題的難度值，受試者看到數字，主觀判斷就被帶走了</item>
 /// </list>
-/// 💡 <b>進度存檔不用在場景上設</b>：這支在 <c>Awake</c> 直接叫 <c>LevelController.SuppressProgressPersistence</c>（P2-8b，2026-10-17）。
+/// 💡 <b>進度存檔不用在場景上設</b>：這支在 <c>Awake</c> 直接叫 <c>LevelController.SuppressProgressPersistence</c>（2026-10-17）。
 ///
-/// ⚠️ <b>這一批資料是在固定一台筆電（1920×1080）上用滑鼠收的</b>（使用者定，打包成 exe）：主觀難度能用，
+/// ⚠️ <b>這一批資料是在固定一台筆電（1920×1080）上用滑鼠收的</b>（打包成 exe）：主觀難度能用，
 /// 但時間跟觸控不一樣，<b>不能拿來校正 T</b>。dp 換算在桌機版固定用基準密度（見 <c>ScreenMetrics</c>），手感跟 Editor 一樣。
 ///
 /// <b>它只驅動，不持有真相</b>：一位受試者的進度在 <see cref="FeedbackSession"/>（Core，離線測得到），
 /// 這一關在 <c>LevelSession.Current.Data</c>。
 ///
-/// ⚠️ <b>這支腳本不能掛在它要開關的任何一個面板上</b>（除錯記錄 004：停用的物件不跑 <c>Update</c>）。
+/// ⚠️ <b>這支腳本不能掛在它要開關的任何一個面板上</b>（停用的物件不跑 <c>Update</c>）。
 /// </summary>
 [DisallowMultipleComponent]
 public class FeedbackSessionController : MonoBehaviour
@@ -193,13 +193,13 @@ public class FeedbackSessionController : MonoBehaviour
         if (levelController == null)
             Debug.LogError("FeedbackSessionController 找不到 LevelController：沒辦法進關，也拿不到權重。", this);
         else
-            // ⚠️ 受試者玩的題照樣會結算，不關掉的話會寫進這台電腦的玩家進度存檔（P2-8b）。
+            // ⚠️ 受試者玩的題照樣會結算，不關掉的話會寫進這台電腦的玩家進度存檔。
             // 一定要在 Awake：LevelController 在 Start 讀存檔
             levelController.SuppressProgressPersistence();
         if (inputController == null)
             Debug.LogError("FeedbackSessionController 找不到 TouchInputController：面板蓋著的時候盤面還抓得到片。", this);
 
-        // ⚠️ 除錯記錄 004：掛在自己要開關的面板上，第一幀就把自己關掉、從此不再跑 Update，而且不報錯
+        // ⚠️ 掛在自己要開關的面板上，第一幀就把自己關掉、從此不再跑 Update，而且不報錯
         foreach (GameObject panel in new[] { startPanel, readyPanel, answerPanel, abandonReasonPanel, completePanel, stopPanel })
             if (panel == gameObject)
                 Debug.LogError($"FeedbackSessionController 掛在它要開關的 {panel.name} 上了——那個面板一被關掉，" +
@@ -246,7 +246,7 @@ public class FeedbackSessionController : MonoBehaviour
 
     /// <summary>
     /// 生題單、找出結果檔與暫存檔資料夾、讀出最大的受試者編號、檢查有沒有遺留的暫存檔。
-    /// ⚠️ <b>會凍住幾秒</b>（五題的生成時間加起來）。照 P2-7 的決定不做「生成中…」。
+    /// ⚠️ <b>會凍住幾秒</b>（五題的生成時間加起來）。刻意不做「生成中…」。
     /// </summary>
     private void Start()
     {
@@ -457,7 +457,7 @@ public class FeedbackSessionController : MonoBehaviour
     /// <summary>
     /// 「準備好了嗎」面板的「再練習一次」：<b>重新進同一題練習</b>，盤面重置（一樣先擺好五片）。
     ///
-    /// <b>這一次練習不記</b>（使用者定：只記最後一次，也就是按「開始正式題目」那一次）。
+    /// <b>這一次練習不記</b>（只記最後一次，也就是按「開始正式題目」那一次）。
     /// 重新進關會換一份新的 <c>LevelData</c>，時間與拖曳次數從零開始，不會跟上一次混在一起。次數不設上限。
     /// </summary>
     public void OnPracticeAgainPressed()

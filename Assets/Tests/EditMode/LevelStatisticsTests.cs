@@ -5,7 +5,7 @@ using Tangram.Data;
 namespace Tangram.Core.Tests
 {
     /// <summary>
-    /// 局內統計（P2-13）：ELO 的輸入。
+    /// 局內統計：ELO 的輸入。
     ///
     /// ⚠️ <b>全部離線</b>——時刻由呼叫端傳進來，所以這裡傳的是假時間，一次 Unity 都不用開。
     /// 而「用哪個時鐘」整個住在 <c>GameObject</c> 層，換時鐘不影響這一整份測試。

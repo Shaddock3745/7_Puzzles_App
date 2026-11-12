@@ -54,9 +54,9 @@ namespace Tangram.Core
     }
 
     /// <summary>
-    /// <b>進度存檔的讀、寫、清除</b>（P2-8b，issue #39，2026-10-17）。內容合不合法是 <see cref="PlayerProgress"/> 的事，這支只管檔案。
+    /// <b>進度存檔的讀、寫、清除</b>（issue #39，2026-10-17）。內容合不合法是 <see cref="PlayerProgress"/> 的事，這支只管檔案。
     ///
-    /// <b>為什麼放 Core、不直接寫在 <c>LevelController</c> 裡</b>：壞檔怎麼辦是這張卡最容易寫錯、也最難在實機上製造的情況
+    /// <b>為什麼放 Core、不直接寫在 <c>LevelController</c> 裡</b>：壞檔怎麼辦是這部分最容易寫錯、也最難在實機上製造的情況
     /// （要真的弄出一個截斷的檔案）。這支只吃一個資料夾路徑、不碰 Unity，所以 <c>dotnet test</c> 用暫存資料夾就驗得到。
     /// 遊戲裡傳的是 <c>Application.persistentDataPath</c>。
     ///

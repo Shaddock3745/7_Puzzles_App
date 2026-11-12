@@ -319,7 +319,7 @@ namespace Tangram.Core.Tests
                             PiecePrototype.MirroredLeftRight(PieceKind.SmallTriangle, -1, false));
         }
 
-        // --- P1-7 盒子模式的吸附 ---
+        // --- 盒子模式的吸附 ---
 
         /// <summary>經典大正方形當盒子，原點放在 (0,0)。</summary>
         private static Region ClassicSquareBox()
@@ -360,7 +360,7 @@ namespace Tangram.Core.Tests
         }
 
         /// <summary>
-        /// ⚠️ <b>候選的產生順序是契約</b>（P2-1，issue #22）。
+        /// ⚠️ <b>候選的產生順序是契約</b>（issue #22）。
         ///
         /// <c>Candidates</c> 依螢幕距離排序，而 <c>List.Sort</c> <b>不穩定</b>——
         /// 距離相同的候選誰在前面，完全由產生順序決定，而 <c>Resolve</c> 取的是

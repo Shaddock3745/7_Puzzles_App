@@ -9,7 +9,7 @@ using Debug = UnityEngine.Debug;
 /// 照片 → U2Net 前景 → 最大外框 JSON。只實作辨識，不處理選圖、出題或照片顯示。
 /// 模型放 Resources/u2netp.onnx；推論套件沿用已實測分支的 2.6.1。
 ///
-/// ⭐ <b>不凍畫面</b>（2026-10-20，P5-6 #46）：排程<b>分幀</b>（每幀送 <see cref="LayersPerFrame"/> 層），
+/// ⭐ <b>不凍畫面</b>（2026-10-20，#46）：排程<b>分幀</b>（每幀送 <see cref="LayersPerFrame"/> 層），
 /// 送完再送非同步的讀回請求、<b>每幀問一次好了沒</b>。
 ///
 /// 為什麼兩件都要（Xperia S8 Gen 3 實測）：
@@ -19,7 +19,7 @@ using Debug = UnityEngine.Debug;
 ///   4.1 秒只過了 4 幀（每幀 1 秒），等於沒改。<b>分幀送，GPU 在兩批之間才有空畫畫面</b></item>
 /// </list>
 /// ⚠️ Editor 的第一次另外慢在 CPU 這邊（當場編 compute shader，6～14 秒），分幀之後會變成一頓一頓，只影響開發。
-/// ⚠️ 決賽用的 T20 比 Xperia 弱很多，<see cref="LayersPerFrame"/> 要在 T20 上看 log 調。
+/// ⚠️ 目標裝置 T20 比 Xperia 弱很多，<see cref="LayersPerFrame"/> 要在 T20 上看 log 調。
 /// </summary>
 public sealed class U2NetContourRecognizer : IContourRecognizer
 {

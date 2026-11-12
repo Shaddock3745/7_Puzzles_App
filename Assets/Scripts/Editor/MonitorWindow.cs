@@ -7,17 +7,17 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// 監控面板（P2-15，issue #32）。<b>Window → Tangram → 監控面板</b>，擺在 Game view 旁邊。
+/// 監控面板（issue #32）。<b>Window → Tangram → 監控面板</b>，擺在 Game view 旁邊。
 ///
 /// <b>它回答三件事</b>：這一題為什麼是這個難度、參考解長什麼樣、實力為什麼 +13。
-/// 這是「把量化做得看得見」的載體——評審看得到算式裡代進去的每一個數字，可以當場驗。
+/// 這是「把量化做得看得見」的載體——看的人看得到算式裡代進去的每一個數字，可以當場驗。
 ///
-/// ⭐ <b>只在 Editor</b>（2026-09-14 定，待辦清單 D 區的丙案）：這支住在 <c>Editor</c> 資料夾，
+/// ⭐ <b>只在 Editor</b>（2026-09-14 定）：這支住在 <c>Editor</c> 資料夾，
 /// Unity 會把它編成 Editor 專用的組件，<b>物理上進不了 build</b>——比編譯符號更徹底，
 /// 不會有「關得掉腳本、關不掉場景物件」那種事（<c>DebugTools</c> 踩過）。
-/// 理由：回饋收集的 exe 會交給小朋友玩，build 裡藏著面板就可能讓他們看到分數（違反 9/13 的 A 案）；
-/// 手機畫面也沒有地方放。代價是決賽 Demo 要用筆電開 Unity，要不要進 APP 延到 10/5 之後再決定——
-/// 那時只要再做一個殼，資料那半（<see cref="LevelMonitor"/>）不動。
+/// 理由：回饋收集的 exe 會交給小朋友玩，build 裡藏著面板就可能讓他們看到分數（違反 9/13 定的「玩家端看不到分數」）；
+/// 手機畫面也沒有地方放。代價是要看這個面板就得用筆電開 Unity。
+/// App 裡的版本是另外做的殼（<c>DebugOverlay</c>，只在展示版出現），資料那半（<see cref="LevelMonitor"/>）共用、不動。
 ///
 /// ⚠️ <b>錄影</b>：Unity Recorder 只錄 Game view，錄不到這個視窗，影片要用 OBS 這類工具錄整個螢幕。
 ///
@@ -316,7 +316,7 @@ public class MonitorWindow : EditorWindow
         EditorGUILayout.LabelField("時間", LevelMonitorText.RoundStatisticsText(report));
 
     /// <summary>
-    /// 每一條公式都是「符號 → 代入數字 → 結果」三段，評審照著按計算機就驗得出來。
+    /// 每一條公式都是「符號 → 代入數字 → 結果」三段，任何人照著按計算機都驗得出來。
     /// </summary>
     /// <param name="update">結算明細。</param>
     /// <param name="settings">ELO 參數。</param>

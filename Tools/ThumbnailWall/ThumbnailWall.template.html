@@ -2,11 +2,11 @@
 <!--
   縮圖牆範本（2026-09-11）。
   這個檔本身不能直接發布：資料要先塞進下面 WALL_DATA 那一行。流程只有兩步：
-    1. dotnet test Tools/DotnetTests --filter "FullyQualifiedName~ThumbnailWallExportTests"
+    1. dotnet test Tools/DotnetTests -- "NUnit.Where=name == ExportThumbnailWall"
+       （匯出測試掛 [Explicit]，--filter 選不到，見 文件/開發須知.md〈怎麼跑測試〉）
        → 產生 %TEMP%\tangram_thumbnail_wall.json（資料）與 %TEMP%\tangram_feature_wall.html（已塞好資料的網頁）
-    2. 把那個 html 發布成 artifact
-  （原本第 1、2 步之間還有一支 PowerShell 組裝腳本，但使用者電腦的執行原則不允許跑 .ps1，
-    所以組裝併進了匯出測試。）
+    2. 用瀏覽器開或發布那個 html
+  （組裝步驟寫在匯出測試裡，不另外用 PowerShell 腳本。）
   資料格式由 Assets/Tests/EditMode/ThumbnailWallExportTests.cs 決定，改那邊的欄位要一起改這裡。
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -170,7 +170,7 @@
   /* ── 主體：牆 + 檢視窗 ──
      ⚠️ 檢視窗是 sticky，捲動時它必須待在「自己的那一欄」裡。
      第一版在 1100px 以下改成單欄、檢視窗排到最上面卻仍然 sticky，
-     結果往下捲時牆的列從它上面滑過去，放大圖整個被蓋住（2026-09-11 使用者回報，視窗約 780px）。
+     結果往下捲時牆的列從它上面滑過去，放大圖整個被蓋住（視窗約 780px 時發生）。
      現在兩欄一路撐到 720px；更窄（手機）才改單欄，而且那時檢視窗不再 sticky。 */
   .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; }
   @media (max-width: 900px) {
@@ -341,31 +341,31 @@
     // 以下兩個也是探索用：4√2 只看輪廓；等價交換要看參考解（「一題 = 形狀 + 存下來的參考解」，2026-09-11 定案）
     { key: 'longHypotenuseEdgeCount', label: '4√2 邊數', short: '4√2', integer: true },
     { key: 'hasEquivalentSwap', label: '等價交換', short: '交換', integer: true },
-    // 使用者提議（2026-09-11）：只看輪廓、探索用
+    // 2026-09-11 加：只看輪廓、探索用
     { key: 'convexHullFillRatio', label: '凸包填滿率', short: '填滿', integer: false, bucket: 0.05, step: 0.01, decimals: 2 },
     // 最長的邊只會出現幾個固定值（2√2、4、4 + √2、4√2、6……），分段會把不同的值混在一起，所以一個值一列
     { key: 'longestEdgeLength', label: '最長的邊', short: '最長邊', integer: false, distinct: true, step: 0.5, decimals: 2 },
-    // 使用者提議（2026-09-11）：從參考解算、探索用。錯開的接觸會在輪廓上留下台階（露出交界）
+    // 2026-09-11 加：從參考解算、探索用。錯開的接觸會在輪廓上留下台階（露出交界）
     { key: 'staggeredEdgeContactCount', label: '錯開的接觸', short: '錯開', integer: true },
-    // 使用者提議（2026-09-11，取代「藏起的頂點總數」）：大三角 ×2 與平行四邊形這三片裡，有幾片只露出一個頂點（或完全沒露）
+    // 2026-09-11 加（取代「藏起的頂點總數」）：大三角 ×2 與平行四邊形這三片裡，有幾片只露出一個頂點（或完全沒露）
     { key: 'keyPiecesExposingOneVertex', label: '只露一個頂點的片數', short: '只露一點', integer: true },
-    // 使用者提議（2026-09-11）：外框的某個凸角只放得進一種擺法 → 那片一定在那裡。只看形狀，不看參考解
+    // 2026-09-11 加：外框的某個凸角只放得進一種擺法 → 那片一定在那裡。只看形狀，不看參考解
     { key: 'forcedPieceCount', label: '被外框逼出來的片數', short: '逼出', integer: true },
-    // 使用者在 #219 發現（2026-09-11）：參考解裡兩片大三角共用整條邊、拼成一大塊，意外地好拼
+    // 2026-09-11 在牆上觀察到：參考解裡兩片大三角共用整條邊、拼成一大塊，意外地好拼
     { key: 'largeTrianglesJoined', label: '兩片大三角拼成一塊', short: '大三角合體', integer: true },
-    // P2-6 定案的難度值，由 DifficultyEvaluator 用權重檔算好寫進資料裡（跟遊戲裡看到的是同一個數字）。
+    // 正式的難度值，由 DifficultyEvaluator 用權重檔算好寫進資料裡（跟遊戲裡看到的是同一個數字）。
     // 上面那個「暫定難度」是頁面自己算的、權重可調，兩者刻意並存：調權重時要看得到改成這樣會排成什麼樣
     { key: 'difficulty', label: '難度（權重檔）', short: '難度', integer: true },
   ];
   const exactLabelByLongestEdge = new Map();     // 最長邊的列標題用精確值，例如「4 + 2√2」
 
   // ── 暫定難度（探索用，2026-09-11）──
-  // 使用者看完對照牆後覺得有幫助的五個特徵，方向全部是「越緊湊、接縫藏得越乾淨越難」。
+  // 看對照牆時判斷有幫助的五個特徵，方向全部是「越緊湊、接縫藏得越乾淨越難」。
   // 算法：每個特徵換成「離平均幾個標準差」（平均與標準差只拿預設門檻收的形狀算），
   //       方向統一成越大越難，照權重加總，再換算到 1200 為中心、標準差 200 的尺度。
   // 除以加總後的標準差：權重只改變排序，不改變尺度——調權重時難度的範圍不會跟著暴漲暴跌。
-  // ⚠️ 這不是 P2-6 的正式公式。正式版會寫成 C#，權重放在 DifficultyWeights.json
-  // 2026-09-11 第二版（使用者看過第一版之後）：
+  // ⚠️ 這不是正式公式。正式版是 C# 的 DifficultyEvaluator，權重放在 DifficultyWeights.json
+  // 2026-09-11 第二版：
   // · 凸包填滿率本身的影響不明顯，但拿「≥ 0.65」當門檻，其他因素會更有感 → 改成門檻，權重預設 0（還留著可以調回來）
   // · 「藏起的頂點總數」改成「三片裡有幾片只露出一個頂點」
   // ⭐ 2026-09-13 起：預設權重與方向讀資料裡的權重檔（wallData.difficultyWeights），不再寫在這裡——
@@ -443,7 +443,7 @@
   }
   // 檢視窗用：每個特徵貢獻了幾分。加起來就是「難度 − 1200」（差一個取平均的常數，實務上是 0）
   function difficultyRows(shape) {
-    const rows = [['難度（權重檔）', `${shape.difficulty}（P2-6 定案的值，1200 是基準批次的平均）`],
+    const rows = [['難度（權重檔）', `${shape.difficulty}（權重檔算出的正式值，1200 是基準批次的平均）`],
       ['暫定難度', `${Math.round(shape.provisionalDifficulty)}（這一頁自己算的，權重可調）`]];
     for (const term of difficultyTerms) {
       const standardized = standardizedTerm(shape, term);
@@ -1020,7 +1020,7 @@
     square: '拼成正方形（共用斜邊）', triangle: '拼成更大的三角形（共用一條股）', parallelogram: '拼成平行四邊形（共用一條股）',
   };
   function keyPieceExposureText(shape) {
-    // 大三角 ×2 與平行四邊形三片裡，露出的頂點 ≤ 1 的有幾片。數字由 SolutionFeatures 算（P2-6 之後只有一份實作）
+    // 大三角 ×2 與平行四邊形三片裡，露出的頂點 ≤ 1 的有幾片。數字由 SolutionFeatures 算（只有一份實作）
     return `${shape.keyPiecesExposingOneVertex} / 3 片只露 ≤ 1 個頂點`;
   }
 

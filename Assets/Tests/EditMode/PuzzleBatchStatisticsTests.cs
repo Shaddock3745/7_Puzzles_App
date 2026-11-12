@@ -10,25 +10,25 @@ using Tangram.Data;
 namespace Tangram.Data.Tests
 {
     /// <summary>
-    /// P2-5 批次統計（issue #26）。
+    /// 批次統計（issue #26）。
     ///
     /// <b>這不是功能，是一次量測。</b>它要回答的只有一個問題：
     /// <b>難度特徵在真實的題目池裡到底分不分得開。</b>
     ///
-    /// 為什麼要現在問：難度系統是兩層——<see cref="DifficultyFeatures"/>（P2-2）量出原始數字，
-    /// <c>DifficultyEvaluator</c>（P2-6）加權換算成 1200 為中心的尺度。
+    /// 為什麼要現在問：難度系統是兩層——<see cref="DifficultyFeatures"/> 量出原始數字，
+    /// <c>DifficultyEvaluator</c> 加權換算成 1200 為中心的尺度。
     /// 第二層沒辦法憑空做，因為<b>權重要看過一批題目的分布才定得出來</b>。
-    /// 而且如果某個特徵在一千題裡幾乎是常數，要回頭改的是 <b>P2-2（換特徵）</b>而不是 P2-6——
+    /// 而且如果某個特徵在一千題裡幾乎是常數，要回頭改的是<b>特徵（換一個）</b>而不是權重——
     /// 權重乘上一個常數等於白給一個特徵。
     ///
-    /// ⚠️ <b>現在回頭改 P2-2 很便宜</b>（P2-3 已經能量產題目，改完重跑就好），
-    /// 等 P2-6 定完權重、P2-7 照難度出題、P2-8 串進遊戲之後才發現就要拆一整串。
+    /// ⚠️ <b>現在回頭改特徵很便宜</b>（出題器已經能量產題目，改完重跑就好），
+    /// 等權重定完、照難度出題、串進遊戲之後才發現就要拆一整串。
     ///
     /// ⚠️ <b>掛 [Explicit] 是刻意的</b>：一千題約兩千次呼叫、數十秒。
     /// 而「動到 Data 層一定要重跑全部測試」是這個專案的紀律——
     /// 每次 Run All 都多等半分鐘會讓人開始跳過測試，那個代價比這份報告大。
     /// 要跑：Unity 測試視窗裡單獨點它，或
-    /// <c>dotnet test Tools/DotnetTests -- "NUnit.Where=name == BatchStatistics"</c>（⚠️ 不能用 <c>--filter</c>，見 <c>CLAUDE.md</c>〈怎麼跑測試〉）。
+    /// <c>dotnet test Tools/DotnetTests -- "NUnit.Where=name == BatchStatistics"</c>（⚠️ 不能用 <c>--filter</c>，見 <c>文件/開發須知.md</c>〈怎麼跑測試〉）。
     /// </summary>
     public class PuzzleBatchStatisticsTests
     {
@@ -101,7 +101,7 @@ namespace Tangram.Data.Tests
         /// 那些數字現在還沒有「應該是多少」的根據，硬訂門檻只會變成每次調參都要跟著改的假警報。
         /// 剩下的工作是把數字印出來給人看。
         /// </summary>
-        [Test, Explicit("P2-5 批次統計：跑一千題要數十秒，不進日常的 Run All")]
+        [Test, Explicit("批次統計：跑一千題要數十秒，不進日常的 Run All")]
         public void 批次統計_一千題的特徵分布量得出來()
         {
             var generator = new PuzzleGenerator(Seed);
@@ -110,7 +110,7 @@ namespace Tangram.Data.Tests
             // ⚠️ 兩個池子要分開。未篩選池含被審美丟掉的與重複的，篩選後池只有真的生出來的。
             //
             // 為什麼一定要兩個：「特徵沒鑑別力」與「門檻切太兇」在單一池子裡長得一模一樣，
-            // 而它們的處置完全相反——前者要改 P2-2（換特徵），後者只要改 P2-3 的門檻。
+            // 而它們的處置完全相反——前者要換特徵，後者只要改審美篩選的門檻。
             // 兩個池子並排才分得出來：都窄 = 特徵的錯，未篩選寬而篩選後窄 = 門檻的錯。
             var unfilteredPool = new List<MeasuredAttempt>();
             var acceptedPool = new List<MeasuredAttempt>();
@@ -166,7 +166,7 @@ namespace Tangram.Data.Tests
         private static void ReportBatchOverview(Dictionary<GenerationOutcome, int> outcomeCounts,
             int totalAttempts, int acceptedCount, long elapsedMilliseconds)
         {
-            TestContext.WriteLine("══════ P2-5 批次統計 ══════");
+            TestContext.WriteLine("══════ 批次統計 ══════");
             TestContext.WriteLine($"種子 {Seed}　目標 {WantedPuzzleCount} 題");
             TestContext.WriteLine("");
             TestContext.WriteLine("【一、批次概況】");
@@ -187,7 +187,7 @@ namespace Tangram.Data.Tests
             TestContext.WriteLine($"  總耗時　　　{elapsedMilliseconds} ms");
             TestContext.WriteLine($"  平均一次呼叫　{millisecondsPerAttempt:F1} ms");
             TestContext.WriteLine($"  ⭐ 平均拿到一題　{millisecondsPerPuzzle:F1} ms");
-            TestContext.WriteLine("     ⚠️ P2-7「指定難度 → 當場生成」在乎的是這個數字，");
+            TestContext.WriteLine("     ⚠️「指定難度 → 當場生成」在乎的是這個數字，");
             TestContext.WriteLine("        而且它還要再乘一次難度篩選的命中率，所以這是樂觀下限。");
             TestContext.WriteLine("");
         }
@@ -238,7 +238,7 @@ namespace Tangram.Data.Tests
 
             // ⚠️ 五個欄位裡只有三個是難度特徵。捏點與洞的角色是審美門檻，
             // 它們在篩選後池裡被壓在門檻以下是設計預期，不是「特徵沒鑑別力」。
-            // 這件事在報告裡分清楚，否則會誤判 P2-2 要重做
+            // 這件事在報告裡分清楚，否則會誤判特徵要重做
             //
             // ⚠️ 門檻的數字一律跟 AestheticLimits.Default 拿，不要自己抄一份——
             // 抄過來的話改門檻時這裡會安靜地變成錯的說明
@@ -322,7 +322,7 @@ namespace Tangram.Data.Tests
 
             TestContext.WriteLine("  ── 外框周長／藏起來的邊長（難度特徵，同時是審美門檻）");
             TestContext.WriteLine("     ⚠️ 這一列是這張卡最該盯的：篩選切的就是它。");
-            TestContext.WriteLine("        未篩選寬而篩選後窄 = 門檻削掉了難度的變化範圍，那要改的是 P2-3 不是 P2-2。");
+            TestContext.WriteLine("        未篩選寬而篩選後窄 = 門檻削掉了難度的變化範圍，那要改的是審美篩選，不是特徵。");
             TestContext.WriteLine("     　　　　│　最小　　25%　　中位　　75%　　90%　　最大　相異值");
             TestContext.WriteLine($"     未篩選　│{QuantileRowOf(unfilteredPerimeters)}");
             TestContext.WriteLine($"     篩選後　│{QuantileRowOf(acceptedPerimeters)}");
@@ -418,7 +418,7 @@ namespace Tangram.Data.Tests
         /// <b>issue #26 的完成定義第二條</b>：三個難度特徵都要有變化。
         ///
         /// ⚠️ 這條紅了不代表程式壞了，代表<b>那個特徵不能用</b>——
-        /// 處置是回頭改 P2-2 換一個特徵，不是調 P2-6 的權重。
+        /// 處置是回頭換一個特徵，不是調權重。
         /// </summary>
         /// <param name="title">特徵名稱。</param>
         /// <param name="distinctValueCount">篩選後池裡的相異值個數。</param>
@@ -426,7 +426,7 @@ namespace Tangram.Data.Tests
         {
             Assert.GreaterOrEqual(distinctValueCount, MinimumDistinctValuesForDiscrimination,
                 $"「{title}」在 {WantedPuzzleCount} 題裡只有 {distinctValueCount} 種值，" +
-                "幾乎是常數 → 要改的是 P2-2（換特徵），不是 P2-6（調權重）");
+                "幾乎是常數 → 要改的是特徵（換一個），不是權重");
         }
 
         // ─────────────────────────────────────────────────────────────

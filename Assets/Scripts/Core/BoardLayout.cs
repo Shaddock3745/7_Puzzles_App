@@ -55,7 +55,7 @@ namespace Tangram.Core
         /// <summary>已經成功推送過的螢幕高。同上。</summary>
         public int LastScreenHeight { get; private set; }
 
-        /// <param name="rule">版面規則。P1 傳 <see cref="LayoutRule.Portrait"/>。</param>
+        /// <param name="rule">版面規則。目前傳 <see cref="LayoutRule.Portrait"/>。</param>
         public BoardLayout(LayoutRule rule)
         {
             Rule = rule;
@@ -87,7 +87,7 @@ namespace Tangram.Core
             LastScreenHeight = -1;
         }
 
-        /// <summary>換版面規則（P1-13 調參、之後的自適應版面會用到）。</summary>
+        /// <summary>換版面規則（調參、之後的自適應版面會用到）。</summary>
         /// <param name="rule">新的版面規則。</param>
         public void SetRule(LayoutRule rule)
         {

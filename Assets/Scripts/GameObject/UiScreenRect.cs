@@ -3,8 +3,8 @@ using UnityEngine;
 /// <summary>
 /// UI 物件在螢幕上佔哪一塊（像素，原點左下）。<b>盒子區躲按鈕排與擋片區共用這一份換算</b>（2026-09-15）。
 ///
-/// ⚠️ <b>為什麼不用 <c>RectTransformUtility.WorldToScreenPoint</c> ／ <c>RectangleContainsScreenPoint</c> 配畫布的相機</b>
-/// （除錯記錄 012）：這個專案的畫布是 <b>Screen Space - Camera</b>，它會跟著相機走，
+/// ⚠️ <b>為什麼不用 <c>RectTransformUtility.WorldToScreenPoint</c> ／ <c>RectangleContainsScreenPoint</c> 配畫布的相機</b>：
+/// 這個專案的畫布是 <b>Screen Space - Camera</b>，它會跟著相機走，
 /// 但要等到畫面要畫之前（<c>Canvas.willRenderCanvases</c>）才把自己搬到相機的新位置。
 /// 在那之前相機已經被 <c>BoardView</c> 改過的話，「畫布的舊世界座標 × 相機的新矩陣」換算出來的就是錯的。
 /// 而盒子區又是照按鈕排算的、相機又是照盒子區算的——<b>讀錯 → 改相機 → 又讀錯</b>，

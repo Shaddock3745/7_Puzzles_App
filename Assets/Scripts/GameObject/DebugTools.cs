@@ -2,7 +2,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// 開發期的**捷徑**（P2-4）：一顆「填 6 片」按鈕，外加一個鍵盤按鍵。
+/// 開發期的**捷徑**：一顆「填 6 片」按鈕，外加一個鍵盤按鍵。
 /// 跟 <see cref="DebugOverlay"/> 是一對——那支只讀、這支會改東西。
 ///
 /// <b>為什麼不做進 <c>DebugOverlay</c></b>：那支的契約寫死了
@@ -71,8 +71,8 @@ public class DebugTools : MonoBehaviour
     /// 把按鈕的矩形登記成「按在這裡不要抓片」。
     ///
     /// ⚠️⚠️ <b>這件事非做不可，不是防呆。</b>沒登記的話按下按鈕會<b>同時把手指底下的片抓起來</b>。
-    /// 待辦清單 D 區記著「<c>pressBlockingAreas</c> 只認得填進去的矩形，之後加更多 UI 時要記得一起填」
-    /// ——<b>這是那條記下來之後的第一顆新按鈕</b>。
+    /// <c>pressBlockingAreas</c> 只認得填進去的矩形，之後加更多 UI 時要記得一起填
+    /// ——<b>這是那條規則定下來之後的第一顆新按鈕</b>。
     /// </summary>
     private void OnEnable()
     {

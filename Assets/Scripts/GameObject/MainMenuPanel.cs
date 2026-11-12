@@ -7,7 +7,7 @@ using UnityEngine.UI;
 /// ⭐ <b>簡易主畫面</b>（2026-09-23）：兩顆按鈕，選這一場要玩哪一種題目。
 ///
 /// <list type="bullet">
-/// <item><b>挑戰模式</b>——照實力當場生題，就是原本的遊玩迴圈（P2-7 ＋ P2-14）</item>
+/// <item><b>挑戰模式</b>——照實力當場生題，就是原本的遊玩迴圈</item>
 /// <item><b>圖形模式</b>——從題庫隨機抽具象題（貓、船之類），一輪之內不重複</item>
 /// <item><b>掃描模式</b>（2026-10-14，名稱暫定）——先跳選擇視窗（新拍一張／從檔案選擇，<see cref="ScanSourcePanel"/>，2026-10-17），
 /// 再取輪廓、照輪廓出題。
@@ -40,7 +40,7 @@ using UnityEngine.UI;
 /// <item>（2026-10-30）「清除紀錄」鈕（只在展示版出現）拖進 <see cref="clearProgressButton"/>，<c>onClick</c> 接到 <see cref="OnClearProgressPressed"/></item>
 /// <item>⚠️ <b>這支腳本掛在另一個物件上，不能掛在 Panel 身上</b>——
 /// 停用的物件不跑 <c>Update</c> 也收不到別人叫它的機會，藏起來就再也開不回來
-/// （除錯記錄 004 踩過一次）</item>
+/// （實際踩過一次）</item>
 /// <item>把 Panel 的 <c>GameObject</c> 填進 <see cref="panel"/></item>
 /// </list>
 /// </summary>
@@ -108,10 +108,10 @@ public class MainMenuPanel : MonoBehaviour
                 "MainMenuPanel 掛在它自己要開關的 Panel 上了。藏起來之後這支就跟著被停用，" +
                 "再也沒辦法把自己開回來。請把這支腳本移到另一個物件上（照 LevelResultPanels 的做法）。", this);
 
-        // 展示版才有：換評審時從頭開始用的。只在開場決定一次（編譯時就定了，執行中不會變）
+        // 展示版才有：換一位玩家時從頭開始用的。只在開場決定一次（編譯時就定了，執行中不會變）
         if (clearProgressButton != null) clearProgressButton.SetActive(DemonstrationBuild.IsActive);
 
-        // 快速提示：同一個開關。每次開 App 都從「不勾」開始（不記住，使用者定）——
+        // 快速提示：同一個開關。每次開 App 都從「不勾」開始（不記住）——
         // 不通知地設成 false，免得場景裡存成勾起來的話開場就被改成 5 秒、卻沒人知道
         if (boardActionButtons == null) boardActionButtons = FindFirstObjectByType<BoardActionButtons>();
         if (boardActionButtons != null) originalHintIntervalSeconds = boardActionButtons.HintIntervalSeconds;
@@ -209,7 +209,7 @@ public class MainMenuPanel : MonoBehaviour
     /// <summary>
     /// 顯示主畫面。從結果彈窗按「回主畫面」、盤面上按「回主畫面」（中途離開）都走這支。
     /// ⭐ 進行中的那一關暫停（2026-10-23，<see cref="LevelController.PauseCurrentLevel"/>；打完了的、沒有關的什麼都不做）。
-    /// ⭐ 順便請 <see cref="LevelController"/> 在背景先把挑戰模式的下一題生好（P5-2，2026-10-23）——
+    /// ⭐ 順便請 <see cref="LevelController"/> 在背景先把挑戰模式的下一題生好（2026-10-23）——
     /// 玩家看主畫面的時候就生完了，按挑戰模式不用等。目標沒變的話那邊什麼都不多做，所以每次都叫是安全的。
     /// 上一次掃描失敗的訊息在這裡清掉（要寫的話 <see cref="OnScanAborted"/> 會在之後補上）。
     /// </summary>
@@ -231,7 +231,7 @@ public class MainMenuPanel : MonoBehaviour
 
     /// <summary>「挑戰模式」被按下。接在 Unity <c>Button.onClick</c> 上。</summary>
     /// <remarks>
-    /// 題目多半已經在主畫面出現時預生好了（P5-2，2026-10-23）；還沒好就蓋等待遮罩，不會凍住。
+    /// 題目多半已經在主畫面出現時預生好了（2026-10-23）；還沒好就蓋等待遮罩，不會凍住。
     /// 暫停中的是挑戰模式的關，就是接著玩（2026-10-23）。
     /// </remarks>
     public void OnChallengeModePressed() => StartMode(GameMode.GeneratedByRating);

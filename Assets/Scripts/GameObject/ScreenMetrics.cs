@@ -1,7 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// 螢幕像素與 <b>dp</b>（density-independent pixel）之間的換算（P1-13）。
+/// 螢幕像素與 <b>dp</b>（density-independent pixel）之間的換算。
 ///
 /// <b>為什麼要有這支</b>：原本吸附半徑、移動門檻、箭頭大小都直接寫**螢幕像素**，
 /// 但那不是一個穩定的單位——18 px 在 1080 寬的手機是 1.7% 螢幕寬，

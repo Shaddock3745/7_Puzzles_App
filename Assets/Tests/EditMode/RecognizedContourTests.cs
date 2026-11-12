@@ -10,20 +10,20 @@ namespace Tangram.Data.Tests
     /// <summary>
     /// <see cref="RecognizedContour"/>（2026-10-14，掃描模式）。
     ///
-    /// <b>這一支在看什麼</b>：協作者交的那份樣本讀不讀得進來、換到模型座標之後是不是
+    /// <b>這一支在看什麼</b>：辨識模組產出的那份樣本讀不讀得進來、換到模型座標之後是不是
     /// 「面積 32、重心在原點、逆時針、y 朝上、沒變形」，以及壞掉的輸入會不會被擋下來。
     /// </summary>
     public class RecognizedContourTests
     {
-        /// <summary>協作者交的樣本（U²-Net 的輸出，一隻貓），遊戲的假辨識模組回的就是這一份。</summary>
+        /// <summary>辨識模組產出的樣本（U²-Net 的輸出，一隻貓），遊戲的假辨識模組回的就是這一份。</summary>
         private const string SampleRelativePath = "Assets/Resources/ScanSamples/u2net_unity_contour.json";
 
         private static string SampleJson() => File.ReadAllText(RepositoryFiles.Find(SampleRelativePath));
 
-        /// <summary>照協作者的格式組一份 JSON。</summary>
+        /// <summary>照辨識模組的格式組一份 JSON。</summary>
         /// <param name="width">圖片寬度。</param>
         /// <param name="height">圖片高度。</param>
-        /// <param name="points">像素座標的點，y 朝上（跟協作者的 JSON 一樣）。</param>
+        /// <param name="points">像素座標的點，y 朝上（跟辨識模組的 JSON 一樣）。</param>
         /// <param name="pointCount">檔案自己報的點數；不給就用實際的點數。</param>
         private static string ContourJson(int width, int height, (double x, double y)[] points, int? pointCount = null)
         {
@@ -92,7 +92,7 @@ namespace Tangram.Data.Tests
         // ───────── 座標轉換 ─────────
 
         /// <summary>
-        /// ⚠️ <b>y 不能翻</b>：協作者的 JSON 是 y 朝上（Unity 的習慣，2026-10-17 更正，除錯記錄 015）。
+        /// ⚠️ <b>y 不能翻</b>：辨識模組的 JSON 是 y 朝上（Unity 的習慣，2026-10-17 更正）。
         /// 翻了的話貓會倒過來，而且面積、重心都還是對的——只有這一條抓得到。
         /// 用一個直角在<b>左下角</b>的三角形（y 朝上時 (10, 10) 是左下）：換完之後直角還是要在左下（x 最小、y 最小）。
         /// </summary>
